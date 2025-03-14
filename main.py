@@ -1,19 +1,26 @@
-import os
-from src.clasificacion import clasificar_imagen
+import  os
 import joblib
+from src.entrenamiento import entrenar_modelos
+from src.clasificacion import clasificar_imagen
 
-if __name__ == "__main__":
-    print("Cargando modelos entrenados...")
-    knn = joblib.load("models/knn_model.pkl")
-    nn = joblib.load("models/nn_model.pkl")
 
-    ruta_imagen = input("Ingrese la ruta de la imagen: ")
-    if not os.path.exists(ruta_imagen):
-        print("La imagen no existe.")
-    else:
-        knn_pred, nn_pred = clasificar_imagen(ruta_imagen, knn, nn)
-        print(f"Predicción con KNN: {knn_pred}")
-        print(f"Predicción con Red Neuronal: {nn_pred}")
+if __name__ == '__main__':
+    #entrenar modelos
+    print("Entrenando modelos OCR...")
+    entrenar_modelos()
+
+    #cargar modelos
+    #print("Cargando modelos entrenados...")
+    knn_model = joblib.load("models/knn_model.pkl")
+    nn_model = joblib.load("models/nn_model.pkl")
+
+    # probar clasificar en una imagen de prueba
+    print("\n Probando clasificacion en una imagen de prueba...")
+    ruta_prueba = 'data/data/training_data/A/10.png'
+    knn_pred, nn_pred = clasificar_imagen(ruta_prueba, knn_model, nn_model)
+    
+    print(f"Predicción KNN: {knn_pred}")
+    print(f"Predicción Red Neuronal: {nn_pred}")
 
 
 
