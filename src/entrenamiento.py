@@ -1,4 +1,5 @@
 import joblib
+import os
 import numpy as np
 from preprocesamiento import cargar_datos
 
@@ -84,23 +85,35 @@ class NeuralNetwork:
         return np.argmax(A2, axis=1)
     
 
-def entrenar_modelos(K = 3):
+def entrenar_modelos(K=3):
     print("Cargando datos de entrenamiento...")
     X_train, y_train = cargar_datos('data/data/training_data')
 
     print("Entrenando modelo KNN...")
     knn = KNN(k=K)
-    knn.fit(X_train, y_train)
-    joblib.dump(knn, 'models/knn_model.pkl')
+    try:
+        knn.fit(X_train, y_train)
+        print("Modelo KNN entrenado con exito.")
+    except Exception as e:
+        print(f"Error al entrenar el modelo KNN: {e}")
+
+    # Verificar si el directorio 'models' existe, si no, crear el directorio
+    directorio_modelos = 'models'
+    if not os.path.exists(directorio_modelos):
+        os.makedirs(directorio_modelos)
+
+    # Guardar el modelo
+    joblib.dump(knn, os.path.join(directorio_modelos, 'knn_model.pkl'))
     print("Modelo KNN entrenado y guardado.")
 
     print("Entrenando modelo Red Neuronal...")
-    input_size = X_train.shape[1] # 28x28 = 784
+    input_size = X_train.shape[1]  # 28x28 = 784
     output_size = len(set(y_train))
-    nn = NeuralNetwork(input_size = input_size, hidden_size=64, output_size=output_size)
+    nn = NeuralNetwork(input_size=input_size, hidden_size=64, output_size=output_size)
     nn.fit(X_train, y_train, epochs=500)
-    joblib.dump(nn, 'models/nn_model.pkl')
+    joblib.dump(nn, os.path.join(directorio_modelos, 'nn_model.pkl'))
     print("Modelo Red Neuronal entrenado y guardado.")
+
 
 
 if __name__ == '__main__':

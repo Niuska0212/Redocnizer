@@ -18,13 +18,13 @@ def cargar_datos(directorio_base):
                 imagen = cv2.imread(ruta, cv2.IMREAD_GRAYSCALE)  # Carga en escala de grises
 
                 if imagen is None: #Verifica si la imagen es valida
-                    print(f"Error al cargar la imagen {ruta}")
+                    print(f"Error al cargar la imagen {ruta}. Se omite.") #maneja posibles errores
                     continue #Salta esta imagen y sigue con la siguiente
 
                 imagen = cv2.resize(imagen, (28, 28)).flatten()  # Redimensiona y aplana
                 X.append(imagen)
                 y.append(indice) #USa el nombr ede la carpeta como etiqueta
-
+    print(f"Se cargaron {len(X)} imágenes.")
     return np.array(X, dtype=np.float32) / 255.0, np.array(y)
 
 if __name__ == "__main__":
