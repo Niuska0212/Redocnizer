@@ -1,7 +1,7 @@
 import joblib
 import os
 import numpy as np
-from .preprocesamiento import cargar_datos
+from preprocesamiento import cargar_datos
 
 # Implementación manual de KNN
 class KNN:
@@ -109,7 +109,7 @@ def entrenar_modelos(K=3):
     input_size = X_train.shape[1]  # 28x28 = 784
     output_size = len(set(y_train))
     #nn = NeuralNetwork(input_size=input_size, hidden_size=64, output_size=output_size)
-    nn = NeuralNetwork(input_size=input_size, hidden_size=64, output_size=output_size, learning_rate=0.01)
+    nn = NeuralNetwork(input_size=input_size, hidden_size=64, output_size=output_size, learning_rate=0.01)    #en hidden_size podemos cambiar el numero de neuronas
     nn.fit(X_train, y_train, epochs=500) #podemos cambiar el numero de epocas
 
     # Guardar el modelo de Red Neuronal

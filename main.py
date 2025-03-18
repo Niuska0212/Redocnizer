@@ -3,6 +3,13 @@ import joblib
 from src.entrenamiento import entrenar_modelos
 from src.clasificacion import clasificar_imagen
 
+def interpretar_prediccion(valor):
+    if 0 <= valor <= 9:
+        return str(valor)   #numeros 0-9
+    elif 10 <= valor <= 35:
+        return chr(valor + 55) #letras A-Z (A=10, B=11, ..., chr(66), etc.)
+    else:
+        return "No se reconoce"
 
 if __name__ == '__main__':
     #entrenar modelos
@@ -16,11 +23,11 @@ if __name__ == '__main__':
 
     # probar clasificar en una imagen de prueba
     print("\n Probando clasificacion en una imagen de prueba...")
-    ruta_prueba = 'data/data/training_data/A/10.png'
+    ruta_prueba = 'data/data/training_data/O/8916.png'
     knn_pred, nn_pred = clasificar_imagen(ruta_prueba, knn_model, nn_model)
     
-    print(f"Predicción KNN: {knn_pred}")
-    print(f"Predicción Red Neuronal: {nn_pred}")
+    print(f"Predicción KNN: {interpretar_prediccion(knn_pred)}")
+    print(f"Predicción Red Neuronal: {interpretar_prediccion(nn_pred)}")
 
 
 

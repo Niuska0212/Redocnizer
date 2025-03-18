@@ -1,7 +1,8 @@
 import numpy as np
 import cv2
+import os
 import joblib
-from .preprocesamiento import cargar_datos
+from preprocesamiento import cargar_datos
 
 def clasificar_imagen(ruta_imagen, modelo_knn, modelo_nn):
     """Clasifica una imagen con KNN y la Red Neuronal."""
@@ -30,9 +31,15 @@ def clasificar_conjunto_datos(ruta_datos, modelo_knn, modelo_nn):
 
 
 if __name__ == "__main__":
+    #obtener la ruta base del proyecto
+    ruta_base = os.path.dirname(os.path.abspath(__file__)) #Sube un nivel desde /src
+    ruta_modelos = os.path.join(ruta_base, "models")
+
     print("Cargando modelos...")
-    knn = joblib.load("../models/knn_model.pkl")
-    nn = joblib.load("../models/nn_model.pkl")
+    knn = joblib.load(os.path.join(ruta_modelos, "knn_model.pkl"))
+    nn = joblib.load(os.path.join(ruta_modelos, "nn_model.pkl"))
+    #knn = joblib.load("../models/knn_model.pkl")
+    #nn = joblib.load("../models/nn_model.pkl")
 
     # Clasificar una imagen individual
     ruta_imagen = input("Ingrese la ruta de la imagen a clasificar: ")
