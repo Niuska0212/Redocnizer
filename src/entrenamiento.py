@@ -109,8 +109,8 @@ def entrenar_modelos(K=3):
     input_size = X_train.shape[1]  # 28x28 = 784
     output_size = len(set(y_train))
     #nn = NeuralNetwork(input_size=input_size, hidden_size=64, output_size=output_size)
-    nn = NeuralNetwork(input_size=input_size, hidden_size=64, output_size=output_size, learning_rate=0.01)    #en hidden_size podemos cambiar el numero de neuronas
-    nn.fit(X_train, y_train, epochs=500) #podemos cambiar el numero de epocas
+    nn = NeuralNetwork(input_size=input_size, hidden_size=128, output_size=output_size, learning_rate=0.01)    #en hidden_size podemos cambiar el numero de neuronas
+    nn.fit(X_train, y_train, epochs=1000) #podemos cambiar el numero de epocas
 
     # Guardar el modelo de Red Neuronal
     ruta_nn = os.path.join(directorio_modelos, 'nn_model.pkl')
@@ -120,3 +120,12 @@ def entrenar_modelos(K=3):
 
 if __name__ == '__main__':
     entrenar_modelos()
+
+
+
+#cada que cargues los datos, ejemplo Red Neuronal: Inicializada con 784 entradas, 128 neuronas ocultas y 36 salidas.
+#el numero de entradas es 784 porque las imagenes son de 28x28 pixeles, 28*28=784 de pa parte de preprocesamiento.py
+#el numero de neuronas ocultas puede ser cambiado, en este caso se puso 128
+#el numero de salidas es 36 porque son 36 clases (26 letras y 10 numeros)
+#el learning rate es 0.01, este valor puede ser cambiado
+#el numero de epocas es 1000, este valor puede ser cambiado
