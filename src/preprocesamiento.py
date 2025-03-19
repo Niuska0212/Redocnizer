@@ -32,7 +32,11 @@ def cargar_datos(directorio_base):
 
 if __name__ == "__main__":
     # Usa la ruta absoluta
-    directorio_training = r"N:\Proyecto modular\data\data\training_data"
+    #directorio_training = r"N:\Proyecto modular\data\data\training_data"
+
+    # Usa la ruta relativa
+    directorio_actual = os.path.dirname(os.path.abspath(__file__))
+    directorio_training = os.path.join(directorio_actual, "..", "data", "data", "training_data")
 
     # Verifica la ruta
     print(f"Intentando acceder a: {directorio_training}")

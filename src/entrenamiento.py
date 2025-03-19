@@ -88,7 +88,16 @@ class NeuralNetwork:
 
 def entrenar_modelos(K=3):
     print("Cargando datos de entrenamiento...")
-    X_train, y_train = cargar_datos('data/data/training_data')
+    #X_train, y_train = cargar_datos('data/data/training_data')
+    directorio_actual = os.path.dirname(os.path.abspath(__file__))
+    ruta_training_data = os.path.join(directorio_actual, "..", "data", "data", "training_data")
+    X_train, y_train = cargar_datos(ruta_training_data)
+
+    # Verificaciones
+    #print(f"Datos de entrenamiento cargados: {X_train.shape} muestras, {y_train.shape} etiquetas.")
+    #print(f"Ejemplo de etiquetas: {np.unique(y_train)}")
+    #print(f"Primera muestra (normalizada): {X_train[0]}")
+    #print(f"Primera etiqueta: {y_train[0]}")
 
     print("Entrenando modelo KNN...")
     knn = KNN(k=K)
