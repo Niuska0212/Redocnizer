@@ -23,7 +23,7 @@ def cargar_datos(directorio_base):
 
                 imagen = cv2.resize(imagen, (28, 28)).flatten()  # Redimensiona y aplana
                 X.append(imagen)
-                y.append(indice) #USa el nombr ede la carpeta como etiqueta
+                y.append(indice) #Usa el nombre de la carpeta como etiqueta
 
     return np.array(X, dtype=np.float32) / 255.0, np.array(y)
 
@@ -31,8 +31,3 @@ if __name__ == "__main__":
     directorio_training = os.path.join("..", "data", "data", "training_data")
     X, y = cargar_datos(directorio_training)
     print(f"Se cargaron {len(X)} imágenes de entrenamiento.")
-
-
-
-
-

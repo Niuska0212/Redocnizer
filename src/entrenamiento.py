@@ -83,10 +83,23 @@ class NeuralNetwork:
         A2 = self.softmax(Z2)
         return np.argmax(A2, axis=1)
     
+def cargar_datos_corregidos(archivo):
+    try:
+        datos= np.load(archivo, allow_pickle=True)
+        return datos["X"], datos["y"]
+    except FileNotFoundError:
+        print("No hay datos corregidos")
+        return None, None
 
 def entrenar_modelos(K = 3):
     print("Cargando datos de entrenamiento...")
-    X_train, y_train = cargar_datos('data/data/training_data')
+    X_train, y_train = cargar_datos('data/data2/training_data')
+
+    X_corr, y_corr = cargar_datos_corregidos("datos_corregidos.npz")
+
+    if X_corr is not None and y_corr is not None:
+        X_train = np.vstack([X_train, X_corr])
+        y_train = np.append(y_train, y_corr)
 
     print("Entrenando modelo KNN...")
     knn = KNN(k=K)
