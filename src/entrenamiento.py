@@ -32,39 +32,51 @@ class KNN:
 class NeuralNetwork:
     def __init__(self, input_size, hidden_size, output_size, learning_rate=0.1):
         self.learning_rate = learning_rate
-        self.W1 = np.random.randn(input_size, hidden_size) * 0.01
+        self.W1 = np.random.randn(input_size, hidden_size) * np.sqrt(2.0 / input_size) #
         self.b1 = np.zeros((1, hidden_size))
-        self.W2 = np.random.randn(hidden_size, output_size) * 0.01
+        self.W2 = np.random.randn(hidden_size, output_size) * np.sqrt(2.0 / hidden_size)
         self.b2 = np.zeros((1, output_size))
         print(f"Red Neuronal: Inicializada con {input_size} entradas, {hidden_size} neuronas ocultas y {output_size} salidas.")
 
-    def sigmoid(self, z):
-        return 1 / (1 + np.exp(-z))
+    def relu(self, z):
+        #Funcion de activacion ReLU(Unidad lineal rectificada)
+        return np.maximum(0, z)
+    
+    def relu_derivative(self, z):
+        #Derivada de la funcion de activacion ReLU
+        return (z > 0).astype(float)
+    
+    #######################################
+    #cambio de funcion de sigmoid a relu porque la funcion de activacion ReLU es mas eficiente.
+    #def sigmoid(self, z):
+        #return 1 / (1 + np.exp(-z))
 
-    def sigmoid_derivative(self, z):
-        return self.sigmoid(z) * (1 - self.sigmoid(z))
+    #def sigmoid_derivative(self, z):
+    #    return self.sigmoid(z) * (1 - self.sigmoid(z))
+
+    ######################################
 
     def softmax(self, z):
-        exp_z = np.exp(z - np.max(z))
+        exp_z = np.exp(z - np.max(z)) # Evitar overflow
         return exp_z / exp_z.sum(axis=1, keepdims=True)
 
-    def fit(self, X, y, epochs=500):
+    def fit(self, X, y, epochs=1000, lambda_reg=0.01):  #agregamos lambda_reg para regularizacion y aumentamos el numero de epocas
         # Entrena la red con descenso de gradiente
         y = np.eye(np.max(y) + 1)[y.astype(int)]  # One-hot encoding
         for epoch in range(epochs):
             # Forward Propagation
             Z1 = np.dot(X, self.W1) + self.b1
-            A1 = self.sigmoid(Z1)
+            A1 = self.relu(Z1)   #cambio de funcion de activacion a ReLU
             Z2 = np.dot(A1, self.W2) + self.b2
             A2 = self.softmax(Z2)
 
             # Backward Propagation
             dZ2 = A2 - y
-            dW2 = np.dot(A1.T, dZ2) / X.shape[0]
+            dW2 = np.dot(A1.T, dZ2) / X.shape[0] + lambda_reg * self.W2 # Regularización L2
             db2 = np.sum(dZ2, axis=0, keepdims=True) / X.shape[0]
 
-            dZ1 = np.dot(dZ2, self.W2.T) * self.sigmoid_derivative(Z1)
-            dW1 = np.dot(X.T, dZ1) / X.shape[0]
+            dZ1 = np.dot(dZ2, self.W2.T) * self.relu_derivative(Z1) #cambio de funcion de activacion a ReLU
+            dW1 = np.dot(X.T, dZ1) / X.shape[0] + lambda_reg * self.W1 # Regularización L2
             db1 = np.sum(dZ1, axis=0, keepdims=True) / X.shape[0]
 
             # Gradient Descent
@@ -74,19 +86,19 @@ class NeuralNetwork:
             self.b2 -= self.learning_rate * db2
 
             if epoch % 100 == 0:
-                loss = -np.sum(y * np.log(A2)) / X.shape[0]
+                loss = -np.sum(y * np.log(A2)) / X.shape[0] #perdida (entropia cruzada)
                 print(f"Epoch {epoch}, Pérdida: {loss:.4f}")
 
     def predict(self, X):
         # Clasifica datos después del entrenamiento
         Z1 = np.dot(X, self.W1) + self.b1
-        A1 = self.sigmoid(Z1)
+        A1 = self.relu(Z1)
         Z2 = np.dot(A1, self.W2) + self.b2
         A2 = self.softmax(Z2)
         return np.argmax(A2, axis=1)
 
 
-def entrenar_modelos(K=3):
+def entrenar_modelos(K=3): #K=3 es el numero de vecinos mas cercanos 
     print("Cargando datos de entrenamiento...")
     #X_train, y_train = cargar_datos('data/data/training_data')
     directorio_actual = os.path.dirname(os.path.abspath(__file__))
@@ -114,9 +126,10 @@ def entrenar_modelos(K=3):
     joblib.dump(knn, ruta_knn)
     print(f"Modelo KNN guardado en {ruta_knn}.")
 
+    #crear y entrenar modelo de Red Neuronal
     print("Entrenando modelo Red Neuronal...")
     input_size = X_train.shape[1]  # 28x28 = 784
-    output_size = len(set(y_train))
+    output_size = len(set(y_train)) #Numero de clases (digitos 0-9 y letras A-Z)
     #nn = NeuralNetwork(input_size=input_size, hidden_size=64, output_size=output_size)
     nn = NeuralNetwork(input_size=input_size, hidden_size=128, output_size=output_size, learning_rate=0.01)    #en hidden_size podemos cambiar el numero de neuronas
     nn.fit(X_train, y_train, epochs=1000) #podemos cambiar el numero de epocas
