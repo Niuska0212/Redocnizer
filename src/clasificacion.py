@@ -58,7 +58,7 @@ if __name__ == "__main__":
     knn_pred, nn_pred = clasificar_imagen(ruta_imagen, knn, nn)
 
 
-    {interpretar_prediccion(knn_pred)}
+    
     print(f"Predicción KNN: {interpretar_prediccion(knn_pred)}")
     print(f"Predicción Red Neuronal: {interpretar_prediccion(nn_pred)}")
 
