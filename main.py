@@ -32,7 +32,7 @@ if __name__ == '__main__':
 
     # Probar clasificación en una imagen de prueba
     print("\n Probando clasificación en una imagen de prueba...")
-    ruta_prueba = 'data/data/testing_data/O/29090.png'
+    ruta_prueba = 'data/data/testing_data/O/29018.png'
     knn_pred, nn_pred = clasificar_imagen(ruta_prueba, knn_model, nn_model)
     
     print(f"Predicción KNN: {interpretar_prediccion(knn_pred)}")

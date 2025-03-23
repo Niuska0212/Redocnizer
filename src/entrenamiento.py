@@ -2,6 +2,7 @@ import joblib
 import os
 import numpy as np
 from preprocesamiento import cargar_datos
+from clasificacion import interpretar_prediccion
 
 # Implementación manual de KNN
 class KNN:
@@ -96,6 +97,25 @@ class NeuralNetwork:
         Z2 = np.dot(A1, self.W2) + self.b2
         A2 = self.softmax(Z2)
         return np.argmax(A2, axis=1)
+    
+def predecir_corregido(modelo, X, y_corr=None):
+    predicciones = modelo.predict(X)
+    
+    #Muestra la ultima prediccion
+    ultima_prediccion = predicciones[-1]
+    print(f"Predicción final: {interpretar_prediccion(ultima_prediccion)}")
+
+    if y_corr is not None: 
+        print(f"Etiqueta correcta esperada: {interpretar_prediccion(y_corr[-1])}")
+
+    retroalimentacion = input("¿Es correcta la predicción? (s/n): ").strip().lower()
+    if retroalimentacion == 'n':
+        etiqueta_correcta = int(input("Ingrese la etiqueta correcta: "))
+
+        #Agregar el dato corregido al conjunto de entrenamiento
+        modelo.fit(np.array([X[-1]]), np.array([etiqueta_correcta]))
+        print("Modelo actualizado con la nueva información")
+
 
 
 def entrenar_modelos(K=3): #K=3 es el numero de vecinos mas cercanos 
@@ -142,6 +162,14 @@ def entrenar_modelos(K=3): #K=3 es el numero de vecinos mas cercanos
 
 if __name__ == '__main__':
     entrenar_modelos()
+
+    ruta_knn = os.path.join('models', 'knn_model.pkl')
+    knn = joblib.load(ruta_knn)
+
+    #Prediccion con retroalimentacion
+    print("Cargando datos de prueba...")
+    X_test, y_test = cargar_datos('data/data2/testing_data')
+    predecir_corregido(knn, X_test, y_test)
 
 
 
