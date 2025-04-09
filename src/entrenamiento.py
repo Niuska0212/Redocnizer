@@ -3,6 +3,7 @@ import os
 import numpy as np
 from preprocesamiento import cargar_datos
 from clasificacion import interpretar_prediccion
+import random
 
 # Implementación manual de KNN
 class KNN:
@@ -98,23 +99,37 @@ class NeuralNetwork:
         A2 = self.softmax(Z2)
         return np.argmax(A2, axis=1)
     
-def predecir_corregido(modelo, X, y_corr=None):
-    predicciones = modelo.predict(X)
+"""def predecir_corregido(modelo, X, y_corr=None, rutas=None):
+    # Seleccionar una muestra aleatoria
+    indice_random = random.randint(0, len(X) - 1)
+    muestra_random = X[indice_random]
+    predicciones = modelo.predict(np.array([muestra_random]))
     
-    #Muestra la ultima prediccion
-    ultima_prediccion = predicciones[-1]
-    print(f"Predicción final: {interpretar_prediccion(ultima_prediccion)}")
-
-    if y_corr is not None: 
-        print(f"Etiqueta correcta esperada: {interpretar_prediccion(y_corr[-1])}")
-
+    # Mostrar la predicción y la probabilidad asociada (si es una red neuronal)
+    prediccion = predicciones[0]
+    ruta_muestra = rutas[indice_random] if rutas is not None else "Ruta no disponible"
+    print(f"Ruta de la muestra: {ruta_muestra}")
+    print(f"Predicción para la muestra seleccionada: {interpretar_prediccion(prediccion)}")
+    
+    if isinstance(modelo, NeuralNetwork):
+        Z1 = np.dot(muestra_random, modelo.W1) + modelo.b1
+        A1 = modelo.relu(Z1)
+        Z2 = np.dot(A1, modelo.W2) + modelo.b2
+        A2 = modelo.softmax(Z2)
+        probabilidad = A2[0, prediccion] * 100
+        print(f"Porcentaje de confianza del modelo: {probabilidad:.2f}%")
+    
+    if y_corr is not None:
+        etiqueta_real = y_corr[indice_random]
+        print(f"Etiqueta correcta esperada: {interpretar_prediccion(etiqueta_real)}")
+    
     retroalimentacion = input("¿Es correcta la predicción? (s/n): ").strip().lower()
     if retroalimentacion == 'n':
         etiqueta_correcta = int(input("Ingrese la etiqueta correcta: "))
-
-        #Agregar el dato corregido al conjunto de entrenamiento
-        modelo.fit(np.array([X[-1]]), np.array([etiqueta_correcta]))
-        print("Modelo actualizado con la nueva información")
+        
+        # Agregar el dato corregido al conjunto de entrenamiento
+        modelo.fit(np.array([muestra_random]), np.array([etiqueta_correcta]))
+        print("Modelo actualizado con la nueva información")"""
 
 
 
@@ -169,7 +184,8 @@ if __name__ == '__main__':
     #Prediccion con retroalimentacion
     print("Cargando datos de prueba...")
     X_test, y_test = cargar_datos('data/data2/testing_data')
-    predecir_corregido(knn, X_test, y_test)
+    
+    #predecir_corregido(knn, X_test, y_test)
 
 
 

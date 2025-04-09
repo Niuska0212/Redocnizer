@@ -5,13 +5,15 @@ import cv2
 import joblib
 from preprocesamiento import cargar_datos
 
+
 # Agregar el directorio raíz del proyecto al path
 ruta_proyecto = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
 if ruta_proyecto not in sys.path:
     sys.path.append(ruta_proyecto)
 
 def clasificar_imagen(ruta_imagen, modelo_knn, modelo_nn):
-    """Clasifica una imagen con KNN y la Red Neuronal."""
+    #"""Clasifica una imagen con KNN y la Red Neuronal."""
     # Cargar la imagen
     imagen = cv2.imread(ruta_imagen, cv2.IMREAD_GRAYSCALE)
     if imagen is None:
@@ -47,6 +49,8 @@ if __name__ == "__main__":
     # Obtener la ruta base del proyecto
     ruta_base = os.path.dirname(os.path.abspath(__file__))  # Ruta del archivo actual
     ruta_modelos = os.path.join(ruta_base, "..", "models")  # Ruta a la carpeta de modelos
+
+
 
     print("Cargando modelos...")
     knn = joblib.load(os.path.join(ruta_modelos, "knn_model.pkl"))
