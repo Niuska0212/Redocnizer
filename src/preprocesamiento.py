@@ -12,7 +12,7 @@ def modificar_imagen(imagen):
 
     #2. Traslacion +/- 2 pixeles (dexplazamiento leves de la imagen)
     tx , ty = random.randint(-2, 2), random.randint(-2, 2)
-    M_trans = np.float32([[2, 0, tx], [0, 2, ty]])
+    M_trans = np.float32([[1, 0, tx], [0, 1, ty]])
     imagen = cv2.warpAffine(imagen,M_trans, (28, 28), borderValue=(0,0,0))
 
     #3. Escalado +/- 10% (ligero cambio de tamaño de la imagen)
