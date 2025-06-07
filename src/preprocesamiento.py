@@ -6,12 +6,12 @@ import random
 def modificar_imagen(imagen):
     #inicia aummento de datos a una imagen (rotacion, traslacion, escalado, ruido).
     #1. Rotacion +/- 15 grados
-    angulo = random.uniform(-15, 15)
+    angulo = random.uniform(-10, 10)
     M_rot = cv2.getRotationMatrix2D((14, 14), angulo, 1.0)  # Centro de rotación en (14, 14)
     imagen = cv2.warpAffine(imagen, M_rot, (28, 28), borderValue=(0,0,0))
 
     #2. Traslacion +/- 2 pixeles (dexplazamiento leves de la imagen)
-    tx , ty = random.randint(-2, 2), random.randint(-2, 2)
+    tx , ty = random.randint(-1, 1), random.randint(-1, 1)
     M_trans = np.float32([[1, 0, tx], [0, 1, ty]])
     imagen = cv2.warpAffine(imagen,M_trans, (28, 28), borderValue=(0,0,0))
 
@@ -30,7 +30,7 @@ def modificar_imagen(imagen):
     if random.random() < 0.2: #Apliucar ruido al 20% de las imagenes
         row, col = imagen.shape
         mean = 0 
-        var = random.uniform(50, 150) #Variacion del ruido entre 50 y 150
+        var = random.uniform(10, 50) #Variacion del ruido entre 50 y 150
         sigma = var ** 0.5
         gauss = np.random.normal(mean, sigma, (row, col))
         imagen = imagen + gauss
@@ -62,7 +62,7 @@ def cargar_datos(directorio_base, is_training=False):
                     print(f"Error al cargar la imagen {ruta}. Se omite.")
                     continue  # Salta esta imagen y sigue con la siguiente
 
-                if is_training:
+                if is_training and random.random() < 0.6:  # solo modifica el 50% de las imágenes en entrenamiento
                     imagen = modificar_imagen(imagen)
 
                 imagen = cv2.resize(imagen, (28, 28)).flatten()  # Redimensiona y aplana

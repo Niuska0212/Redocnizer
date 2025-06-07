@@ -31,7 +31,7 @@ def clasificar_imagen(ruta_imagen, modelo_knn, modelo_nn):
 
 def clasificar_conjunto_datos(ruta_datos, modelo_knn, modelo_nn):
     """Clasifica un conjunto de datos completo."""
-    X, y = cargar_datos(ruta_datos)
+    X, y = cargar_datos(ruta_datos, is_training=False)  # Cargar datos sin modificaciones
     knn_predicciones = modelo_knn.predict(X)
     nn_predicciones = modelo_nn.predict(X)
 

@@ -171,9 +171,6 @@ def entrenar_modelos(K=3): #K=3 es el numero de vecinos mas cercanos
     if not os.path.exists(directorio_modelos):
         os.makedirs(directorio_modelos)
 
-    ruta_knn = os.path.join(directorio_modelos, 'knn_model.pkl')
-    joblib.dump(knn, ruta_knn)
-    print(f"Modelo KNN guardado en {ruta_knn}.")
 
     #crear y entrenar modelo de Red Neuronal
     print("Entrenando modelo Red Neuronal...")
@@ -182,6 +179,10 @@ def entrenar_modelos(K=3): #K=3 es el numero de vecinos mas cercanos
     #nn = NeuralNetwork(input_size=input_size, hidden_size=64, output_size=output_size)
     nn = NeuralNetwork(input_size=input_size, hidden_size=128, output_size=output_size, learning_rate=0.01)    #en hidden_size podemos cambiar el numero de neuronas
     nn.fit(X_train, y_train, epochs=1000) #podemos cambiar el numero de epocas
+
+    ruta_knn = os.path.join(directorio_modelos, 'knn_model.pkl')
+    joblib.dump(knn, ruta_knn)
+    print(f"Modelo KNN guardado en {ruta_knn}.")
 
     # Guardar el modelo de Red Neuronal
     ruta_nn = os.path.join(directorio_modelos, 'nn_model.pkl')
@@ -210,7 +211,7 @@ if __name__ == '__main__':
 
     #Prediccion con retroalimentacion
     print("Cargando datos de prueba...")
-    X_test, y_test = cargar_datos('data/data/testing_data')
+    X_test, y_test = cargar_datos('data/data/testing_data' , is_training=False)  # Cargar datos de prueba sin modificaciones
 
     ruta_testing_data = os.path.join('data', 'data', 'testing_data')
     evaluar_modelos(ruta_testing_data, knn, nn)
