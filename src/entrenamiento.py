@@ -2,7 +2,7 @@ import joblib
 import os
 import numpy as np
 from preprocesamiento import cargar_datos
-from clasificacion import interpretar_prediccion
+from clasificacion import interpretar_prediccion, clasificar_conjunto_datos
 import random
 
 # Implementación manual de KNN
@@ -62,33 +62,49 @@ class NeuralNetwork:
         exp_z = np.exp(z - np.max(z)) # Evitar overflow
         return exp_z / exp_z.sum(axis=1, keepdims=True)
 
-    def fit(self, X, y, epochs=1000, lambda_reg=0.01):  #agregamos lambda_reg para regularizacion y aumentamos el numero de epocas
-        # Entrena la red con descenso de gradiente
-        y = np.eye(np.max(y) + 1)[y.astype(int)]  # One-hot encoding
+    def fit(self, X, y, epochs=1000, lambda_reg=0.01, batch_size=64):
+        y_one_hot = np.eye(self.W2.shape[1])[y.astype(int)]  # One-hot encoding de y
+        num_samples = X.shape[0]
         for epoch in range(epochs):
-            # Forward Propagation
-            Z1 = np.dot(X, self.W1) + self.b1
-            A1 = self.relu(Z1)   #cambio de funcion de activacion a ReLU
-            Z2 = np.dot(A1, self.W2) + self.b2
-            A2 = self.softmax(Z2)
+            # Mezclar los datos de entrenamiento en cada época
+            indices = np.arange(num_samples)
+            np.random.shuffle(indices)
+            X_shuffled = X[indices]
+            y_shuffled = y_one_hot[indices]
 
-            # Backward Propagation
-            dZ2 = A2 - y
-            dW2 = np.dot(A1.T, dZ2) / X.shape[0] + lambda_reg * self.W2 # Regularización L2
-            db2 = np.sum(dZ2, axis=0, keepdims=True) / X.shape[0]
+            # Iterar sobre mini-lotes
+            for i in range(0, num_samples, batch_size):
+                X_batch = X_shuffled[i:i + batch_size]
+                y_batch = y_shuffled[i:i + batch_size]
 
-            dZ1 = np.dot(dZ2, self.W2.T) * self.relu_derivative(Z1) #cambio de funcion de activacion a ReLU
-            dW1 = np.dot(X.T, dZ1) / X.shape[0] + lambda_reg * self.W1 # Regularización L2
-            db1 = np.sum(dZ1, axis=0, keepdims=True) / X.shape[0]
+                # Forward Propagation
+                Z1 = np.dot(X_batch, self.W1) + self.b1
+                A1 = self.relu(Z1)
+                Z2 = np.dot(A1, self.W2) + self.b2
+                A2 = self.softmax(Z2)
 
-            # Gradient Descent
-            self.W1 -= self.learning_rate * dW1
-            self.b1 -= self.learning_rate * db1
-            self.W2 -= self.learning_rate * dW2
-            self.b2 -= self.learning_rate * db2
+                # Backward Propagation
+                dZ2 = A2 - y_batch
+                dW2 = np.dot(A1.T, dZ2) / X_batch.shape[0] + lambda_reg * self.W2
+                db2 = np.sum(dZ2, axis=0, keepdims=True) / X_batch.shape[0]
 
+                dZ1 = np.dot(dZ2, self.W2.T) * self.relu_derivative(Z1)
+                dW1 = np.dot(X_batch.T, dZ1) / X_batch.shape[0] + lambda_reg * self.W1
+                db1 = np.sum(dZ1, axis=0, keepdims=True) / X_batch.shape[0]
+
+                # Gradient Descent
+                self.W1 -= self.learning_rate * dW1
+                self.b1 -= self.learning_rate * db1
+                self.W2 -= self.learning_rate * dW2
+                self.b2 -= self.learning_rate * db2
+
+            # Calcular pérdida al final de la época
             if epoch % 100 == 0:
-                loss = -np.sum(y * np.log(A2)) / X.shape[0] #perdida (entropia cruzada)
+                Z1_full = np.dot(X, self.W1) + self.b1
+                A1_full = self.relu(Z1_full)
+                Z2_full = np.dot(A1_full, self.W2) + self.b2
+                A2_full = self.softmax(Z2_full)
+                loss = -np.sum(y_one_hot * np.log(A2_full + 1e-9)) / X.shape[0]
                 print(f"Epoch {epoch}, Pérdida: {loss:.4f}")
 
     def predict(self, X):
@@ -138,7 +154,7 @@ def entrenar_modelos(K=3): #K=3 es el numero de vecinos mas cercanos
     #X_train, y_train = cargar_datos('data/data/training_data')
     directorio_actual = os.path.dirname(os.path.abspath(__file__))
     ruta_training_data = os.path.join(directorio_actual, "..", "data", "data", "training_data")
-    X_train, y_train = cargar_datos(ruta_training_data)
+    X_train, y_train = cargar_datos(ruta_training_data, is_training= True)  # Cargar datos de entrenamiento con modificaciones
 
     # Verificaciones
     #print(f"Datos de entrenamiento cargados: {X_train.shape} muestras, {y_train.shape} etiquetas.")
@@ -151,12 +167,10 @@ def entrenar_modelos(K=3): #K=3 es el numero de vecinos mas cercanos
     knn.fit(X_train, y_train)
     print("Modelo KNN entrenado con éxito.")
 
-    # Verificar si el directorio 'models' existe, si no, crearlo
-    directorio_modelos = 'models'
+    directorio_modelos = os.path.join(directorio_actual, "..", "models")
     if not os.path.exists(directorio_modelos):
         os.makedirs(directorio_modelos)
 
-    # Guardar el modelo KNN
     ruta_knn = os.path.join(directorio_modelos, 'knn_model.pkl')
     joblib.dump(knn, ruta_knn)
     print(f"Modelo KNN guardado en {ruta_knn}.")
@@ -175,15 +189,31 @@ def entrenar_modelos(K=3): #K=3 es el numero de vecinos mas cercanos
     print(f"Modelo Red Neuronal guardado en {ruta_nn}.")
 
 
+def evaluar_modelos(ruta_datos, knn, nn):
+    print("Evaluando modelos en el conjunto de prueba ...")
+    knn_preds, nn_preds, y_true = clasificar_conjunto_datos(ruta_datos, knn, nn)
+    knn_precision = np.mean(knn_preds == y_true)
+    nn_precision = np.mean(nn_preds == y_true)
+    print(f"Precisión KNN en prueba: {knn_precision * 100:.2f}")
+    print(f"Precisión Red Neuronal en prueba: {nn_precision * 100:.2f}")
+
+
+
 if __name__ == '__main__':
     entrenar_modelos()
 
     ruta_knn = os.path.join('models', 'knn_model.pkl')
+    ruta_nn = os.path.join('models', 'nn_model.pkl')
+
     knn = joblib.load(ruta_knn)
+    nn = joblib.load(ruta_nn)
 
     #Prediccion con retroalimentacion
     print("Cargando datos de prueba...")
-    X_test, y_test = cargar_datos('data/data2/testing_data')
+    X_test, y_test = cargar_datos('data/data/testing_data')
+
+    ruta_testing_data = os.path.join('data', 'data', 'testing_data')
+    evaluar_modelos(ruta_testing_data, knn, nn)
     
     #predecir_corregido(knn, X_test, y_test)
 

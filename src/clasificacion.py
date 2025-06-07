@@ -50,8 +50,6 @@ if __name__ == "__main__":
     ruta_base = os.path.dirname(os.path.abspath(__file__))  # Ruta del archivo actual
     ruta_modelos = os.path.join(ruta_base, "..", "models")  # Ruta a la carpeta de modelos
 
-
-
     print("Cargando modelos...")
     knn = joblib.load(os.path.join(ruta_modelos, "knn_model.pkl"))
     nn = joblib.load(os.path.join(ruta_modelos, "nn_model.pkl"))
