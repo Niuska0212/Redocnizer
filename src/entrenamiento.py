@@ -67,7 +67,7 @@ class NeuralNetwork:
         num_samples = X.shape[0]
         for epoch in range(epochs):
             # Mezclar los datos de entrenamiento en cada época
-            indices = np.arange(num_samples)
+            indices = np.arange(num_samples )
             np.random.shuffle(indices)
             X_shuffled = X[indices]
             y_shuffled = y_one_hot[indices]
@@ -211,7 +211,7 @@ if __name__ == '__main__':
 
     #Prediccion con retroalimentacion
     print("Cargando datos de prueba...")
-    X_test, y_test = cargar_datos('data/data/testing_data' , is_training=False)  # Cargar datos de prueba sin modificaciones
+    X_test, y_test = cargar_datos('data/data/testing_data' , is_training=True)  # Cargar datos de prueba sin modificaciones
 
     ruta_testing_data = os.path.join('data', 'data', 'testing_data')
     evaluar_modelos(ruta_testing_data, knn, nn)
