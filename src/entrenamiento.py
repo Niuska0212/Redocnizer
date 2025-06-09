@@ -32,13 +32,16 @@ class KNN:
 
 # Implementación manual de una red neuronal simple con una capa oculta
 class NeuralNetwork:
-    def __init__(self, input_size, hidden_size, output_size, learning_rate=0.1):
+    def __init__(self, input_size, hidden_size1, hidden_size2, output_size, learning_rate=0.01):
         self.learning_rate = learning_rate
-        self.W1 = np.random.randn(input_size, hidden_size) * np.sqrt(2.0 / input_size) #
-        self.b1 = np.zeros((1, hidden_size))
-        self.W2 = np.random.randn(hidden_size, output_size) * np.sqrt(2.0 / hidden_size)
-        self.b2 = np.zeros((1, output_size))
-        print(f"Red Neuronal: Inicializada con {input_size} entradas, {hidden_size} neuronas ocultas y {output_size} salidas.")
+        self.W1 = np.random.randn(input_size, hidden_size1) * np.sqrt(2.0 / input_size)
+        self.b1 = np.zeros((1, hidden_size1))
+        self.W2 = np.random.randn(hidden_size1, hidden_size2) * np.sqrt(2.0 / hidden_size1)
+        self.b2 = np.zeros((1, hidden_size2))
+        self.W3 = np.random.randn(hidden_size2, output_size) * np.sqrt(2.0 / hidden_size2)
+        self.b3 = np.zeros((1, output_size))
+        print(f"Red Neuronal: Inicializada con {input_size} entradas, {hidden_size1} y {hidden_size2} ocultas, {output_size} salidas.")
+
 
     def relu(self, z):
         #Funcion de activacion ReLU(Unidad lineal rectificada)
@@ -47,7 +50,7 @@ class NeuralNetwork:
     def relu_derivative(self, z):
         #Derivada de la funcion de activacion ReLU
         return (z > 0).astype(float)
-    
+     
     #######################################
     #cambio de funcion de sigmoid a relu porque la funcion de activacion ReLU es mas eficiente.
     #def sigmoid(self, z):
@@ -62,49 +65,49 @@ class NeuralNetwork:
         exp_z = np.exp(z - np.max(z)) # Evitar overflow
         return exp_z / exp_z.sum(axis=1, keepdims=True)
 
-    def fit(self, X, y, epochs=1000, lambda_reg=0.01, batch_size=64):
-        y_one_hot = np.eye(self.W2.shape[1])[y.astype(int)]  # One-hot encoding de y
+    def fit(self, X, y, epochs=200, lambda_reg=0.01, batch_size=128):
+        y_one_hot = np.eye(self.W3.shape[1])[y.astype(int)]
         num_samples = X.shape[0]
         for epoch in range(epochs):
-            # Mezclar los datos de entrenamiento en cada época
-            indices = np.arange(num_samples )
+            indices = np.arange(num_samples)
             np.random.shuffle(indices)
             X_shuffled = X[indices]
             y_shuffled = y_one_hot[indices]
-
-            # Iterar sobre mini-lotes
             for i in range(0, num_samples, batch_size):
                 X_batch = X_shuffled[i:i + batch_size]
                 y_batch = y_shuffled[i:i + batch_size]
-
-                # Forward Propagation
+                # Forward
                 Z1 = np.dot(X_batch, self.W1) + self.b1
                 A1 = self.relu(Z1)
                 Z2 = np.dot(A1, self.W2) + self.b2
-                A2 = self.softmax(Z2)
-
-                # Backward Propagation
-                dZ2 = A2 - y_batch
+                A2 = self.relu(Z2)
+                Z3 = np.dot(A2, self.W3) + self.b3
+                A3 = self.softmax(Z3)
+                # Backward
+                dZ3 = A3 - y_batch
+                dW3 = np.dot(A2.T, dZ3) / X_batch.shape[0] + lambda_reg * self.W3
+                db3 = np.sum(dZ3, axis=0, keepdims=True) / X_batch.shape[0]
+                dZ2 = np.dot(dZ3, self.W3.T) * self.relu_derivative(Z2)
                 dW2 = np.dot(A1.T, dZ2) / X_batch.shape[0] + lambda_reg * self.W2
                 db2 = np.sum(dZ2, axis=0, keepdims=True) / X_batch.shape[0]
-
                 dZ1 = np.dot(dZ2, self.W2.T) * self.relu_derivative(Z1)
                 dW1 = np.dot(X_batch.T, dZ1) / X_batch.shape[0] + lambda_reg * self.W1
                 db1 = np.sum(dZ1, axis=0, keepdims=True) / X_batch.shape[0]
-
-                # Gradient Descent
+                # Update
                 self.W1 -= self.learning_rate * dW1
                 self.b1 -= self.learning_rate * db1
                 self.W2 -= self.learning_rate * dW2
                 self.b2 -= self.learning_rate * db2
-
-            # Calcular pérdida al final de la época
+                self.W3 -= self.learning_rate * dW3
+                self.b3 -= self.learning_rate * db3
             if epoch % 100 == 0:
-                Z1_full = np.dot(X, self.W1) + self.b1
-                A1_full = self.relu(Z1_full)
-                Z2_full = np.dot(A1_full, self.W2) + self.b2
-                A2_full = self.softmax(Z2_full)
-                loss = -np.sum(y_one_hot * np.log(A2_full + 1e-9)) / X.shape[0]
+                Z1 = np.dot(X, self.W1) + self.b1
+                A1 = self.relu(Z1)
+                Z2 = np.dot(A1, self.W2) + self.b2
+                A2 = self.relu(Z2)
+                Z3 = np.dot(A2, self.W3) + self.b3
+                A3 = self.softmax(Z3)
+                loss = -np.sum(y_one_hot * np.log(A3 + 1e-9)) / X.shape[0]
                 print(f"Epoch {epoch}, Pérdida: {loss:.4f}")
 
     def predict(self, X):
@@ -112,8 +115,10 @@ class NeuralNetwork:
         Z1 = np.dot(X, self.W1) + self.b1
         A1 = self.relu(Z1)
         Z2 = np.dot(A1, self.W2) + self.b2
-        A2 = self.softmax(Z2)
-        return np.argmax(A2, axis=1)
+        A2 = self.relu(Z2)
+        Z3 = np.dot(A2, self.W3) + self.b3
+        A3 = self.softmax(Z3)
+        return np.argmax(A3, axis=1)
     
 """def predecir_corregido(modelo, X, y_corr=None, rutas=None):
     # Seleccionar una muestra aleatoria
@@ -175,9 +180,12 @@ def entrenar_modelos(K=3): #K=3 es el numero de vecinos mas cercanos
     #crear y entrenar modelo de Red Neuronal
     print("Entrenando modelo Red Neuronal...")
     input_size = X_train.shape[1]  # 28x28 = 784
-    output_size = len(set(y_train)) #Numero de clases (digitos 0-9 y letras A-Z)
+    output_size = int(np.max(y_train)) + 1 #Numero de clases (digitos 0-9 y letras A-Z)
     #nn = NeuralNetwork(input_size=input_size, hidden_size=64, output_size=output_size)
-    nn = NeuralNetwork(input_size=input_size, hidden_size=128, output_size=output_size, learning_rate=0.01)    #en hidden_size podemos cambiar el numero de neuronas
+    #nn = NeuralNetwork(input_size=input_size, hidden_size=128, output_size=output_size, learning_rate=0.01)    #en hidden_size podemos cambiar el numero de neuronas
+
+    nn = NeuralNetwork(input_size=input_size, hidden_size1=128, hidden_size2=64, output_size=output_size, learning_rate=0.01)
+
     nn.fit(X_train, y_train, epochs=1000) #podemos cambiar el numero de epocas
 
     ruta_knn = os.path.join(directorio_modelos, 'knn_model.pkl')

@@ -58,7 +58,7 @@ def predecir_corregido_imagen(ruta_imagen, modelo):
 
 if __name__ == '__main__':
     # Entrenar modelos
-    #entrenar_modelos()
+    #sentrenar_modelos()
 
     # Cargar modelos entrenados
     print("Cargando modelos entrenados...")
@@ -67,13 +67,14 @@ if __name__ == '__main__':
 
     # Probar clasificación en una imagen de prueba
     print("\nProbando clasificación en una imagen de prueba...")
-    ruta_prueba = 'data/data/testing_data/M/28800.png'
+    ruta_prueba = 'data/data/testing_data/debug/debug_modificada_3 copy.png'
     knn_pred, nn_pred = clasificar_imagen(ruta_prueba, knn_model, nn_model)
     
     print(f"Predicción KNN: {interpretar_prediccion(knn_pred)}")
     print(f"Predicción Red Neuronal: {interpretar_prediccion(nn_pred)}")
     
-    # Ofrecer corrección interactiva para KNN
+    # Ofrecer corrección interactiva para KNNn
+    
     opcion = input("\n¿Deseas corregir la predicción del modelo KNN? (s/n): ").strip().lower()
     if opcion == 's':
         predecir_corregido_imagen(ruta_prueba, knn_model)

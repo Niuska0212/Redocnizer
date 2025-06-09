@@ -6,7 +6,7 @@ import random
 def modificar_imagen(imagen):
     #inicia aummento de datos a una imagen (rotacion, traslacion, escalado, ruido).
     #1. Rotacion +/- 15 grados
-    angulo = random.uniform(-10, 10)
+    angulo = random.uniform(-20, 20)
     M_rot = cv2.getRotationMatrix2D((14, 14), angulo, 1.0)  # Centro de rotación en (14, 14)
     imagen = cv2.warpAffine(imagen, M_rot, (28, 28), borderValue=(0,0,0))
 
@@ -36,6 +36,15 @@ def modificar_imagen(imagen):
         imagen = imagen + gauss
         imagen = np.clip(imagen, 0, 255).astype(np.uint8)  # Asegurarse de que los valores estén entre 0 y 255
 
+
+
+    if not hasattr(modificar_imagen, "contador"):
+        modificar_imagen.contador = 0
+    if modificar_imagen.contador < 10 and random.random() < 0.8:  # Guardar solo el 10% de las imágenes modificadas y con probabilidad del 80% 
+        #ruta_debug = os.path.join(os.path.dirname(__file__), "debug", f"debug_modificada_{modificar_imagen.contador}.png")
+        #cv2.imwrite(ruta_debug, imagen)
+        modificar_imagen.contador += 1
+
     return imagen
 
 
@@ -52,8 +61,13 @@ def cargar_datos(directorio_base, is_training=False):
     etiquetas = {nombre: i for i, nombre in enumerate(sorted(f for f in os.listdir(directorio_base) if os.path.isdir(os.path.join(directorio_base, f))))}
 
     for etiqueta, indice in etiquetas.items():  # Recorre todas las carpetas A-Z, 0-9
+
+        #if etiqueta != "B":
+        #     continue
+
         carpeta = os.path.join(directorio_base, etiqueta)
         if os.path.isdir(carpeta):  # Verifica que es una carpeta
+            #print(f"Procesando carpeta: {etiqueta} ({carpeta})")
             for archivo in os.listdir(carpeta):  # Lee cada imagen
                 ruta = os.path.join(carpeta, archivo)
                 imagen = cv2.imread(ruta, cv2.IMREAD_GRAYSCALE)  # Carga en escala de grises
@@ -62,7 +76,7 @@ def cargar_datos(directorio_base, is_training=False):
                     print(f"Error al cargar la imagen {ruta}. Se omite.")
                     continue  # Salta esta imagen y sigue con la siguiente
 
-                if is_training and random.random() < 0.80:  # solo modifica el 70% de las imágenes si es entrenamiento
+                if is_training and random.random() < 0.90:  # solo modifica el 70% de las imágenes si es entrenamiento
                     imagen = modificar_imagen(imagen)
 
                 imagen = cv2.resize(imagen, (28, 28)).flatten()  # Redimensiona y aplana
