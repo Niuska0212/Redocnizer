@@ -77,7 +77,7 @@ def cargar_datos(directorio_base, is_training=False):
         }
         print("Usando mapeo automático simple.")
 
-    max_por_carpeta = 400  # Máximo de imágenes por carpeta
+    max_por_carpeta = 200  # Máximo de imágenes por carpeta
 
     for etiqueta, indice in etiquetas.items():
         carpeta = os.path.join(directorio_base, etiqueta)
