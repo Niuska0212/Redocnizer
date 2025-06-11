@@ -186,9 +186,9 @@ if __name__ == '__main__':
 
     #Prediccion con retroalimentacion
     print("Cargando datos de prueba...")
-    X_test, y_test = cargar_datos('data/data/dataset' , is_training=False)  # Cargar datos de prueba sin modificaciones
+    X_test, y_test = cargar_datos('data/data/testing_data' , is_training=False)  # Cargar datos de prueba sin modificaciones
 
-    ruta_testing_data = os.path.join('data', 'data', 'dataset')
+    ruta_testing_data = os.path.join('data', 'data', 'testing_data')
     evaluar_modelos(ruta_testing_data, knn, nn)
     
     #predecir_corregido(knn, X_test, y_test)
