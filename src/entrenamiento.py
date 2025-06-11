@@ -158,11 +158,11 @@ def entrenar_modelos(K=3): #K=3 es el numero de vecinos mas cercanos
     print("Cargando datos de entrenamiento...")
     #X_train, y_train = cargar_datos('data/data/training_data')
     directorio_actual = os.path.dirname(os.path.abspath(__file__))
-    ruta_training_data = os.path.join(directorio_actual, "..", "data", "data", "data_set2")
-    X_train, y_train = cargar_datos(ruta_training_data, is_training= True)  # Cargar datos de entrenamiento con modificaciones
-    print("X_train shape:", X_train.shape)
-    print("y_train shape:", y_train.shape)
-    print("Etiquetas únicas:", np.unique(y_train))
+    ruta_training_data = os.path.join(directorio_actual, "..", "data", "data", "training_data")
+    X_train, y_train = cargar_datos(ruta_training_data, is_training= False)  # Cargar datos de entrenamiento con modificaciones
+    #print("X_train shape:", X_train.shape)
+    #print("y_train shape:", y_train.shape)
+    #print("Etiquetas únicas:", np.unique(y_train))
 
     # Verificaciones
     #print(f"Datos de entrenamiento cargados: {X_train.shape} muestras, {y_train.shape} etiquetas.")

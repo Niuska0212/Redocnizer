@@ -56,9 +56,24 @@ def cargar_datos(directorio_base, is_training=False):
     # Verifica si el directorio existe
     if not os.path.exists(directorio_base):
         raise FileNotFoundError(f"El directorio {directorio_base} no existe.")
+    
+    carpetas= [f for f in os.listdir(directorio_base) if os.path.isdir(os.path.join(directorio_base, f))]
+    #detecta si es dataset extendido (mayusculas/minusculas)
+    if any("_U" in c or "_L" in c for c in carpetas):
+        print("Detectado dataset extendido (mayúsculas y minúsculas).")
+        # Si es dataset extendido, filtra las carpetas que contienen "_U" o "_L"
+        etiquetas = {
+            **{str(i): i for i in range(10)},  # Números del 0 al 9
+            **{f"{chr(65 + i )}_U": 10 + i for i in range(26)},  # Letras mayúsculas A-Z
+            **{f"{chr(97 + i )}_L": 36 + i for i in range(26)}  # Letras minúsculas a-z
+        }
+        print("Usando mapeo extendido (mayusculas y minúsculas).")
 
-    # Filtra solo carpetas para evitar archivos sueltos
-    etiquetas = {nombre: i for i, nombre in enumerate(sorted(f for f in os.listdir(directorio_base) if os.path.isdir(os.path.join(directorio_base, f))))}
+    else:
+        # Mapeo automático para dataset simple
+        etiquetas = {nombre: i for i, nombre in enumerate(sorted(f for f in os.listdir(directorio_base) if os.path.isdir(os.path.join(directorio_base, f))))}
+        #etiquetas = {nombre: i for i, nombre in enumerate(sorted(carpetas))}
+        print("Usando mapeo automático simple.")
 
     for etiqueta, indice in etiquetas.items():  # Recorre todas las carpetas A-Z, 0-9
 
@@ -67,8 +82,11 @@ def cargar_datos(directorio_base, is_training=False):
 
         carpeta = os.path.join(directorio_base, etiqueta)
         if os.path.isdir(carpeta):  # Verifica que es una carpeta
+            contador = 0
             #print(f"Procesando carpeta: {etiqueta} ({carpeta})")
             for archivo in os.listdir(carpeta):  # Lee cada imagen
+                if contador >= 800:
+                    break  # Limita a 1000 imágenes por carpeta
                 ruta = os.path.join(carpeta, archivo)
                 imagen = cv2.imread(ruta, cv2.IMREAD_GRAYSCALE)  # Carga en escala de grises
 
@@ -82,6 +100,7 @@ def cargar_datos(directorio_base, is_training=False):
                 imagen = cv2.resize(imagen, (28, 28)).flatten()  # Redimensiona y aplana
                 X.append(imagen)
                 y.append(indice)  # Usa el nombre de la carpeta como etiqueta
+                contador += 1
     print(f"Se cargaron {len(X)} imágenes.")
     return np.array(X, dtype=np.float32) / 255.0, np.array(y)
 
