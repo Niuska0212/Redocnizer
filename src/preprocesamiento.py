@@ -77,7 +77,7 @@ def cargar_datos(directorio_base, is_training=False):
         }
         print("Usando mapeo automático simple.")
 
-    max_por_carpeta = 200  # Máximo de imágenes por carpeta
+    max_por_carpeta = 400  # Máximo de imágenes por carpeta
 
     for etiqueta, indice in etiquetas.items():
         carpeta = os.path.join(directorio_base, etiqueta)
@@ -109,13 +109,61 @@ def cargar_datos(directorio_base, is_training=False):
     return np.array(X, dtype=np.float32) / 255.0, np.array(y)
 
 
+def cargar_datos_split(directorio_base, test_size=0.3, random_state=42):
+    """Carga imágenes y divide en entrenamiento y prueba (stratified)."""
+    X, y = [], []
+    if not os.path.exists(directorio_base):
+        raise FileNotFoundError(f"El directorio {directorio_base} no existe.")
+    carpetas = [f for f in os.listdir(directorio_base) if os.path.isdir(os.path.join(directorio_base, f))]
+    if any("_U" in c or "_L" in c for c in carpetas):
+        etiquetas = {
+            **{str(i): i for i in range(10)},
+            **{f"{chr(65 + i)}_U": 10 + i for i in range(26)},
+            **{f"{chr(97 + i)}_L": 36 + i for i in range(26)}
+        }
+    else:
+        etiquetas = {
+            nombre: i for i, nombre in enumerate(
+                sorted(f for f in os.listdir(directorio_base) if os.path.isdir(os.path.join(directorio_base, f)))
+            )
+        }
+    max_por_carpeta = 400
+    for etiqueta, indice in etiquetas.items():
+        carpeta = os.path.join(directorio_base, etiqueta)
+        if os.path.isdir(carpeta):
+            archivos = [f for f in os.listdir(carpeta) if os.path.isfile(os.path.join(carpeta, f))]
+            if len(archivos) > max_por_carpeta:
+                archivos = random.sample(archivos, max_por_carpeta)
+            else:
+                random.shuffle(archivos)
+            for archivo in archivos:
+                ruta = os.path.join(carpeta, archivo)
+                imagen = cv2.imread(ruta, cv2.IMREAD_GRAYSCALE)
+                if imagen is None:
+                    continue
+                imagen = cv2.resize(imagen, (28, 28)).flatten()
+                X.append(imagen)
+                y.append(indice)
+    X = np.array(X, dtype=np.float32) / 255.0
+    y = np.array(y)
+    # Mezclar y dividir
+    np.random.seed(random_state)
+    indices = np.arange(len(X))
+    np.random.shuffle(indices)
+    X, y = X[indices], y[indices]
+    split = int(len(X) * (1 - test_size))
+    X_train, X_test = X[:split], X[split:]
+    y_train, y_test = y[:split], y[split:]
+    return X_train, X_test, y_train, y_test
+
+
 if __name__ == "__main__":
     # Usa la ruta absoluta
     #directorio_training = r"N:\Proyecto modular\data\data\training_data"
 
     # Usa la ruta relativa
     directorio_actual = os.path.dirname(os.path.abspath(__file__))
-    directorio_training = os.path.join(directorio_actual, "..", "data", "data", "training_data")
+    directorio_training = os.path.join(directorio_actual, "..", "data", "data", "dataset")
 
     # Verifica la ruta
     print(f"Intentando acceder a: {directorio_training}")

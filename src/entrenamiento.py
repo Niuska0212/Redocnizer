@@ -1,10 +1,10 @@
 import joblib
 import os
 import numpy as np
-from preprocesamiento import cargar_datos
+from preprocesamiento import cargar_datos, cargar_datos_split
 from clasificacion import interpretar_prediccion, clasificar_conjunto_datos
 import random
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
+from sklearn.metrics import confusion_matrix, classification_report
 
 
 # Implementación manual de KNN
@@ -67,9 +67,12 @@ class NeuralNetwork:
         exp_z = np.exp(z - np.max(z)) # Evitar overflow
         return exp_z / exp_z.sum(axis=1, keepdims=True)
 
-    def fit(self, X, y, epochs=200, lambda_reg=0.01, batch_size=128):
+    def fit(self, X, y, epochs=200, lambda_reg=0.01, batch_size=128, early_stopping_rounds=20, dropout_rate=0.2):
         y_one_hot = np.eye(self.W3.shape[1])[y.astype(int)]
         num_samples = X.shape[0]
+        best_loss = float('inf')
+        rounds_without_improvement = 0
+
         for epoch in range(epochs):
             indices = np.arange(num_samples)
             np.random.shuffle(indices)
@@ -81,8 +84,14 @@ class NeuralNetwork:
                 # Forward
                 Z1 = np.dot(X_batch, self.W1) + self.b1
                 A1 = self.relu(Z1)
+                # Dropout en la primera capa oculta
+                dropout_mask1 = (np.random.rand(*A1.shape) > dropout_rate).astype(float)
+                A1 *= dropout_mask1
                 Z2 = np.dot(A1, self.W2) + self.b2
                 A2 = self.relu(Z2)
+                # Dropout en la segunda capa oculta
+                dropout_mask2 = (np.random.rand(*A2.shape) > dropout_rate).astype(float)
+                A2 *= dropout_mask2
                 Z3 = np.dot(A2, self.W3) + self.b3
                 A3 = self.softmax(Z3)
                 # Backward
@@ -102,15 +111,24 @@ class NeuralNetwork:
                 self.b2 -= self.learning_rate * db2
                 self.W3 -= self.learning_rate * dW3
                 self.b3 -= self.learning_rate * db3
+            # Early stopping check
+            Z1 = np.dot(X, self.W1) + self.b1
+            A1 = self.relu(Z1)
+            Z2 = np.dot(A1, self.W2) + self.b2
+            A2 = self.relu(Z2)
+            Z3 = np.dot(A2, self.W3) + self.b3
+            A3 = self.softmax(Z3)
+            loss = -np.sum(y_one_hot * np.log(A3 + 1e-9)) / X.shape[0]
+            if loss < best_loss - 1e-4:
+                best_loss = loss
+                rounds_without_improvement = 0
+            else:
+                rounds_without_improvement += 1
             if epoch % 100 == 0:
-                Z1 = np.dot(X, self.W1) + self.b1
-                A1 = self.relu(Z1)
-                Z2 = np.dot(A1, self.W2) + self.b2
-                A2 = self.relu(Z2)
-                Z3 = np.dot(A2, self.W3) + self.b3
-                A3 = self.softmax(Z3)
-                loss = -np.sum(y_one_hot * np.log(A3 + 1e-9)) / X.shape[0]
                 print(f"Epoch {epoch}, Pérdida: {loss:.4f}")
+            if rounds_without_improvement >= early_stopping_rounds:
+                print(f"Early stopping en epoch {epoch}. Mejor pérdida: {best_loss:.4f}")
+                break
 
     def predict(self, X):
         # Clasifica datos después del entrenamiento
@@ -175,22 +193,80 @@ def evaluar_modelos(ruta_datos, knn, nn):
 
 
 if __name__ == '__main__':
-    entrenar_modelos()
+    # Entrenamiento y prueba desde el mismo dataset, usando split 70/30
+    directorio_actual = os.path.dirname(os.path.abspath(__file__))
+    ruta_training_data = os.path.join(directorio_actual, "..", "data", "data", "dataset")
 
-    ruta_knn = os.path.join('models', 'knn_model.pkl')
-    ruta_nn = os.path.join('models', 'nn_model.pkl')
+    print("Cargando y dividiendo datos (70% entrenamiento, 30% prueba)...")
+    X_train, X_test, y_train, y_test = cargar_datos_split(ruta_training_data, test_size=0.3)
 
-    knn = joblib.load(ruta_knn)
-    nn = joblib.load(ruta_nn)
+    # Entrenar modelos con X_train, y_train
+    print("Entrenando modelo KNN...")
+    K = 3
+    knn = KNN(k=K)
+    knn.fit(X_train, y_train)
+    print("Modelo KNN entrenado con éxito.")
 
-    #Prediccion con retroalimentacion
-    print("Cargando datos de prueba...")
-    X_test, y_test = cargar_datos('data/data/testing_data' , is_training=False)  # Cargar datos de prueba sin modificaciones
+    print("Entrenando modelo Red Neuronal...")
+    input_size = X_train.shape[1]  # 28x28 = 784
+    output_size = int(np.max(y_train)) + 1 #Numero de clases (digitos 0-9 y letras A-Z)
+    nn = NeuralNetwork(input_size=input_size, hidden_size1=256, hidden_size2=128, output_size=output_size, learning_rate=0.005)
+    nn.fit(X_train, y_train, epochs=1500) #podemos cambiar el numero de epocas
+    print("Modelo Red Neuronal entrenado con éxito.")
 
-    ruta_testing_data = os.path.join('data', 'data', 'testing_data')
-    evaluar_modelos(ruta_testing_data, knn, nn)
-    
-    #predecir_corregido(knn, X_test, y_test)
+    # Guardar modelos como antes
+    directorio_modelos = os.path.join(directorio_actual, "..", "models")
+    if not os.path.exists(directorio_modelos):
+        os.makedirs(directorio_modelos)
+
+    ruta_knn = os.path.join(directorio_modelos, 'knn_model.pkl')
+    joblib.dump(knn, ruta_knn)
+    print(f"Modelo KNN guardado en {ruta_knn}.")
+
+    ruta_nn = os.path.join(directorio_modelos, 'nn_model.pkl')
+    joblib.dump(nn, ruta_nn)
+    print(f"Modelo Red Neuronal guardado en {ruta_nn}.")
+
+    # Evaluar modelos with X_test, y_test
+    print("Evaluando modelos en el conjunto de prueba ...")
+    knn_preds = knn.predict(X_test)
+    nn_preds = nn.predict(X_test)
+    knn_precision = np.mean(knn_preds == y_test)
+    nn_precision = np.mean(nn_preds == y_test)
+    print(f"Precisión KNN en prueba: {knn_precision * 100:.2f}")
+    print(f"Precisión Red Neuronal en prueba: {nn_precision * 100:.2f}")
+
+    # Guardar matrices de confusión y reportes en archivo
+    reporte_path = os.path.join(directorio_modelos, "evaluacion_modelos.txt")
+
+    # Determinar etiquetas
+    if any("_U" in c or "_L" in c for c in os.listdir(ruta_training_data)):
+        etiquetas = [str(i) for i in range(10)] + \
+                    [f"{chr(65+i)}_U" for i in range(26)] + \
+                    [f"{chr(97+i)}_L" for i in range(26)]
+    else:
+        carpetas = sorted([f for f in os.listdir(ruta_training_data) if os.path.isdir(os.path.join(ruta_training_data, f))])
+        etiquetas = carpetas
+
+    with open(reporte_path, "w", encoding="utf-8") as f:
+        f.write("=== Evaluación de Modelos ===\n\n")
+        f.write(f"Precisión KNN en prueba: {knn_precision * 100:.2f}\n")
+        f.write(f"Precisión Red Neuronal en prueba: {nn_precision * 100:.2f}\n\n")
+
+        f.write("Etiquetas de clase:\n")
+        f.write(", ".join(etiquetas) + "\n\n")
+
+        f.write("Matriz de confusión KNN:\n")
+        f.write(str(confusion_matrix(y_test, knn_preds)) + "\n")
+        f.write("\nReporte de clasificación KNN:\n")
+        f.write(classification_report(y_test, knn_preds, target_names=etiquetas, zero_division=0))
+
+        f.write("\n\nMatriz de confusión Red Neuronal:\n")
+        f.write(str(confusion_matrix(y_test, nn_preds)) + "\n")
+        f.write("\nReporte de clasificación Red Neuronal:\n")
+        f.write(classification_report(y_test, nn_preds, target_names=etiquetas, zero_division=0))
+
+    print(f"Reporte de evaluación guardado en {reporte_path}")
 
 
 
