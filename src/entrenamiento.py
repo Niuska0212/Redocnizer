@@ -4,6 +4,8 @@ import numpy as np
 from preprocesamiento import cargar_datos
 from clasificacion import interpretar_prediccion, clasificar_conjunto_datos
 import random
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
+
 
 # Implementación manual de KNN
 class KNN:
@@ -121,16 +123,13 @@ class NeuralNetwork:
         return np.argmax(A3, axis=1)
     
 
-
-
-
 def entrenar_modelos(K=3): #K=3 es el numero de vecinos mas cercanos 
     print("Cargando datos de entrenamiento...")
     #X_train, y_train = cargar_datos('data/data/training_data')
     directorio_actual = os.path.dirname(os.path.abspath(__file__))
     ruta_training_data = os.path.join(directorio_actual, "..", "data", "data", "dataset")
     X_train, y_train = cargar_datos(ruta_training_data, is_training= False)  # Cargar datos de entrenamiento con modificaciones
-    
+    y_train = y_train.astype(int)  # <- Esta línea soluciona el error con np.bincount
 
 
 
@@ -151,9 +150,9 @@ def entrenar_modelos(K=3): #K=3 es el numero de vecinos mas cercanos
     #nn = NeuralNetwork(input_size=input_size, hidden_size=64, output_size=output_size)
     #nn = NeuralNetwork(input_size=input_size, hidden_size=128, output_size=output_size, learning_rate=0.01)    #en hidden_size podemos cambiar el numero de neuronas
 
-    nn = NeuralNetwork(input_size=input_size, hidden_size1=128, hidden_size2=64, output_size=output_size, learning_rate=0.01)
+    nn = NeuralNetwork(input_size=input_size, hidden_size1=256, hidden_size2=128, output_size=output_size, learning_rate=0.005)
 
-    nn.fit(X_train, y_train, epochs=1000) #podemos cambiar el numero de epocas
+    nn.fit(X_train, y_train, epochs=1500) #podemos cambiar el numero de epocas
 
     ruta_knn = os.path.join(directorio_modelos, 'knn_model.pkl')
     joblib.dump(knn, ruta_knn)

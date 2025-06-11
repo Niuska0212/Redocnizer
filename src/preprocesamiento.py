@@ -51,58 +51,63 @@ def modificar_imagen(imagen):
 
 
 def cargar_datos(directorio_base, is_training=False):
-    """Carga imágenes desde un directorio y las convierte en datos numéricos."""
+    """Carga imágenes desde un directorio y las convierte en datos numéricos (hasta 400 por carpeta)."""
     X, y = [], []
 
     # Verifica si el directorio existe
     if not os.path.exists(directorio_base):
         raise FileNotFoundError(f"El directorio {directorio_base} no existe.")
     
-    carpetas= [f for f in os.listdir(directorio_base) if os.path.isdir(os.path.join(directorio_base, f))]
-    #detecta si es dataset extendido (mayusculas/minusculas)
+    carpetas = [f for f in os.listdir(directorio_base) if os.path.isdir(os.path.join(directorio_base, f))]
+
+    # Detecta si es dataset extendido (mayúsculas/minúsculas)
     if any("_U" in c or "_L" in c for c in carpetas):
         print("Detectado dataset extendido (mayúsculas y minúsculas).")
-        # Si es dataset extendido, filtra las carpetas que contienen "_U" o "_L"
         etiquetas = {
             **{str(i): i for i in range(10)},  # Números del 0 al 9
-            **{f"{chr(65 + i )}_U": 10 + i for i in range(26)},  # Letras mayúsculas A-Z
-            **{f"{chr(97 + i )}_L": 36 + i for i in range(26)}  # Letras minúsculas a-z
+            **{f"{chr(65 + i)}_U": 10 + i for i in range(26)},  # Letras mayúsculas A-Z
+            **{f"{chr(97 + i)}_L": 36 + i for i in range(26)}   # Letras minúsculas a-z
         }
-        print("Usando mapeo extendido (mayusculas y minúsculas).")
-
+        print("Usando mapeo extendido (mayúsculas y minúsculas).")
     else:
-        # Mapeo automático para dataset simple
-        etiquetas = {nombre: i for i, nombre in enumerate(sorted(f for f in os.listdir(directorio_base) if os.path.isdir(os.path.join(directorio_base, f))))}
-        #etiquetas = {nombre: i for i, nombre in enumerate(sorted(carpetas))}
+        etiquetas = {
+            nombre: i for i, nombre in enumerate(
+                sorted(f for f in os.listdir(directorio_base) if os.path.isdir(os.path.join(directorio_base, f)))
+            )
+        }
         print("Usando mapeo automático simple.")
 
     max_por_carpeta = 400  # Máximo de imágenes por carpeta
-    for etiqueta, indice in etiquetas.items():  # Recorre todas las carpetas A-Z, 0-9
-        #if etiqueta != "B":
-        #     continue
+
+    for etiqueta, indice in etiquetas.items():
         carpeta = os.path.join(directorio_base, etiqueta)
-        if os.path.isdir(carpeta):  # Verifica que es una carpeta
-            contador = 0
-            #print(f"Procesando carpeta: {etiqueta} ({carpeta})")
-            for archivo in os.listdir(carpeta):  # Lee cada imagen
-                
-                
+        if os.path.isdir(carpeta):
+            archivos = [f for f in os.listdir(carpeta) if os.path.isfile(os.path.join(carpeta, f))]
+
+            # Elegir hasta 400 archivos aleatorios
+            if len(archivos) > max_por_carpeta:
+                archivos = random.sample(archivos, max_por_carpeta)
+            else:
+                random.shuffle(archivos)  # Si hay menos, igual los mezcla
+
+            for archivo in archivos:
                 ruta = os.path.join(carpeta, archivo)
-                imagen = cv2.imread(ruta, cv2.IMREAD_GRAYSCALE)  # Carga en escala de grises
+                imagen = cv2.imread(ruta, cv2.IMREAD_GRAYSCALE)
 
-                if imagen is None:  # Verifica si la imagen es válida
+                if imagen is None:
                     print(f"Error al cargar la imagen {ruta}. Se omite.")
-                    continue  # Salta esta imagen y sigue con la siguiente
+                    continue
 
-                if is_training and random.random() < 0.90:  # solo modifica el 70% de las imágenes si es entrenamiento
+                if is_training and random.random() < 0.90:
                     imagen = modificar_imagen(imagen)
 
-                imagen = cv2.resize(imagen, (28, 28)).flatten()  # Redimensiona y aplana
+                imagen = cv2.resize(imagen, (28, 28)).flatten()
                 X.append(imagen)
-                y.append(indice)  # Usa el nombre de la carpeta como etiqueta
-                
+                y.append(indice)
+
     print(f"Se cargaron {len(X)} imágenes.")
     return np.array(X, dtype=np.float32) / 255.0, np.array(y)
+
 
 if __name__ == "__main__":
     # Usa la ruta absoluta

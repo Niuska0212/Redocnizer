@@ -89,5 +89,3 @@ if __name__ == '__main__':
     opcion = input("\n¿Deseas corregir la predicción del modelo Red Neuronal? (s/n): ").strip().lower()
     if opcion == 's':
         predecir_corregido_imagen(ruta_prueba, nn_model)
-
-
