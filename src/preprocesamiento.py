@@ -6,7 +6,7 @@ import random
 def modificar_imagen(imagen):
     #inicia aummento de datos a una imagen (rotacion, traslacion, escalado, ruido).
     #1. Rotacion +/- 15 grados
-    angulo = random.uniform(-20, 20)
+    angulo = random.uniform(-15, 15)
     M_rot = cv2.getRotationMatrix2D((14, 14), angulo, 1.0)  # Centro de rotación en (14, 14)
     imagen = cv2.warpAffine(imagen, M_rot, (28, 28), borderValue=(0,0,0))
 
@@ -38,12 +38,12 @@ def modificar_imagen(imagen):
 
 
 
-    if not hasattr(modificar_imagen, "contador"):
-        modificar_imagen.contador = 0
-    if modificar_imagen.contador < 10 and random.random() < 0.8:  # Guardar solo el 10% de las imágenes modificadas y con probabilidad del 80% 
+    #if not hasattr(modificar_imagen, "contador"):
+    #    modificar_imagen.contador = 0
+    #if modificar_imagen.contador < 10 and random.random() < 0.8:  # Guardar solo el 10% de las imágenes modificadas y con probabilidad del 80% 
         #ruta_debug = os.path.join(os.path.dirname(__file__), "debug", f"debug_modificada_{modificar_imagen.contador}.png")
         #cv2.imwrite(ruta_debug, imagen)
-        modificar_imagen.contador += 1
+        #modificar_imagen.contador += 1
 
     return imagen
 
