@@ -3,6 +3,7 @@ import numpy as np
 import cv2  # Para cargar imágenes
 import random 
 
+
 def modificar_imagen(imagen):
     #inicia aummento de datos a una imagen (rotacion, traslacion, escalado, ruido).
     #1. Rotacion +/- 15 grados
@@ -75,18 +76,17 @@ def cargar_datos(directorio_base, is_training=False):
         #etiquetas = {nombre: i for i, nombre in enumerate(sorted(carpetas))}
         print("Usando mapeo automático simple.")
 
+    max_por_carpeta = 400  # Máximo de imágenes por carpeta
     for etiqueta, indice in etiquetas.items():  # Recorre todas las carpetas A-Z, 0-9
-
         #if etiqueta != "B":
         #     continue
-
         carpeta = os.path.join(directorio_base, etiqueta)
         if os.path.isdir(carpeta):  # Verifica que es una carpeta
             contador = 0
             #print(f"Procesando carpeta: {etiqueta} ({carpeta})")
             for archivo in os.listdir(carpeta):  # Lee cada imagen
-                if contador >= 800:
-                    break  # Limita a 1000 imágenes por carpeta
+                
+                
                 ruta = os.path.join(carpeta, archivo)
                 imagen = cv2.imread(ruta, cv2.IMREAD_GRAYSCALE)  # Carga en escala de grises
 
@@ -100,7 +100,7 @@ def cargar_datos(directorio_base, is_training=False):
                 imagen = cv2.resize(imagen, (28, 28)).flatten()  # Redimensiona y aplana
                 X.append(imagen)
                 y.append(indice)  # Usa el nombre de la carpeta como etiqueta
-                contador += 1
+                
     print(f"Se cargaron {len(X)} imágenes.")
     return np.array(X, dtype=np.float32) / 255.0, np.array(y)
 

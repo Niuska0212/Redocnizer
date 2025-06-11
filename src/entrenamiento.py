@@ -120,37 +120,7 @@ class NeuralNetwork:
         A3 = self.softmax(Z3)
         return np.argmax(A3, axis=1)
     
-"""def predecir_corregido(modelo, X, y_corr=None, rutas=None):
-    # Seleccionar una muestra aleatoria
-    indice_random = random.randint(0, len(X) - 1)
-    muestra_random = X[indice_random]
-    predicciones = modelo.predict(np.array([muestra_random]))
-    
-    # Mostrar la predicción y la probabilidad asociada (si es una red neuronal)
-    prediccion = predicciones[0]
-    ruta_muestra = rutas[indice_random] if rutas is not None else "Ruta no disponible"
-    print(f"Ruta de la muestra: {ruta_muestra}")
-    print(f"Predicción para la muestra seleccionada: {interpretar_prediccion(prediccion)}")
-    
-    if isinstance(modelo, NeuralNetwork):
-        Z1 = np.dot(muestra_random, modelo.W1) + modelo.b1
-        A1 = modelo.relu(Z1)
-        Z2 = np.dot(A1, modelo.W2) + modelo.b2
-        A2 = modelo.softmax(Z2)
-        probabilidad = A2[0, prediccion] * 100
-        print(f"Porcentaje de confianza del modelo: {probabilidad:.2f}%")
-    
-    if y_corr is not None:
-        etiqueta_real = y_corr[indice_random]
-        print(f"Etiqueta correcta esperada: {interpretar_prediccion(etiqueta_real)}")
-    
-    retroalimentacion = input("¿Es correcta la predicción? (s/n): ").strip().lower()
-    if retroalimentacion == 'n':
-        etiqueta_correcta = int(input("Ingrese la etiqueta correcta: "))
-        
-        # Agregar el dato corregido al conjunto de entrenamiento
-        modelo.fit(np.array([muestra_random]), np.array([etiqueta_correcta]))
-        print("Modelo actualizado con la nueva información")"""
+
 
 
 
@@ -158,17 +128,11 @@ def entrenar_modelos(K=3): #K=3 es el numero de vecinos mas cercanos
     print("Cargando datos de entrenamiento...")
     #X_train, y_train = cargar_datos('data/data/training_data')
     directorio_actual = os.path.dirname(os.path.abspath(__file__))
-    ruta_training_data = os.path.join(directorio_actual, "..", "data", "data", "training_data")
+    ruta_training_data = os.path.join(directorio_actual, "..", "data", "data", "dataset")
     X_train, y_train = cargar_datos(ruta_training_data, is_training= False)  # Cargar datos de entrenamiento con modificaciones
-    #print("X_train shape:", X_train.shape)
-    #print("y_train shape:", y_train.shape)
-    #print("Etiquetas únicas:", np.unique(y_train))
+    
 
-    # Verificaciones
-    #print(f"Datos de entrenamiento cargados: {X_train.shape} muestras, {y_train.shape} etiquetas.")
-    #print(f"Ejemplo de etiquetas: {np.unique(y_train)}")
-    #print(f"Primera muestra (normalizada): {X_train[0]}")
-    #print(f"Primera etiqueta: {y_train[0]}")
+
 
     print("Entrenando modelo KNN...")
     knn = KNN(k=K)
@@ -222,9 +186,9 @@ if __name__ == '__main__':
 
     #Prediccion con retroalimentacion
     print("Cargando datos de prueba...")
-    X_test, y_test = cargar_datos('data/data/testing_data' , is_training=True)  # Cargar datos de prueba sin modificaciones
+    X_test, y_test = cargar_datos('data/data/dataset' , is_training=False)  # Cargar datos de prueba sin modificaciones
 
-    ruta_testing_data = os.path.join('data', 'data', 'testing_data')
+    ruta_testing_data = os.path.join('data', 'data', 'dataset')
     evaluar_modelos(ruta_testing_data, knn, nn)
     
     #predecir_corregido(knn, X_test, y_test)
