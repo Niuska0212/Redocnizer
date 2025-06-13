@@ -1,5 +1,6 @@
 import joblib
 import os
+import re
 import numpy as np
 from preprocesamiento import cargar_datos, cargar_datos_split
 from clasificacion import interpretar_prediccion, clasificar_conjunto_datos
@@ -67,7 +68,7 @@ class NeuralNetwork:
         exp_z = np.exp(z - np.max(z)) # Evitar overflow
         return exp_z / exp_z.sum(axis=1, keepdims=True)
 
-    def fit(self, X, y, epochs=200, lambda_reg=0.01, batch_size=128, early_stopping_rounds=20, dropout_rate=0.2):
+    def fit(self, X, y, epochs=1000, lambda_reg=0.01, batch_size=128, early_stopping_rounds=20, dropout_rate=0.2):
         y_one_hot = np.eye(self.W3.shape[1])[y.astype(int)]
         num_samples = X.shape[0]
         best_loss = float('inf')
@@ -170,7 +171,7 @@ def entrenar_modelos(K=3): #K=3 es el numero de vecinos mas cercanos
 
     nn = NeuralNetwork(input_size=input_size, hidden_size1=256, hidden_size2=128, output_size=output_size, learning_rate=0.005)
 
-    nn.fit(X_train, y_train, epochs=1500) #podemos cambiar el numero de epocas
+    nn.fit(X_train, y_train, epochs=1000) #podemos cambiar el numero de epocas
 
     ruta_knn = os.path.join(directorio_modelos, 'knn_model.pkl')
     joblib.dump(knn, ruta_knn)
@@ -211,7 +212,7 @@ if __name__ == '__main__':
     input_size = X_train.shape[1]  # 28x28 = 784
     output_size = int(np.max(y_train)) + 1 #Numero de clases (digitos 0-9 y letras A-Z)
     nn = NeuralNetwork(input_size=input_size, hidden_size1=256, hidden_size2=128, output_size=output_size, learning_rate=0.005)
-    nn.fit(X_train, y_train, epochs=1500) #podemos cambiar el numero de epocas
+    nn.fit(X_train, y_train, epochs=1000) #podemos cambiar el numero de epocas
     print("Modelo Red Neuronal entrenado con éxito.")
 
     # Guardar modelos como antes
@@ -237,15 +238,44 @@ if __name__ == '__main__':
     print(f"Precisión Red Neuronal en prueba: {nn_precision * 100:.2f}")
 
     # Guardar matrices de confusión y reportes en archivo
+    nombre_base = "evaluacion_modelos.txt"
+    ruta_base = os.path.join(directorio_modelos, nombre_base)
+
+    # Paso 1: Encontrar todos los archivos tipo evaluacion_modelosN.txt
+    patron = re.compile(r"evaluacion_modelos(\d+)\.txt$")
+    archivos_existentes = []
+
+    for archivo in os.listdir(directorio_modelos):
+        match = patron.match(archivo)
+        if match:
+            numero = int(match.group(1))
+            archivos_existentes.append((numero, archivo))
+
+    # Ordenarlos del mayor al menor para evitar sobrescribir al renombrar
+    archivos_existentes.sort(reverse=True)
+
+    # Paso 2: Aumentar en 1 el número de cada archivo
+    for numero, nombre_archivo in archivos_existentes:
+        ruta_vieja = os.path.join(directorio_modelos, nombre_archivo)
+        ruta_nueva = os.path.join(directorio_modelos, f"evaluacion_modelos{numero+1}.txt")
+        os.rename(ruta_vieja, ruta_nueva)
+
+    # Paso 3: Renombrar el archivo base (sin número) a evaluacion_modelos1.txt si existe
+    if os.path.exists(ruta_base):
+        os.rename(ruta_base, os.path.join(directorio_modelos, "evaluacion_modelos1.txt"))
+
+    # Paso 4: Crear Ruta del nuevo reporte
     reporte_path = os.path.join(directorio_modelos, "evaluacion_modelos.txt")
 
     # Determinar etiquetas
-    if any("_U" in c or "_L" in c for c in os.listdir(ruta_training_data)):
+    carpetas = sorted([f for f in os.listdir(ruta_training_data) if os.path.isdir(os.path.join(ruta_training_data, f))])
+
+    if any(c.isupper() for c in carpetas) and any(c.islower() for c in carpetas):
+        print("Detectado dataset con mayúsculas y minúsculas.")
         etiquetas = [str(i) for i in range(10)] + \
-                    [f"{chr(65+i)}_U" for i in range(26)] + \
-                    [f"{chr(97+i)}_L" for i in range(26)]
+                    [chr(65+i) for i in range(26)] + \
+                    [chr(97+i) for i in range(26)]
     else:
-        carpetas = sorted([f for f in os.listdir(ruta_training_data) if os.path.isdir(os.path.join(ruta_training_data, f))])
         etiquetas = carpetas
 
     with open(reporte_path, "w", encoding="utf-8") as f:

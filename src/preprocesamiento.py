@@ -61,21 +61,22 @@ def cargar_datos(directorio_base, is_training=False):
     carpetas = [f for f in os.listdir(directorio_base) if os.path.isdir(os.path.join(directorio_base, f))]
 
     # Detecta si es dataset extendido (mayúsculas/minúsculas)
-    if any("_U" in c or "_L" in c for c in carpetas):
+    if any(c.isupper() for c in carpetas) and any(c.islower() for c in carpetas):
         print("Detectado dataset extendido (mayúsculas y minúsculas).")
         etiquetas = {
-            **{str(i): i for i in range(10)},  # Números del 0 al 9
-            **{f"{chr(65 + i)}_U": 10 + i for i in range(26)},  # Letras mayúsculas A-Z
-            **{f"{chr(97 + i)}_L": 36 + i for i in range(26)}   # Letras minúsculas a-z
+            str(i): i for i in range(10)  # Números 0-9
         }
+        etiquetas.update({
+            chr(65 + i): 10 + i for i in range(26)  # Letras mayúsculas A-Z
+        })
+        etiquetas.update({
+            chr(97 + i): 36 + i for i in range(26)  # Letras minúsculas a-z
+        })
         print("Usando mapeo extendido (mayúsculas y minúsculas).")
     else:
         etiquetas = {
-            nombre: i for i, nombre in enumerate(
-                sorted(f for f in os.listdir(directorio_base) if os.path.isdir(os.path.join(directorio_base, f)))
-            )
+            nombre: i for i, nombre in enumerate(sorted(carpetas))
         }
-        print("Usando mapeo automático simple.")
 
     max_por_carpeta = 400  # Máximo de imágenes por carpeta
 
@@ -84,7 +85,7 @@ def cargar_datos(directorio_base, is_training=False):
         if os.path.isdir(carpeta):
             archivos = [f for f in os.listdir(carpeta) if os.path.isfile(os.path.join(carpeta, f))]
 
-            # Elegir hasta 400 archivos aleatorios
+            # Elegir hasta N archivos aleatorios
             if len(archivos) > max_por_carpeta:
                 archivos = random.sample(archivos, max_por_carpeta)
             else:
