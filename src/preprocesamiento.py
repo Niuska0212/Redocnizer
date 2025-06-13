@@ -78,7 +78,7 @@ def cargar_datos(directorio_base, is_training=False):
             nombre: i for i, nombre in enumerate(sorted(carpetas))
         }
 
-    max_por_carpeta = 400  # Máximo de imágenes por carpeta
+    max_por_carpeta = 5000  # Máximo de imágenes por carpeta
 
     for etiqueta, indice in etiquetas.items():
         carpeta = os.path.join(directorio_base, etiqueta)
@@ -128,7 +128,7 @@ def cargar_datos_split(directorio_base, test_size=0.3, random_state=42):
                 sorted(f for f in os.listdir(directorio_base) if os.path.isdir(os.path.join(directorio_base, f)))
             )
         }
-    max_por_carpeta = 400
+    max_por_carpeta = 5000
     for etiqueta, indice in etiquetas.items():
         carpeta = os.path.join(directorio_base, etiqueta)
         if os.path.isdir(carpeta):

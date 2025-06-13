@@ -3,35 +3,37 @@ import os
 import re
 import numpy as np
 from preprocesamiento import cargar_datos, cargar_datos_split
-from clasificacion import interpretar_prediccion, clasificar_conjunto_datos
+from clasificador import clasificar_conjunto_datos
 import random
 from sklearn.metrics import confusion_matrix, classification_report
 
 
-# Implementación manual de KNN
-class KNN:
-    def __init__(self, k=3):
-        self.k = k
-        self.X_train = None
-        self.y_train = None
+# Implementación de CNN con un kernel de convolución fijo
+class ConvolutionalNeuralNetwork:
+    def __init__(self, input_shape=(28, 28), num_filters=4, filter_size=3):
+        self.input_shape = input_shape
+        self.num_filters = num_filters
+        self.filter_size = filter_size
+        self.filters = np.random.randn(num_filters, filter_size, filter_size) * 0.01
 
-    def fit(self, X, y):
-        # Almacena los datos de entrenamiento
-        self.X_train = X
-        self.y_train = y
-        print(f"KNN: Datos de entrenamiento almacenados. Tamaño: {X.shape}")
-
-    def predict(self, X):
-        # Clasifica cada muestra de X basado en la distancia a los vecinos más cercanos
-        y_pred = []
-        for x in X:
-            distancia = np.linalg.norm(self.X_train - x, axis=1)  # Calcular distancia euclidiana
-            indices_vecinos = np.argsort(distancia)[:self.k]
-            etiquetas_vecinos = self.y_train[indices_vecinos]
-            etiqueta_predicha = np.bincount(etiquetas_vecinos.astype(int)).argmax()
-            y_pred.append(etiqueta_predicha)
-        return np.array(y_pred)
-
+    def relu(self, x):
+        return np.maximum(0, x)
+    
+    # Definir un kernel de convolución fijo para simplificar
+    def convolve(self, image, kernel):
+        h, w = image.shape
+        kh, kw = kernel.shape
+        output = np.zeros((h - kh + 1, w - kw +1))
+        for i in range(output.shape[0]):
+            for j in range(output.shape[1]):
+                region = image[i:i + kh, j:j + kw]
+                output[i, j] = np.sum(region * kernel)
+        return output
+    
+    def extraer_caracteristicas(self, image):
+        conv_maps = [self.relu(self.convolve(image, f)) for f in self.filters]
+        flat = np.concatenate([m.flatten() for m in conv_maps])
+        return flat.reshape(1, -1)  # Aplanar y mantener como matriz 2D
 
 # Implementación manual de una red neuronal simple con una capa oculta
 class NeuralNetwork:
@@ -68,7 +70,7 @@ class NeuralNetwork:
         exp_z = np.exp(z - np.max(z)) # Evitar overflow
         return exp_z / exp_z.sum(axis=1, keepdims=True)
 
-    def fit(self, X, y, epochs=1000, lambda_reg=0.01, batch_size=128, early_stopping_rounds=20, dropout_rate=0.2):
+    def fit(self, X, y, epochs=300, lambda_reg=0.01, batch_size=128, early_stopping_rounds=20, dropout_rate=0.2):
         y_one_hot = np.eye(self.W3.shape[1])[y.astype(int)]
         num_samples = X.shape[0]
         best_loss = float('inf')
@@ -151,12 +153,6 @@ def entrenar_modelos(K=3): #K=3 es el numero de vecinos mas cercanos
     y_train = y_train.astype(int)  # <- Esta línea soluciona el error con np.bincount
 
 
-
-    print("Entrenando modelo KNN...")
-    knn = KNN(k=K)
-    knn.fit(X_train, y_train)
-    print("Modelo KNN entrenado con éxito.")
-
     directorio_modelos = os.path.join(directorio_actual, "..", "models")
     if not os.path.exists(directorio_modelos):
         os.makedirs(directorio_modelos)
@@ -171,11 +167,7 @@ def entrenar_modelos(K=3): #K=3 es el numero de vecinos mas cercanos
 
     nn = NeuralNetwork(input_size=input_size, hidden_size1=256, hidden_size2=128, output_size=output_size, learning_rate=0.005)
 
-    nn.fit(X_train, y_train, epochs=1000) #podemos cambiar el numero de epocas
-
-    ruta_knn = os.path.join(directorio_modelos, 'knn_model.pkl')
-    joblib.dump(knn, ruta_knn)
-    print(f"Modelo KNN guardado en {ruta_knn}.")
+    nn.fit(X_train, y_train, epochs=300) #podemos cambiar el numero de epocas
 
     # Guardar el modelo de Red Neuronal
     ruta_nn = os.path.join(directorio_modelos, 'nn_model.pkl')
@@ -183,12 +175,10 @@ def entrenar_modelos(K=3): #K=3 es el numero de vecinos mas cercanos
     print(f"Modelo Red Neuronal guardado en {ruta_nn}.")
 
 
-def evaluar_modelos(ruta_datos, knn, nn):
+def evaluar_modelos(ruta_datos, nn):
     print("Evaluando modelos en el conjunto de prueba ...")
-    knn_preds, nn_preds, y_true = clasificar_conjunto_datos(ruta_datos, knn, nn)
-    knn_precision = np.mean(knn_preds == y_true)
+    nn_preds, y_true = clasificar_conjunto_datos(ruta_datos, nn)
     nn_precision = np.mean(nn_preds == y_true)
-    print(f"Precisión KNN en prueba: {knn_precision * 100:.2f}")
     print(f"Precisión Red Neuronal en prueba: {nn_precision * 100:.2f}")
 
 
@@ -202,17 +192,17 @@ if __name__ == '__main__':
     X_train, X_test, y_train, y_test = cargar_datos_split(ruta_training_data, test_size=0.3)
 
     # Entrenar modelos con X_train, y_train
-    print("Entrenando modelo KNN...")
-    K = 3
-    knn = KNN(k=K)
-    knn.fit(X_train, y_train)
-    print("Modelo KNN entrenado con éxito.")
+    print("Extrayendo características con CNN...")
+    cnn = ConvolutionalNeuralNetwork()
+    X_train_cnn = np.array([cnn.extraer_caracteristicas(x.reshape(28, 28)).flatten() for x in X_train])
+    X_test_cnn = np.array([cnn.extraer_caracteristicas(x.reshape(28, 28)).flatten() for x in X_test])
+    print("Características extraídas con éxito.")
 
     print("Entrenando modelo Red Neuronal...")
     input_size = X_train.shape[1]  # 28x28 = 784
     output_size = int(np.max(y_train)) + 1 #Numero de clases (digitos 0-9 y letras A-Z)
     nn = NeuralNetwork(input_size=input_size, hidden_size1=256, hidden_size2=128, output_size=output_size, learning_rate=0.005)
-    nn.fit(X_train, y_train, epochs=1000) #podemos cambiar el numero de epocas
+    nn.fit(X_train_cnn, y_train, epochs=300) #podemos cambiar el numero de epocas
     print("Modelo Red Neuronal entrenado con éxito.")
 
     # Guardar modelos como antes
@@ -220,29 +210,22 @@ if __name__ == '__main__':
     if not os.path.exists(directorio_modelos):
         os.makedirs(directorio_modelos)
 
-    ruta_knn = os.path.join(directorio_modelos, 'knn_model.pkl')
-    joblib.dump(knn, ruta_knn)
-    print(f"Modelo KNN guardado en {ruta_knn}.")
-
     ruta_nn = os.path.join(directorio_modelos, 'nn_model.pkl')
     joblib.dump(nn, ruta_nn)
     print(f"Modelo Red Neuronal guardado en {ruta_nn}.")
 
     # Evaluar modelos with X_test, y_test
     print("Evaluando modelos en el conjunto de prueba ...")
-    knn_preds = knn.predict(X_test)
-    nn_preds = nn.predict(X_test)
-    knn_precision = np.mean(knn_preds == y_test)
+    nn_preds = nn.predict(X_test_cnn)
     nn_precision = np.mean(nn_preds == y_test)
-    print(f"Precisión KNN en prueba: {knn_precision * 100:.2f}")
     print(f"Precisión Red Neuronal en prueba: {nn_precision * 100:.2f}")
 
     # Guardar matrices de confusión y reportes en archivo
-    nombre_base = "evaluacion_modelos.txt"
+    nombre_base = "evaluacion_modelo_CNN.txt"
     ruta_base = os.path.join(directorio_modelos, nombre_base)
 
-    # Paso 1: Encontrar todos los archivos tipo evaluacion_modelosN.txt
-    patron = re.compile(r"evaluacion_modelos(\d+)\.txt$")
+    # Paso 1: Encontrar todos los archivos tipo evaluacion_modelo_CNN.txt
+    patron = re.compile(r"evaluacion_modelo_CNN(\d+)\.txt$")
     archivos_existentes = []
 
     for archivo in os.listdir(directorio_modelos):
@@ -257,15 +240,15 @@ if __name__ == '__main__':
     # Paso 2: Aumentar en 1 el número de cada archivo
     for numero, nombre_archivo in archivos_existentes:
         ruta_vieja = os.path.join(directorio_modelos, nombre_archivo)
-        ruta_nueva = os.path.join(directorio_modelos, f"evaluacion_modelos{numero+1}.txt")
+        ruta_nueva = os.path.join(directorio_modelos, f"evaluacion_modelo_CNN{numero+1}.txt")
         os.rename(ruta_vieja, ruta_nueva)
 
-    # Paso 3: Renombrar el archivo base (sin número) a evaluacion_modelos1.txt si existe
+    # Paso 3: Renombrar el archivo base (sin número) a evaluacion_modelo_CNN1.txt si existe
     if os.path.exists(ruta_base):
-        os.rename(ruta_base, os.path.join(directorio_modelos, "evaluacion_modelos1.txt"))
+        os.rename(ruta_base, os.path.join(directorio_modelos, "evaluacion_modelo_CNN1.txt"))
 
     # Paso 4: Crear Ruta del nuevo reporte
-    reporte_path = os.path.join(directorio_modelos, "evaluacion_modelos.txt")
+    reporte_path = os.path.join(directorio_modelos, "evaluacion_modelo_CNN.txt")
 
     # Determinar etiquetas
     carpetas = sorted([f for f in os.listdir(ruta_training_data) if os.path.isdir(os.path.join(ruta_training_data, f))])
@@ -280,17 +263,9 @@ if __name__ == '__main__':
 
     with open(reporte_path, "w", encoding="utf-8") as f:
         f.write("=== Evaluación de Modelos ===\n\n")
-        f.write(f"Precisión KNN en prueba: {knn_precision * 100:.2f}\n")
         f.write(f"Precisión Red Neuronal en prueba: {nn_precision * 100:.2f}\n\n")
-
         f.write("Etiquetas de clase:\n")
         f.write(", ".join(etiquetas) + "\n\n")
-
-        f.write("Matriz de confusión KNN:\n")
-        f.write(str(confusion_matrix(y_test, knn_preds)) + "\n")
-        f.write("\nReporte de clasificación KNN:\n")
-        f.write(classification_report(y_test, knn_preds, target_names=etiquetas, zero_division=0))
-
         f.write("\n\nMatriz de confusión Red Neuronal:\n")
         f.write(str(confusion_matrix(y_test, nn_preds)) + "\n")
         f.write("\nReporte de clasificación Red Neuronal:\n")

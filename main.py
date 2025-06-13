@@ -9,8 +9,8 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 src_dir = os.path.join(current_dir, "src")
 sys.path.append(src_dir)
 
-from src.entrenamiento import NeuralNetwork, KNN  # Asegúrate de importar KNN si es clase propia
-from src.clasificacion import clasificar_imagen
+from src.entrenamiento import NeuralNetwork, ConvolutionalNeuralNetwork
+from src.clasificador import clasificar_imagen
 
 # Mapeo de etiquetas
 etiqueta_a_num = {}
@@ -70,22 +70,20 @@ def predecir_corregido_imagen(ruta_imagen, modelo):
 
 if __name__ == '__main__':
     print("Cargando modelos entrenados...")
-    knn_model = joblib.load("models/knn_model.pkl")
     nn_model = joblib.load("models/nn_model.pkl")
+    cnn = ConvolutionalNeuralNetwork()
 
     ruta_prueba = input("Ruta de la imagen a probar: ").strip()
     if not os.path.exists(ruta_prueba):
         print("La ruta no existe.")
         sys.exit(1)
 
-    knn_pred, nn_pred = clasificar_imagen(ruta_prueba, knn_model, nn_model)
-    print(f"Predicción KNN: {interpretar_prediccion(knn_pred)}")
-    print(f"Predicción Red Neuronal: {interpretar_prediccion(nn_pred)}")
+    imagen = cv2.imread(ruta_prueba, cv2.IMREAD_GRAYSCALE)
+    imagen = cv2.resize(imagen, (28, 28)).astype(np.float32) / 255.0
+    features= cnn.extraer_caracteristicas(imagen).flatten().reshape(1, -1)
+    pred = nn_model.predict(features)[0]
+    print(f"Predicción Red Neuronal: {interpretar_prediccion(pred)}")
 
-    opcion = input("\n¿Deseas corregir la predicción del modelo KNN? (s/n): ").strip().lower()
-    if opcion == 's':
-        predecir_corregido_imagen(ruta_prueba, knn_model)
-
-    opcion = input("\n¿Deseas corregir la predicción del modelo Red Neuronal? (s/n): ").strip().lower()
+    opcion = input("\n¿Deseas corregir la predicción del modelo CNN + NN? (s/n): ").strip().lower()
     if opcion == 's':
         predecir_corregido_imagen(ruta_prueba, nn_model)
