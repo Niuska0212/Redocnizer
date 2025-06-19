@@ -3,281 +3,270 @@ import pandas as pd
 import os
 import re
 import numpy as np
-from preprocesamiento import cargar_datos, cargar_datos_split
-from clasificador import clasificar_conjunto_datos
+from preprocesamiento import modificar_imagen, cargar_datos_split # Mantener estas importaciones aquí
+
 import random
 from sklearn.metrics import confusion_matrix, classification_report
 import cv2
 
-# Implementación de CNN con un kernel de convolución fijo
+# --- Clase ConvolutionalNeuralNetwork (sin cambios) ---
 class ConvolutionalNeuralNetwork:
-    def __init__(self, input_shape=(28, 28), num_filters=1, filter_size=3):
+    def __init__(self, input_shape=(28, 28), num_filters=32, filter_size=3, pool_size=2):
         self.input_shape = input_shape
         self.num_filters = num_filters
         self.filter_size = filter_size
-        self.filters = np.random.randn(num_filters, filter_size, filter_size).astype(np.float32) * 0.01
+        self.pool_size = pool_size
+        
+        self.filters = [np.random.randn(filter_size, filter_size).astype(np.float32) * np.sqrt(2.0/(filter_size*filter_size)) 
+                       for _ in range(num_filters)]
+        
+    def relu(self, x):
+        return np.maximum(0, x)
+    
+    def max_pool(self, image, pool_size):
+        h, w = image.shape
+        new_h = h // pool_size
+        new_w = w // pool_size
+        pooled = np.zeros((new_h, new_w))
+        
+        for i in range(new_h):
+            for j in range(new_w):
+                patch = image[i*pool_size:(i+1)*pool_size, j*pool_size:(j+1)*pool_size]
+                pooled[i, j] = np.max(patch)
+        return pooled
+    
+    def convolve(self, image, filters):
+        image_h, image_w = image.shape
+        num_filters = len(filters)
+        filter_h, filter_w = filters[0].shape
+        
+        output_h = image_h - filter_h + 1
+        output_w = image_w - filter_w + 1
+        
+        conv_output = np.zeros((num_filters, output_h, output_w))
+        
+        for f_idx, current_filter in enumerate(filters):
+            for i in range(output_h):
+                for j in range(output_w):
+                    patch = image[i:i+filter_h, j:j+filter_w]
+                    conv_output[f_idx, i, j] = np.sum(patch * current_filter)
+        return conv_output
+    
+    def extraer_caracteristicas(self, image):
+        image = image.astype(np.float32)
+        conv_output = self.convolve(image, self.filters)
+        activated_output = self.relu(conv_output)
+        pooled_output = np.array([self.max_pool(activated_output[f], self.pool_size) 
+                                  for f in range(self.num_filters)])
+        return pooled_output
+
+# --- Clase RedNeuronal (sin cambios) ---
+class RedNeuronal:
+    def __init__(self, input_size, hidden_size, output_size, learning_rate=0.01):
+        self.input_size = input_size
+        self.hidden_size = hidden_size
+        self.output_size = output_size
+        self.learning_rate = learning_rate
+
+        self.W1 = np.random.randn(input_size, hidden_size) * np.sqrt(2.0 / input_size)
+        self.b1 = np.zeros((1, hidden_size))
+        self.W2 = np.random.randn(hidden_size, output_size) * np.sqrt(2.0 / hidden_size)
+        self.b2 = np.zeros((1, output_size))
 
     def relu(self, x):
         return np.maximum(0, x)
 
-    def convolve(self, image, kernel):
-        # Usar OpenCV para la convolución (mucho más rápido)
-        return cv2.filter2D(image, -1, kernel, borderType=cv2.BORDER_CONSTANT)
+    def relu_derivative(self, x):
+        return (x > 0).astype(float)
 
-    def extraer_caracteristicas(self, image):
-        conv_maps = [self.relu(self.convolve(image, f)) for f in self.filters]
-        flat = np.concatenate([m.flatten() for m in conv_maps])
-        return flat.reshape(1, -1)
+    def softmax(self, x):
+        exp_x = np.exp(x - np.max(x, axis=1, keepdims=True))
+        return exp_x / np.sum(exp_x, axis=1, keepdims=True)
 
-# Implementación manual de una red neuronal simple con una capa oculta
-class NeuralNetwork:
-    def __init__(self, input_size, hidden_size1, hidden_size2, output_size, learning_rate=0.01):
-        self.learning_rate = learning_rate
-        self.W1 = np.random.randn(input_size, hidden_size1) * np.sqrt(2.0 / input_size)
-        self.b1 = np.zeros((1, hidden_size1))
-        self.W2 = np.random.randn(hidden_size1, hidden_size2) * np.sqrt(2.0 / hidden_size1)
-        self.b2 = np.zeros((1, hidden_size2))
-        self.W3 = np.random.randn(hidden_size2, output_size) * np.sqrt(2.0 / hidden_size2)
-        self.b3 = np.zeros((1, output_size))
-        print(f"Red Neuronal: Inicializada con {input_size} entradas, {hidden_size1} y {hidden_size2} ocultas, {output_size} salidas.")
+    def cross_entropy_loss(self, predictions, targets):
+        epsilon = 1e-10 
+        loss = -np.sum(targets * np.log(predictions + epsilon)) / len(predictions)
+        return loss
 
+    def forward(self, X):
+        self.z1 = np.dot(X, self.W1) + self.b1
+        self.a1 = self.relu(self.z1)
+        self.z2 = np.dot(self.a1, self.W2) + self.b2
+        self.a2 = self.softmax(self.z2) 
+        return self.a2
 
-    def relu(self, z):
-        #Funcion de activacion ReLU(Unidad lineal rectificada)
-        return np.maximum(0, z)
-    
-    def relu_derivative(self, z):
-        #Derivada de la funcion de activacion ReLU
-        return (z > 0).astype(float)
-     
-    #######################################
-    #cambio de funcion de sigmoid a relu porque la funcion de activacion ReLU es mas eficiente.
-    #def sigmoid(self, z):
-        #return 1 / (1 + np.exp(-z))
-
-    #def sigmoid_derivative(self, z):
-    #    return self.sigmoid(z) * (1 - self.sigmoid(z))
-
-    ######################################
-
-    def softmax(self, z):
-        exp_z = np.exp(z - np.max(z)) # Evitar overflow
-        return exp_z / exp_z.sum(axis=1, keepdims=True)
-
-    def fit(self, X, y, epochs=300, lambda_reg=0.01, batch_size=128, early_stopping_rounds=20, dropout_rate=0.2):
-        y_one_hot = np.eye(self.W3.shape[1])[y.astype(int)]
+    def backward(self, X, y_true):
         num_samples = X.shape[0]
+        delta2 = self.a2 - y_true
+        self.dW2 = np.dot(self.a1.T, delta2) / num_samples
+        self.db2 = np.sum(delta2, axis=0, keepdims=True) / num_samples
+        delta1 = np.dot(delta2, self.W2.T) * self.relu_derivative(self.z1)
+        self.dW1 = np.dot(X.T, delta1) / num_samples
+        self.db1 = np.sum(delta1, axis=0, keepdims=True) / num_samples
+
+    def update_weights(self, lambda_reg=0.0):
+        self.W1 -= self.learning_rate * (self.dW1 + lambda_reg * self.W1)
+        self.b1 -= self.learning_rate * self.db1
+        self.W2 -= self.learning_rate * (self.dW2 + lambda_reg * self.W2)
+        self.b2 -= self.learning_rate * self.db2
+
+    def fit(self, X_train, y_train, epochs=100, batch_size=32, lambda_reg=0.01, learning_rate_decay=1.0, early_stopping_rounds=None):
+        num_samples = X_train.shape[0]
+        history = {'loss': [], 'accuracy': []}
         best_loss = float('inf')
-        rounds_without_improvement = 0
+        epochs_no_improve = 0
+
+        if y_train.ndim == 1:
+            y_train_one_hot = np.zeros((num_samples, self.output_size))
+            y_train_one_hot[np.arange(num_samples), y_train] = 1
+        else:
+            y_train_one_hot = y_train 
 
         for epoch in range(epochs):
-            indices = np.arange(num_samples)
-            np.random.shuffle(indices)
-            X_shuffled = X[indices]
-            y_shuffled = y_one_hot[indices]
+            permutation = np.random.permutation(num_samples)
+            X_shuffled = X_train[permutation]
+            y_shuffled_one_hot = y_train_one_hot[permutation]
+
+            epoch_loss = 0
+            epoch_correct_predictions = 0
+
             for i in range(0, num_samples, batch_size):
-                X_batch = X_shuffled[i:i + batch_size]
-                y_batch = y_shuffled[i:i + batch_size]
-                # Forward
-                Z1 = np.dot(X_batch, self.W1) + self.b1
-                A1 = self.relu(Z1)
-                # Dropout en la primera capa oculta
-                dropout_mask1 = (np.random.rand(*A1.shape) > dropout_rate).astype(float)
-                A1 *= dropout_mask1
-                Z2 = np.dot(A1, self.W2) + self.b2
-                A2 = self.relu(Z2)
-                # Dropout en la segunda capa oculta
-                dropout_mask2 = (np.random.rand(*A2.shape) > dropout_rate).astype(float)
-                A2 *= dropout_mask2
-                Z3 = np.dot(A2, self.W3) + self.b3
-                A3 = self.softmax(Z3)
-                # Backward
-                dZ3 = A3 - y_batch
-                dW3 = np.dot(A2.T, dZ3) / X_batch.shape[0] + lambda_reg * self.W3
-                db3 = np.sum(dZ3, axis=0, keepdims=True) / X_batch.shape[0]
-                dZ2 = np.dot(dZ3, self.W3.T) * self.relu_derivative(Z2)
-                dW2 = np.dot(A1.T, dZ2) / X_batch.shape[0] + lambda_reg * self.W2
-                db2 = np.sum(dZ2, axis=0, keepdims=True) / X_batch.shape[0]
-                dZ1 = np.dot(dZ2, self.W2.T) * self.relu_derivative(Z1)
-                dW1 = np.dot(X_batch.T, dZ1) / X_batch.shape[0] + lambda_reg * self.W1
-                db1 = np.sum(dZ1, axis=0, keepdims=True) / X_batch.shape[0]
-                # Update
-                self.W1 -= self.learning_rate * dW1
-                self.b1 -= self.learning_rate * db1
-                self.W2 -= self.learning_rate * dW2
-                self.b2 -= self.learning_rate * db2
-                self.W3 -= self.learning_rate * dW3
-                self.b3 -= self.learning_rate * db3
-            # Early stopping check
-            Z1 = np.dot(X, self.W1) + self.b1
-            A1 = self.relu(Z1)
-            Z2 = np.dot(A1, self.W2) + self.b2
-            A2 = self.relu(Z2)
-            Z3 = np.dot(A2, self.W3) + self.b3
-            A3 = self.softmax(Z3)
-            loss = -np.sum(y_one_hot * np.log(A3 + 1e-9)) / X.shape[0]
-            if loss < best_loss - 1e-4:
-                best_loss = loss
-                rounds_without_improvement = 0
-            else:
-                rounds_without_improvement += 1
-            if epoch % 100 == 0:
-                print(f"Epoch {epoch}, Pérdida: {loss:.4f}")
-            if rounds_without_improvement >= early_stopping_rounds:
-                print(f"Early stopping en epoch {epoch}. Mejor pérdida: {best_loss:.4f}")
-                break
+                X_batch = X_shuffled[i:i+batch_size]
+                y_batch_one_hot = y_shuffled_one_hot[i:i+batch_size]
+                
+                predictions = self.forward(X_batch)
+                loss = self.cross_entropy_loss(predictions, y_batch_one_hot)
+                epoch_loss += loss * X_batch.shape[0] 
+                
+                self.backward(X_batch, y_batch_one_hot)
+                self.update_weights(lambda_reg)
+
+                predicted_classes = np.argmax(predictions, axis=1)
+                true_classes = np.argmax(y_batch_one_hot, axis=1)
+                epoch_correct_predictions += np.sum(predicted_classes == true_classes)
+
+            epoch_loss /= num_samples 
+            epoch_accuracy = epoch_correct_predictions / num_samples
+            
+            history['loss'].append(epoch_loss)
+            history['accuracy'].append(epoch_accuracy)
+
+            print(f"Epoch {epoch+1}/{epochs}, Loss: {epoch_loss:.4f}, Accuracy: {epoch_accuracy*100:.2f}%")
+
+            self.learning_rate *= learning_rate_decay
+
+            if early_stopping_rounds:
+                if epoch_loss < best_loss:
+                    best_loss = epoch_loss
+                    epochs_no_improve = 0
+                else:
+                    epochs_no_improve += 1
+                    if epochs_no_improve >= early_stopping_rounds:
+                        print(f"Early stopping en Epoch {epoch+1} debido a que la pérdida no mejoró por {early_stopping_rounds} épocas.")
+                        break
 
     def predict(self, X):
-        # Clasifica datos después del entrenamiento
-        Z1 = np.dot(X, self.W1) + self.b1
-        A1 = self.relu(Z1)
-        Z2 = np.dot(A1, self.W2) + self.b2
-        A2 = self.relu(Z2)
-        Z3 = np.dot(A2, self.W3) + self.b3
-        A3 = self.softmax(Z3)
-        return np.argmax(A3, axis=1)
+        probabilities = self.forward(X)
+        return np.argmax(probabilities, axis=1)
+
+
+# --- Inicio del script de entrenamiento ---
+if __name__ == "__main__":
+    print("=== INICIO DE EJECUCIÓN DEL SCRIPT DE ENTRENAMIENTO ===")
+
+  
+    ruta_base = os.path.dirname(os.path.abspath(__file__))
+    ruta_dataset_principal = os.path.join(ruta_base, "..", "data", "data", "dataset") 
+    ruta_modelos = os.path.join(ruta_base, "..", "models")
+
+    os.makedirs(ruta_modelos, exist_ok=True)
+
+    print(f"Cargando datos del directorio: {ruta_dataset_principal}")
+    X_train_raw, X_test_raw, y_train, y_test, class_labels_map = cargar_datos_split(
+        ruta_dataset_principal,
+        test_size=0.3,
+        random_state=42, 
+        max_por_carpeta=None
+    )
+
+    num_classes = len(class_labels_map)
+    print(f"Número de clases detectadas: {num_classes}")
+    print(f"Mapeo de clases: {class_labels_map}")
+
+    X_train_cnn = np.array([cv2.resize(img, (28, 28)).astype(np.float32) / 255.0 for img in X_train_raw.reshape(-1, 28, 28)])
+    X_test_cnn = np.array([cv2.resize(img, (28, 28)).astype(np.float32) / 255.0 for img in X_test_raw.reshape(-1, 28, 28)])
+
+    X_train_augmented = []
+    y_train_augmented = []
+    for i in range(len(X_train_cnn)):
+        img = (X_train_cnn[i] * 255).astype(np.uint8)
+        augmented_img = modificar_imagen(img)
+        X_train_augmented.append(augmented_img.astype(np.float32) / 255.0)
+        y_train_augmented.append(y_train[i])
+    X_train_cnn = np.array(X_train_augmented)
+    y_train = np.array(y_train_augmented)
+
+    cnn = ConvolutionalNeuralNetwork(input_shape=(28, 28), num_filters=32, filter_size=3, pool_size=2)
     
+    print("Extrayendo características con CNN para el conjunto de entrenamiento...")
+    X_train_features = []
+    for img in X_train_cnn:
+        features = cnn.extraer_caracteristicas(img).flatten()
+        X_train_features.append(features)
+    X_train_features = np.array(X_train_features)
+    
+    print("Extrayendo características con CNN para el conjunto de prueba...")
+    X_test_features = []
+    for img in X_test_cnn:
+        features = cnn.extraer_caracteristicas(img).flatten()
+        X_test_features.append(features)
+    X_test_features = np.array(X_test_features)
 
-def entrenar_modelos(K=3): #K=3 es el numero de vecinos mas cercanos 
-    print("Cargando datos de entrenamiento...")
-    #X_train, y_train = cargar_datos('data/data/training_data')
-    directorio_actual = os.path.dirname(os.path.abspath(__file__))
-    ruta_training_data = os.path.join(directorio_actual, "..", "data", "data", "dataset")
-    X_train, y_train = cargar_datos(ruta_training_data, is_training= False)  # Cargar datos de entrenamiento con modificaciones
-    y_train = y_train.astype(int)  # <- Esta línea soluciona el error con np.bincount
+    input_size_nn = X_train_features.shape[1]
+    print(f"Tamaño de las características de entrada para la NN: {input_size_nn}")
 
+    hidden_size = 128
+    output_size = num_classes
+    nn = RedNeuronal(input_size=input_size_nn, hidden_size=hidden_size, output_size=output_size, learning_rate=0.01)
 
-    directorio_modelos = os.path.join(directorio_actual, "..", "models")
-    if not os.path.exists(directorio_modelos):
-        os.makedirs(directorio_modelos)
+    print("\nEntrenando Red Neuronal...")
+    nn.fit(X_train_features, y_train, 
+           epochs=100,
+           batch_size=256,
+           lambda_reg=0.001,
+           learning_rate_decay=0.995,
+           early_stopping_rounds=20)
 
+    print("\nGuardando modelos...")
+    joblib.dump(nn, os.path.join(ruta_modelos, "nn_model_mejorado.pkl"))
+    joblib.dump(cnn, os.path.join(ruta_modelos, "cnn_model.pkl"))
+    joblib.dump(class_labels_map, os.path.join(ruta_modelos, "class_labels_map.pkl"))
 
-    #crear y entrenar modelo de Red Neuronal
-    print("Entrenando modelo Red Neuronal...")
-    input_size = X_train_cnn.shape[1]  # 28x28 = 784
-    output_size = int(np.max(y_train)) + 1 #Numero de clases (digitos 0-9 y letras A-Z)
-    #nn = NeuralNetwork(input_size=input_size, hidden_size=64, output_size=output_size)
-    #nn = NeuralNetwork(input_size=input_size, hidden_size=128, output_size=output_size, learning_rate=0.01)    #en hidden_size podemos cambiar el numero de neuronas
+    print("Modelos guardados exitosamente.")
 
-    nn = NeuralNetwork(input_size=input_size, hidden_size1=256, hidden_size2=128, output_size=output_size, learning_rate=0.005)
+    print("\nEvaluando modelo en conjunto de prueba...")
 
-    nn.fit(X_train, y_train, epochs=300) #podemos cambiar el numero de epocas
+    test_preds_indices = nn.predict(X_test_features)
 
-    # Guardar el modelo de Red Neuronal
-    ruta_nn = os.path.join(directorio_modelos, 'nn_model.pkl')
-    joblib.dump(nn, ruta_nn)
-    print(f"Modelo Red Neuronal guardado en {ruta_nn}.")
+    test_acc = np.mean(test_preds_indices == y_test)
+    print(f"Precisión en prueba: {test_acc*100:.2f}%")
 
+    class_names = [k for k, v in sorted(class_labels_map.items(), key=lambda item: item[1])]
+    print("\nReporte de Clasificación en prueba:")
+    print(classification_report(y_test, test_preds_indices, target_names=class_names, zero_division=0))
 
-def evaluar_modelos(ruta_datos, nn):
-    print("Evaluando modelos en el conjunto de prueba ...")
-    nn_preds, y_true = clasificar_conjunto_datos(ruta_datos, nn)
-    nn_precision = np.mean(nn_preds == y_true)
-    print(f"Precisión Red Neuronal en prueba: {nn_precision * 100:.2f}")
+    print("\nMatriz de Confusión en prueba:")
+    conf_matrix = confusion_matrix(y_test, test_preds_indices)
+    print(conf_matrix)
 
-
-
-if __name__ == '__main__':
-    # Entrenamiento y prueba desde el mismo dataset, usando split 70/30
-    directorio_actual = os.path.dirname(os.path.abspath(__file__))
-    ruta_training_data = os.path.join(directorio_actual, "..", "data", "data", "dataset")
-
-    print("Cargando y dividiendo datos (70% entrenamiento, 30% prueba)...")
-    X_train, X_test, y_train, y_test = cargar_datos_split(ruta_training_data, test_size=0.3)
-
-    # Entrenar modelos con X_train, y_train
-    print("Extrayendo características con CNN...")
-    cnn = ConvolutionalNeuralNetwork()
-    X_train_cnn = np.array([cnn.extraer_caracteristicas(x.reshape(28, 28)).flatten() for x in X_train])
-    X_test_cnn = np.array([cnn.extraer_caracteristicas(x.reshape(28, 28)).flatten() for x in X_test])
-    print("Características extraídas con éxito.")
-
-    print("Entrenando modelo Red Neuronal...")
-    input_size = X_train_cnn.shape[1]  # 28x28 = 784
-    output_size = int(np.max(y_train)) + 1 #Numero de clases (digitos 0-9 y letras A-Z)
-    nn = NeuralNetwork(input_size=input_size, hidden_size1=256, hidden_size2=128, output_size=output_size, learning_rate=0.01)
-    nn.fit(X_train_cnn, y_train, epochs=300)  #podemos cambiar el numero de epocas
-    print("Modelo Red Neuronal entrenado con éxito.")
-
-    # Guardar modelos como antes
-    directorio_modelos = os.path.join(directorio_actual, "..", "models")
-    if not os.path.exists(directorio_modelos):
-        os.makedirs(directorio_modelos)
-
-    ruta_nn = os.path.join(directorio_modelos, 'nn_model.pkl')
-    joblib.dump(nn, ruta_nn)
-    print(f"Modelo Red Neuronal guardado en {ruta_nn}.")
-
-    # Evaluar modelos with X_test, y_test
-    print("Evaluando modelos en el conjunto de prueba ...")
-    nn_preds = nn.predict(X_test_cnn)
-    nn_precision = np.mean(nn_preds == y_test)
-    print(f"Precisión Red Neuronal en prueba: {nn_precision * 100:.2f}")
-
-    # Guardar matrices de confusión y reportes en archivo
-    nombre_base = "evaluacion_modelo_CNN.txt"
-    ruta_base = os.path.join(directorio_modelos, nombre_base)
-
-    # Paso 1: Encontrar todos los archivos tipo evaluacion_modelo_CNN.txt
-    patron = re.compile(r"evaluacion_modelo_CNN(\d+)\.txt$")
-    archivos_existentes = []
-
-    for archivo in os.listdir(directorio_modelos):
-        match = patron.match(archivo)
-        if match:
-            numero = int(match.group(1))
-            archivos_existentes.append((numero, archivo))
-
-    # Ordenarlos del mayor al menor para evitar sobrescribir al renombrar
-    archivos_existentes.sort(reverse=True)
-
-    # Paso 2: Aumentar en 1 el número de cada archivo
-    for numero, nombre_archivo in archivos_existentes:
-        ruta_vieja = os.path.join(directorio_modelos, nombre_archivo)
-        ruta_nueva = os.path.join(directorio_modelos, f"evaluacion_modelo_CNN{numero+1}.txt")
-        os.rename(ruta_vieja, ruta_nueva)
-
-    # Paso 3: Renombrar el archivo base (sin número) a evaluacion_modelo_CNN1.txt si existe
-    if os.path.exists(ruta_base):
-        os.rename(ruta_base, os.path.join(directorio_modelos, "evaluacion_modelo_CNN1.txt"))
-
-    # Paso 4: Crear Ruta del nuevo reporte
-    reporte_path = os.path.join(directorio_modelos, "evaluacion_modelo_CNN.txt")
-
-    # Determinar etiquetas
-    carpetas = sorted([f for f in os.listdir(ruta_training_data) if os.path.isdir(os.path.join(ruta_training_data, f))])
-
-    if any(c.isupper() for c in carpetas) and any(c.islower() for c in carpetas):
-        print("Detectado dataset con mayúsculas y minúsculas.")
-        etiquetas = [str(i) for i in range(10)] + \
-                    [chr(65+i) for i in range(26)] + \
-                    [chr(97+i) for i in range(26)]
-    else:
-        etiquetas = carpetas
-
-    with open(reporte_path, "w", encoding="utf-8") as f:
+    with open(os.path.join(ruta_modelos, "evaluacion_modelo_CNN_mejorado.txt"), "w") as f:
         f.write("=== Evaluación de Modelos ===\n\n")
-        f.write(f"Precisión Red Neuronal en prueba: {nn_precision * 100:.2f}\n\n")
+        f.write(f"Precisión Red Neuronal en prueba: {test_acc*100:.2f}%\n\n")
         f.write("Etiquetas de clase:\n")
-        f.write(", ".join(etiquetas) + "\n\n")
-        f.write("\n\nMatriz de confusión Red Neuronal:\n")
-        
-        
-        matriz = confusion_matrix(y_test, nn_preds)
-        df_matriz = pd.DataFrame(matriz, index=etiquetas, columns=etiquetas)
-        f.write(df_matriz.to_string())
-        f.write("\n")
-        
-        f.write("\nReporte de clasificación Red Neuronal:\n")
-        f.write(classification_report(y_test, nn_preds, target_names=etiquetas, zero_division=0))
+        f.write(", ".join(class_names) + "\n\n")
+        f.write("Reporte de Clasificación Red Neuronal:\n")
+        f.write(classification_report(y_test, test_preds_indices, target_names=class_names, zero_division=0))
+        f.write("\nMatriz de confusión Red Neuronal:\n")
+        f.write(str(conf_matrix))
 
-    print(f"Reporte de evaluación guardado en {reporte_path}")
-
-
-
-#cada que cargues los datos, ejemplo Red Neuronal: Inicializada con 784 entradas, 128 neuronas ocultas y 36 salidas.
-#el numero de entradas es 784 porque las imagenes son de 28x28 pixeles, 28*28=784 de pa parte de preprocesamiento.py
-#el numero de neuronas ocultas puede ser cambiado, en este caso se puso 128
-#el numero de salidas es 36 porque son 36 clases (26 letras y 10 numeros)
-#el learning rate es 0.01, este valor puede ser cambiado
-#el numero de epocas es 1000, este valor puede ser cambiado
+    print("\nEvaluación completada y guardada.")

@@ -2,6 +2,7 @@ import os
 import numpy as np
 import cv2  # Para cargar imágenes
 import random 
+import re # Importar re para la expresión regular
 
 
 def modificar_imagen(imagen):
@@ -19,160 +20,161 @@ def modificar_imagen(imagen):
     #3. Escalado +/- 10% (ligero cambio de tamaño de la imagen)
     escala = random.uniform(0.9, 1.1) #Escala entre 90% y 110%
     imagen = cv2.resize(imagen, None, fx=escala, fy=escala, interpolation=cv2.INTER_AREA)
-    #Despues de escalar, recortar la imagen para que vuelva a ser de 28x28, asi que la re-dimensionamos y centramos
-    if imagen.shape[0] > 28 or imagen.shape[1] > 28: # Si la imagen es mayor a 28x28, recort ael centro
-        start_x = max(0, (imagen.shape[1] - 28) // 2)
-        start_y = max(0, (imagen.shape[0] - 28) // 2)
-        imagen = imagen[start_y:start_y + 28, start_x:start_x + 28]
-
-    imagen = cv2.resize(imagen, (28, 28), interpolation= cv2.INTER_AREA)  # Asegurarse de que la imagen es de 28x28
-    
-    #4. Ruido aleatorio (agregar ruido gaussiano a la imagen)
-    if random.random() < 0.2: #Apliucar ruido al 20% de las imagenes
-        row, col = imagen.shape
-        mean = 0 
-        var = random.uniform(40, 80) #Variacion del ruido entre 50 y 150
-        sigma = var ** 0.5
-        gauss = np.random.normal(mean, sigma, (row, col))
-        imagen = imagen + gauss
-        imagen = np.clip(imagen, 0, 255).astype(np.uint8)  # Asegurarse de que los valores estén entre 0 y 255
+    #Después de escalar, la imagen puede no tener el tamaño 28x28. 
+    #Recortar o rellenar para que siempre sea 28x28
+    h, w = imagen.shape
+    new_h, new_w = 28, 28
+    start_h = max(0, (h - new_h) // 2)
+    start_w = max(0, (w - new_w) // 2)
+    imagen = imagen[start_h:start_h+new_h, start_w:start_w+new_w]
+    if imagen.shape[0] != new_h or imagen.shape[1] != new_w:
+        # Si el recorte no es suficiente (ej. imagen más pequeña después del escalado),
+        # rellenar con ceros.
+        temp_img = np.zeros((new_h, new_w), dtype=imagen.dtype)
+        temp_img[:imagen.shape[0], :imagen.shape[1]] = imagen
+        imagen = temp_img
 
 
+    #4. Ruido Gaussiano (pequeño ruido para simular imperfecciones de las letras)
+    ruido = np.random.normal(0, 5, imagen.shape).astype(np.uint8) # Desviación estándar de 5
+    imagen = cv2.add(imagen, ruido) # Suma con saturación para evitar valores fuera de 0-255
 
-    #if not hasattr(modificar_imagen, "contador"):
-    #    modificar_imagen.contador = 0
-    #if modificar_imagen.contador < 10 and random.random() < 0.8:  # Guardar solo el 10% de las imágenes modificadas y con probabilidad del 80% 
-        #ruta_debug = os.path.join(os.path.dirname(__file__), "debug", f"debug_modificada_{modificar_imagen.contador}.png")
-        #cv2.imwrite(ruta_debug, imagen)
-        #modificar_imagen.contador += 1
+    #Asegurar que la imagen siga en el rango 0-255
+    imagen = np.clip(imagen, 0, 255)
 
     return imagen
 
 
+# Función para cargar datos desde un directorio
+# Esta función es crucial para el mapeo de clases
+def cargar_datos_split(directorio, test_size=0.2, random_state=42, max_por_carpeta=None):
+    X = []
+    y = []
+    # Usar un diccionario para mapear nombres de carpetas a índices numéricos
+    class_labels_map = {}
+    current_label_index = 0
 
-def cargar_datos(directorio_base, is_training=False):
-    """Carga imágenes desde un directorio y las convierte en datos numéricos (hasta 400 por carpeta)."""
-    X, y = [], []
+    # Ordenar las carpetas para asegurar un mapeo consistente entre ejecuciones
+    carpetas = sorted([d for d in os.listdir(directorio) if os.path.isdir(os.path.join(directorio, d))])
 
-    # Verifica si el directorio existe
-    if not os.path.exists(directorio_base):
-        raise FileNotFoundError(f"El directorio {directorio_base} no existe.")
-    
-    carpetas = [f for f in os.listdir(directorio_base) if os.path.isdir(os.path.join(directorio_base, f))]
-
-    # Detecta si es dataset extendido (mayúsculas/minúsculas)
-    if any(c.isupper() for c in carpetas) and any(c.islower() for c in carpetas):
-        print("Detectado dataset extendido (mayúsculas y minúsculas).")
-        etiquetas = {
-            str(i): i for i in range(10)  # Números 0-9
-        }
-        etiquetas.update({
-            chr(65 + i): 10 + i for i in range(26)  # Letras mayúsculas A-Z
-        })
-        etiquetas.update({
-            chr(97 + i): 36 + i for i in range(26)  # Letras minúsculas a-z
-        })
-        print("Usando mapeo extendido (mayúsculas y minúsculas).")
-    else:
-        etiquetas = {
-            nombre: i for i, nombre in enumerate(sorted(carpetas))
-        }
-
-    max_por_carpeta = 500  # Máximo de imágenes por carpeta
-
-    for etiqueta, indice in etiquetas.items():
-        carpeta = os.path.join(directorio_base, etiqueta)
-        if os.path.isdir(carpeta):
-            archivos = [f for f in os.listdir(carpeta) if os.path.isfile(os.path.join(carpeta, f))]
-
-            # Elegir hasta N archivos aleatorios
+    for carpeta_nombre in carpetas:
+        carpeta_path = os.path.join(directorio, carpeta_nombre)
+        
+        # Asignar un índice numérico a la clase si no existe
+        if carpeta_nombre not in class_labels_map:
+            class_labels_map[carpeta_nombre] = current_label_index
+            current_label_index += 1
+        
+        indice = class_labels_map[carpeta_nombre]
+        
+        archivos = [f for f in os.listdir(carpeta_path) if re.match(r'.*\.png$', f)] # Asume archivos .png
+        
+        # Limitar el número de archivos por carpeta si max_por_carpeta está especificado
+        if max_por_carpeta:
             if len(archivos) > max_por_carpeta:
                 archivos = random.sample(archivos, max_por_carpeta)
             else:
-                random.shuffle(archivos)  # Si hay menos, igual los mezcla
+                random.shuffle(archivos) # Shuffle incluso si no se limita para aleatoriedad
+        else:
+            random.shuffle(archivos) # Shuffle siempre
 
-            for archivo in archivos:
-                ruta = os.path.join(carpeta, archivo)
-                imagen = cv2.imread(ruta, cv2.IMREAD_GRAYSCALE)
+        for archivo in archivos:
+            ruta = os.path.join(carpeta_path, archivo)
+            imagen = cv2.imread(ruta, cv2.IMREAD_GRAYSCALE)
+            if imagen is None:
+                continue
+            imagen = cv2.resize(imagen, (28, 28)) # Mantener como 2D
+            X.append(imagen) # Las imágenes se normalizarán y aplanarán en entrenamiento.py
+            y.append(indice)
 
-                if imagen is None:
-                    print(f"Error al cargar la imagen {ruta}. Se omite.")
-                    continue
-
-                if is_training and random.random() < 0.90:
-                    imagen = modificar_imagen(imagen)
-
-                imagen = cv2.resize(imagen, (28, 28)).flatten()
-                X.append(imagen)
-                y.append(indice)
-
-    print(f"Se cargaron {len(X)} imágenes.")
-    return np.array(X, dtype=np.float32) / 255.0, np.array(y)
-
-
-def cargar_datos_split(directorio_base, test_size=0.3, random_state=42):
-    """Carga imágenes y divide en entrenamiento y prueba (stratified)."""
-    X, y = [], []
-    if not os.path.exists(directorio_base):
-        raise FileNotFoundError(f"El directorio {directorio_base} no existe.")
-    carpetas = [f for f in os.listdir(directorio_base) if os.path.isdir(os.path.join(directorio_base, f))]
-    if any("_U" in c or "_L" in c for c in carpetas):
-        etiquetas = {
-            **{str(i): i for i in range(10)},
-            **{f"{chr(65 + i)}_U": 10 + i for i in range(26)},
-            **{f"{chr(97 + i)}_L": 36 + i for i in range(26)}
-        }
-    else:
-        etiquetas = {
-            nombre: i for i, nombre in enumerate(
-                sorted(f for f in os.listdir(directorio_base) if os.path.isdir(os.path.join(directorio_base, f)))
-            )
-        }
-    max_por_carpeta = 5000
-    for etiqueta, indice in etiquetas.items():
-        carpeta = os.path.join(directorio_base, etiqueta)
-        if os.path.isdir(carpeta):
-            archivos = [f for f in os.listdir(carpeta) if os.path.isfile(os.path.join(carpeta, f))]
-            if len(archivos) > max_por_carpeta:
-                archivos = random.sample(archivos, max_por_carpeta)
-            else:
-                random.shuffle(archivos)
-            for archivo in archivos:
-                ruta = os.path.join(carpeta, archivo)
-                imagen = cv2.imread(ruta, cv2.IMREAD_GRAYSCALE)
-                if imagen is None:
-                    continue
-                imagen = cv2.resize(imagen, (28, 28)).flatten()
-                X.append(imagen)
-                y.append(indice)
-    X = np.array(X, dtype=np.float32) / 255.0
+    X = np.array(X, dtype=np.float32) 
     y = np.array(y)
+
     # Mezclar y dividir
     np.random.seed(random_state)
     indices = np.arange(len(X))
     np.random.shuffle(indices)
     X, y = X[indices], y[indices]
+
     split = int(len(X) * (1 - test_size))
     X_train, X_test = X[:split], X[split:]
     y_train, y_test = y[:split], y[split:]
-    return X_train, X_test, y_train, y_test
+
+    # Retornar el mapeo de clases
+    return X_train, X_test, y_train, y_test, class_labels_map
+
+
+# cargar_datos ahora podría ser redundante si siempre se usa cargar_datos_split
+# Pero la mantengo por si la usas en otro lado y para consistencia.
+def cargar_datos(directorio, max_por_carpeta=None):
+    X = []
+    y = []
+    class_labels_map = {}
+    current_label_index = 0
+    carpetas = sorted([d for d in os.listdir(directorio) if os.path.isdir(os.path.join(directorio, d))])
+    
+    for carpeta_nombre in carpetas:
+        carpeta_path = os.path.join(directorio, carpeta_nombre)
+        
+        if carpeta_nombre not in class_labels_map:
+            class_labels_map[carpeta_nombre] = current_label_index
+            current_label_index += 1
+        
+        indice = class_labels_map[carpeta_nombre]
+        
+        archivos = [f for f in os.listdir(carpeta_path) if re.match(r'.*\.png$', f)]
+        
+        if max_por_carpeta:
+            if len(archivos) > max_por_carpeta:
+                archivos = random.sample(archivos, max_por_carpeta)
+            else:
+                random.shuffle(archivos)
+        else:
+            random.shuffle(archivos)
+
+        for archivo in archivos:
+            ruta = os.path.join(carpeta_path, archivo)
+            imagen = cv2.imread(ruta, cv2.IMREAD_GRAYSCALE)
+            if imagen is None:
+                continue
+            imagen = cv2.resize(imagen, (28, 28)) # Mantener como 2D
+            X.append(imagen)
+            y.append(indice)
+    
+    X = np.array(X, dtype=np.float32)
+    y = np.array(y)
+    
+    # Mezclar los datos una vez cargados
+    indices = np.arange(len(X))
+    np.random.shuffle(indices)
+    X, y = X[indices], y[indices]
+
+    return X, y, class_labels_map
 
 
 if __name__ == "__main__":
-    # Usa la ruta absoluta
-    #directorio_training = r"N:\Proyecto modular\data\data\training_data"
+    # Usa la ruta absoluta (ajusta según tu estructura de carpetas)
+    # Ejemplo: si preprocesamiento.py está en 'src/', y 'data/' está en el nivel superior
+    ruta_base = os.path.dirname(os.path.abspath(__file__))
+    directorio_training = os.path.join(ruta_base, "..", "data", "data", "training_data")
 
-    # Usa la ruta relativa
-    directorio_actual = os.path.dirname(os.path.abspath(__file__))
-    directorio_training = os.path.join(directorio_actual, "..", "data", "data", "dataset")
+    print(f"Cargando datos de: {directorio_training}")
+    X_train, X_test, y_train, y_test, class_labels_map = cargar_datos_split(directorio_training, max_por_carpeta=100) # Carga limitada para prueba
+    
+    print(f"Forma de X_train: {X_train.shape}")
+    print(f"Forma de y_train: {y_train.shape}")
+    print(f"Forma de X_test: {X_test.shape}")
+    print(f"Forma de y_test: {y_test.shape}")
+    print(f"Número de clases: {len(class_labels_map)}")
+    print(f"Mapeo de clases: {class_labels_map}")
 
-    # Verifica la ruta
-    print(f"Intentando acceder a: {directorio_training}")
-
-    # Carga los datos
-    X, y = cargar_datos(directorio_training)
-    print(f"Se cargaron {len(X)} imágenes de entrenamiento.")
-
-
-
-
+    # Demostración del aumento de datos
+    if len(X_train) > 0:
+        ejemplo_imagen = X_train[0]
+        cv2.imshow("Original", ejemplo_imagen.astype(np.uint8))
+        cv2.waitKey(0)
+        
+        imagen_modificada = modificar_imagen(ejemplo_imagen.astype(np.uint8))
+        cv2.imshow("Modificada", imagen_modificada)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
