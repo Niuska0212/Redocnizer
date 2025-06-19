@@ -151,7 +151,10 @@ class RedNeuronal:
             history['loss'].append(epoch_loss)
             history['accuracy'].append(epoch_accuracy)
 
-            print(f"Epoch {epoch+1}/{epochs}, Loss: {epoch_loss:.4f}, Accuracy: {epoch_accuracy*100:.2f}%")
+
+            if (epoch + 1) % 50 == 0 or (epoch + 1) == epochs:
+                # Imprimir el progreso cada 10 épocas o en la última época
+                print(f"Epoch {epoch+1}/{epochs}, Loss: {epoch_loss:.4f}, Accuracy: {epoch_accuracy*100:.2f}%")
 
             self.learning_rate *= learning_rate_decay
 
@@ -172,9 +175,7 @@ class RedNeuronal:
 
 # --- Inicio del script de entrenamiento ---
 if __name__ == "__main__":
-    print("=== INICIO DE EJECUCIÓN DEL SCRIPT DE ENTRENAMIENTO ===")
 
-  
     ruta_base = os.path.dirname(os.path.abspath(__file__))
     ruta_dataset_principal = os.path.join(ruta_base, "..", "data", "data", "dataset") 
     ruta_modelos = os.path.join(ruta_base, "..", "models")
@@ -186,7 +187,7 @@ if __name__ == "__main__":
         ruta_dataset_principal,
         test_size=0.3,
         random_state=42, 
-        max_por_carpeta=None
+        max_por_carpeta=100
     )
 
     num_classes = len(class_labels_map)
@@ -203,11 +204,13 @@ if __name__ == "__main__":
         augmented_img = modificar_imagen(img)
         X_train_augmented.append(augmented_img.astype(np.float32) / 255.0)
         y_train_augmented.append(y_train[i])
+    
     X_train_cnn = np.array(X_train_augmented)
     y_train = np.array(y_train_augmented)
 
     cnn = ConvolutionalNeuralNetwork(input_shape=(28, 28), num_filters=32, filter_size=3, pool_size=2)
     
+
     print("Extrayendo características con CNN para el conjunto de entrenamiento...")
     X_train_features = []
     for img in X_train_cnn:
@@ -231,7 +234,7 @@ if __name__ == "__main__":
 
     print("\nEntrenando Red Neuronal...")
     nn.fit(X_train_features, y_train, 
-           epochs=100,
+           epochs=200,
            batch_size=256,
            lambda_reg=0.001,
            learning_rate_decay=0.995,
@@ -253,15 +256,15 @@ if __name__ == "__main__":
 
     class_names = [k for k, v in sorted(class_labels_map.items(), key=lambda item: item[1])]
     print("\nReporte de Clasificación en prueba:")
-    print(classification_report(y_test, test_preds_indices, target_names=class_names, zero_division=0))
+    #print(classification_report(y_test, test_preds_indices, target_names=class_names, zero_division=0))
 
     print("\nMatriz de Confusión en prueba:")
     conf_matrix = confusion_matrix(y_test, test_preds_indices)
-    print(conf_matrix)
+    #print(conf_matrix)
 
     with open(os.path.join(ruta_modelos, "evaluacion_modelo_CNN_mejorado.txt"), "w") as f:
         f.write("=== Evaluación de Modelos ===\n\n")
-        f.write(f"Precisión Red Neuronal en prueba: {test_acc*100:.2f}%\n\n")
+        #f.write(f"Precisión Red Neuronal en prueba: {test_acc*100:.2f}%\n\n")
         f.write("Etiquetas de clase:\n")
         f.write(", ".join(class_names) + "\n\n")
         f.write("Reporte de Clasificación Red Neuronal:\n")
