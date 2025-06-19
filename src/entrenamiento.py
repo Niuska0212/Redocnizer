@@ -1,4 +1,5 @@
 import joblib
+import pandas as pd
 import os
 import re
 import numpy as np
@@ -6,34 +7,27 @@ from preprocesamiento import cargar_datos, cargar_datos_split
 from clasificador import clasificar_conjunto_datos
 import random
 from sklearn.metrics import confusion_matrix, classification_report
-
+import cv2
 
 # Implementación de CNN con un kernel de convolución fijo
 class ConvolutionalNeuralNetwork:
-    def __init__(self, input_shape=(28, 28), num_filters=4, filter_size=3):
+    def __init__(self, input_shape=(28, 28), num_filters=1, filter_size=3):
         self.input_shape = input_shape
         self.num_filters = num_filters
         self.filter_size = filter_size
-        self.filters = np.random.randn(num_filters, filter_size, filter_size) * 0.01
+        self.filters = np.random.randn(num_filters, filter_size, filter_size).astype(np.float32) * 0.01
 
     def relu(self, x):
         return np.maximum(0, x)
-    
-    # Definir un kernel de convolución fijo para simplificar
+
     def convolve(self, image, kernel):
-        h, w = image.shape
-        kh, kw = kernel.shape
-        output = np.zeros((h - kh + 1, w - kw +1))
-        for i in range(output.shape[0]):
-            for j in range(output.shape[1]):
-                region = image[i:i + kh, j:j + kw]
-                output[i, j] = np.sum(region * kernel)
-        return output
-    
+        # Usar OpenCV para la convolución (mucho más rápido)
+        return cv2.filter2D(image, -1, kernel, borderType=cv2.BORDER_CONSTANT)
+
     def extraer_caracteristicas(self, image):
         conv_maps = [self.relu(self.convolve(image, f)) for f in self.filters]
         flat = np.concatenate([m.flatten() for m in conv_maps])
-        return flat.reshape(1, -1)  # Aplanar y mantener como matriz 2D
+        return flat.reshape(1, -1)
 
 # Implementación manual de una red neuronal simple con una capa oculta
 class NeuralNetwork:
@@ -160,7 +154,7 @@ def entrenar_modelos(K=3): #K=3 es el numero de vecinos mas cercanos
 
     #crear y entrenar modelo de Red Neuronal
     print("Entrenando modelo Red Neuronal...")
-    input_size = X_train.shape[1]  # 28x28 = 784
+    input_size = X_train_cnn.shape[1]  # 28x28 = 784
     output_size = int(np.max(y_train)) + 1 #Numero de clases (digitos 0-9 y letras A-Z)
     #nn = NeuralNetwork(input_size=input_size, hidden_size=64, output_size=output_size)
     #nn = NeuralNetwork(input_size=input_size, hidden_size=128, output_size=output_size, learning_rate=0.01)    #en hidden_size podemos cambiar el numero de neuronas
@@ -199,10 +193,10 @@ if __name__ == '__main__':
     print("Características extraídas con éxito.")
 
     print("Entrenando modelo Red Neuronal...")
-    input_size = X_train.shape[1]  # 28x28 = 784
+    input_size = X_train_cnn.shape[1]  # 28x28 = 784
     output_size = int(np.max(y_train)) + 1 #Numero de clases (digitos 0-9 y letras A-Z)
-    nn = NeuralNetwork(input_size=input_size, hidden_size1=256, hidden_size2=128, output_size=output_size, learning_rate=0.005)
-    nn.fit(X_train_cnn, y_train, epochs=300) #podemos cambiar el numero de epocas
+    nn = NeuralNetwork(input_size=input_size, hidden_size1=256, hidden_size2=128, output_size=output_size, learning_rate=0.01)
+    nn.fit(X_train_cnn, y_train, epochs=300)  #podemos cambiar el numero de epocas
     print("Modelo Red Neuronal entrenado con éxito.")
 
     # Guardar modelos como antes
@@ -267,7 +261,13 @@ if __name__ == '__main__':
         f.write("Etiquetas de clase:\n")
         f.write(", ".join(etiquetas) + "\n\n")
         f.write("\n\nMatriz de confusión Red Neuronal:\n")
-        f.write(str(confusion_matrix(y_test, nn_preds)) + "\n")
+        
+        
+        matriz = confusion_matrix(y_test, nn_preds)
+        df_matriz = pd.DataFrame(matriz, index=etiquetas, columns=etiquetas)
+        f.write(df_matriz.to_string())
+        f.write("\n")
+        
         f.write("\nReporte de clasificación Red Neuronal:\n")
         f.write(classification_report(y_test, nn_preds, target_names=etiquetas, zero_division=0))
 

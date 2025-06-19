@@ -4,7 +4,6 @@ import numpy as np
 import cv2
 import joblib
 from preprocesamiento import cargar_datos
-from entrenamiento import ConvolutionalNeuralNetwork
 
 
 # Agregar el directorio raíz del proyecto al path
@@ -16,6 +15,7 @@ if ruta_proyecto not in sys.path:
 def clasificar_imagen(ruta_imagen, modelo_nn):
     #"""Clasifica una imagen con CNN y la Red Neuronal."""
     # Cargar la imagen
+    from entrenamiento import ConvolutionalNeuralNetwork
     cnn = ConvolutionalNeuralNetwork()
     imagen = cv2.imread(ruta_imagen, cv2.IMREAD_GRAYSCALE)
     if imagen is None:
@@ -31,6 +31,7 @@ def clasificar_imagen(ruta_imagen, modelo_nn):
 
 def clasificar_conjunto_datos(ruta_datos, modelo_nn):
     """Clasifica un conjunto de datos completo."""
+    from entrenamiento import ConvolutionalNeuralNetwork
     cnn= ConvolutionalNeuralNetwork()
     X, y = cargar_datos(ruta_datos, is_training=False)  # Cargar datos sin modificaciones
     X_features = np.array([cnn.extraer_caracteristicas(x.reshape(28, 28)).flatten() for x in X])  # Extraer características de cada imagen
