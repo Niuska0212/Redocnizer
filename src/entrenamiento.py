@@ -187,7 +187,7 @@ if __name__ == "__main__":
         ruta_dataset_principal,
         test_size=0.3,
         random_state=42, 
-        max_por_carpeta=200
+        max_por_carpeta=1000
     )
 
     num_classes = len(class_labels_map)
@@ -234,7 +234,7 @@ if __name__ == "__main__":
 
     print("\nEntrenando Red Neuronal...")
     nn.fit(X_train_features, y_train, 
-           epochs=500,
+           epochs=1000,
            batch_size=256,
            lambda_reg=0.001,
            learning_rate_decay=0.995,
