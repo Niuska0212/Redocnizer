@@ -187,7 +187,7 @@ if __name__ == "__main__":
         ruta_dataset_principal,
         test_size=0.3,
         random_state=42, 
-        max_por_carpeta=1000
+        max_por_carpeta=500
     )
 
     num_classes = len(class_labels_map)
@@ -228,7 +228,7 @@ if __name__ == "__main__":
     input_size_nn = X_train_features.shape[1]
     print(f"Tamaño de las características de entrada para la NN: {input_size_nn}")
 
-    hidden_size = 128
+    hidden_size = 512  # Tamaño del layer oculto, puedes ajustar este valor
     output_size = num_classes
     nn = RedNeuronal(input_size=input_size_nn, hidden_size=hidden_size, output_size=output_size, learning_rate=0.01)
 
@@ -238,7 +238,7 @@ if __name__ == "__main__":
            batch_size=256,
            lambda_reg=0.001,
            learning_rate_decay=0.995,
-           early_stopping_rounds=20)
+           early_stopping_rounds=50)
 
     print("\nGuardando modelos...")
     joblib.dump(nn, os.path.join(ruta_modelos, "nn_model_mejorado.pkl"))
