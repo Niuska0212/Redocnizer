@@ -191,8 +191,8 @@ if __name__ == "__main__":
     )
 
     num_classes = len(class_labels_map)
-    print(f"Número de clases detectadas: {num_classes}")
-    print(f"Mapeo de clases: {class_labels_map}")
+    #print(f"Número de clases detectadas: {num_classes}")
+    #print(f"Mapeo de clases: {class_labels_map}")
 
     X_train_cnn = np.array([cv2.resize(img, (28, 28)).astype(np.float32) / 255.0 for img in X_train_raw.reshape(-1, 28, 28)])
     X_test_cnn = np.array([cv2.resize(img, (28, 28)).astype(np.float32) / 255.0 for img in X_test_raw.reshape(-1, 28, 28)])
@@ -230,13 +230,13 @@ if __name__ == "__main__":
 
     hidden_size = 512  # Tamaño del layer oculto, puedes ajustar este valor
     output_size = num_classes
-    nn = RedNeuronal(input_size=input_size_nn, hidden_size=hidden_size, output_size=output_size, learning_rate=0.01)
+    nn = RedNeuronal(input_size=input_size_nn, hidden_size=hidden_size, output_size=output_size, learning_rate=0.005)
 
     print("\nEntrenando Red Neuronal...")
     nn.fit(X_train_features, y_train, 
-           epochs=1000,
-           batch_size=256,
-           lambda_reg=0.001,
+           epochs=700,
+           batch_size=128,
+           lambda_reg=0.0005, 
            learning_rate_decay=0.995,
            early_stopping_rounds=50)
 
