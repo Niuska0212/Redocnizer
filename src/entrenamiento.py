@@ -3,13 +3,14 @@ import pandas as pd
 import os
 import re
 import numpy as np
-from preprocesamiento import modificar_imagen, cargar_datos_split # Mantener estas importaciones aquí
+# Importar la versión actualizada de cargar_datos_split sin modificar_imagen
+from preprocesamiento import cargar_datos_split 
 
 import random
 from sklearn.metrics import confusion_matrix, classification_report
 import cv2
 
-# --- Clase ConvolutionalNeuralNetwork (sin cambios) ---
+# --- Clase ConvolutionalNeuralNetwork (sin cambios, ya que quieres mantenerla) ---
 class ConvolutionalNeuralNetwork:
     def __init__(self, input_shape=(28, 28), num_filters=32, filter_size=3, pool_size=2):
         self.input_shape = input_shape
@@ -18,7 +19,7 @@ class ConvolutionalNeuralNetwork:
         self.pool_size = pool_size
         
         self.filters = [np.random.randn(filter_size, filter_size).astype(np.float32) * np.sqrt(2.0/(filter_size*filter_size)) 
-                       for _ in range(num_filters)]
+                        for _ in range(num_filters)]
         
     def relu(self, x):
         return np.maximum(0, x)
@@ -57,10 +58,10 @@ class ConvolutionalNeuralNetwork:
         conv_output = self.convolve(image, self.filters)
         activated_output = self.relu(conv_output)
         pooled_output = np.array([self.max_pool(activated_output[f], self.pool_size) 
-                                  for f in range(self.num_filters)])
+                                 for f in range(self.num_filters)])
         return pooled_output
 
-# --- Clase RedNeuronal (sin cambios) ---
+# --- Clase RedNeuronal (sin cambios, ya que quieres mantenerla) ---
 class RedNeuronal:
     def __init__(self, input_size, hidden_size, output_size, learning_rate=0.01):
         self.input_size = input_size
@@ -108,7 +109,7 @@ class RedNeuronal:
         self.W1 -= self.learning_rate * (self.dW1 + lambda_reg * self.W1)
         self.b1 -= self.learning_rate * self.db1
         self.W2 -= self.learning_rate * (self.dW2 + lambda_reg * self.W2)
-        self.b2 -= self.learning_rate * self.db2
+        self.b2 -= self.learning_rate * self.b2
 
     def fit(self, X_train, y_train, epochs=100, batch_size=32, lambda_reg=0.01, learning_rate_decay=1.0, early_stopping_rounds=None):
         num_samples = X_train.shape[0]
@@ -153,7 +154,6 @@ class RedNeuronal:
 
 
             if (epoch + 1) % 50 == 0 or (epoch + 1) == epochs:
-                # Imprimir el progreso cada 10 épocas o en la última época
                 print(f"Epoch {epoch+1}/{epochs}, Loss: {epoch_loss:.4f}, Accuracy: {epoch_accuracy*100:.2f}%")
 
             self.learning_rate *= learning_rate_decay
@@ -183,35 +183,43 @@ if __name__ == "__main__":
     os.makedirs(ruta_modelos, exist_ok=True)
 
     print(f"Cargando datos del directorio: {ruta_dataset_principal}")
+    # Ahora cargar_datos_split carga en paralelo y ya no modifica las imágenes.
+    # El parámetro num_workers controla cuántos hilos se usarán.
     X_train_raw, X_test_raw, y_train, y_test, class_labels_map = cargar_datos_split(
         ruta_dataset_principal,
         test_size=0.3,
         random_state=42, 
-        max_por_carpeta=500
+        max_por_carpeta=500, # Considera quitar o aumentar este límite para usar más datos
+        num_workers=os.cpu_count() # Usa todos los núcleos disponibles
     )
 
     num_classes = len(class_labels_map)
-    #print(f"Número de clases detectadas: {num_classes}")
-    #print(f"Mapeo de clases: {class_labels_map}")
 
-    X_train_cnn = np.array([cv2.resize(img, (28, 28)).astype(np.float32) / 255.0 for img in X_train_raw.reshape(-1, 28, 28)])
-    X_test_cnn = np.array([cv2.resize(img, (28, 28)).astype(np.float32) / 255.0 for img in X_test_raw.reshape(-1, 28, 28)])
+    # Las imágenes ya vienen redimensionadas a (28, 28) desde cargar_datos_split
+    # Solo normalizamos a 0-1
+    X_train_cnn = X_train_raw / 255.0
+    X_test_cnn = X_test_raw / 255.0
 
-    X_train_augmented = []
-    y_train_augmented = []
-    for i in range(len(X_train_cnn)):
-        img = (X_train_cnn[i] * 255).astype(np.uint8)
-        augmented_img = modificar_imagen(img)
-        X_train_augmented.append(augmented_img.astype(np.float32) / 255.0)
-        y_train_augmented.append(y_train[i])
+    # --- ELIMINADA LA SECCIÓN DE AUMENTO DE DATOS CON 'modificar_imagen' ---
+    # X_train_augmented = []
+    # y_train_augmented = []
+    # for i in range(len(X_train_cnn)):
+    #     img = (X_train_cnn[i] * 255).astype(np.uint8)
+    #     augmented_img = modificar_imagen(img)
+    #     X_train_augmented.append(augmented_img.astype(np.float32) / 255.0)
+    #     y_train_augmented.append(y_train[i])
     
-    X_train_cnn = np.array(X_train_augmented)
-    y_train = np.array(y_train_augmented)
+    # X_train_cnn = np.array(X_train_augmented)
+    # y_train = np.array(y_train_augmented)
+    # --- FIN DE SECCIÓN ELIMINADA ---
+
 
     cnn = ConvolutionalNeuralNetwork(input_shape=(28, 28), num_filters=32, filter_size=3, pool_size=2)
     
 
     print("Extrayendo características con CNN para el conjunto de entrenamiento...")
+    # La extracción de características sigue siendo secuencial aquí,
+    # ya que tu clase CNN procesa una imagen a la vez.
     X_train_features = []
     for img in X_train_cnn:
         features = cnn.extraer_caracteristicas(img).flatten()
@@ -228,7 +236,7 @@ if __name__ == "__main__":
     input_size_nn = X_train_features.shape[1]
     print(f"Tamaño de las características de entrada para la NN: {input_size_nn}")
 
-    hidden_size = 512  # Tamaño del layer oculto, puedes ajustar este valor
+    hidden_size = 512 
     output_size = num_classes
     nn = RedNeuronal(input_size=input_size_nn, hidden_size=hidden_size, output_size=output_size, learning_rate=0.005)
 
@@ -256,15 +264,15 @@ if __name__ == "__main__":
 
     class_names = [k for k, v in sorted(class_labels_map.items(), key=lambda item: item[1])]
     print("\nReporte de Clasificación en prueba:")
-    #print(classification_report(y_test, test_preds_indices, target_names=class_names, zero_division=0))
+    print(classification_report(y_test, test_preds_indices, target_names=class_names, zero_division=0))
 
     print("\nMatriz de Confusión en prueba:")
     conf_matrix = confusion_matrix(y_test, test_preds_indices)
-    #print(conf_matrix)
+    print(conf_matrix)
 
     with open(os.path.join(ruta_modelos, "evaluacion_modelo_CNN_mejorado.txt"), "w") as f:
         f.write("=== Evaluación de Modelos ===\n\n")
-        #f.write(f"Precisión Red Neuronal en prueba: {test_acc*100:.2f}%\n\n")
+        f.write(f"Precisión Red Neuronal en prueba: {test_acc*100:.2f}%\n\n")
         f.write("Etiquetas de clase:\n")
         f.write(", ".join(class_names) + "\n\n")
         f.write("Reporte de Clasificación Red Neuronal:\n")
