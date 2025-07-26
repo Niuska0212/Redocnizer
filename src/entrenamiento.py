@@ -3,7 +3,6 @@ import pandas as pd
 import os
 import re
 import numpy as np
-# Importar la versión actualizada de cargar_datos_split sin modificar_imagen
 from preprocesamiento import cargar_datos_split 
 
 import random
@@ -189,7 +188,7 @@ if __name__ == "__main__":
         ruta_dataset_principal,
         test_size=0.3,
         random_state=42, 
-        max_por_carpeta=500, # Considera quitar o aumentar este límite para usar más datos
+        max_por_carpeta=200, # Considera quitar o aumentar este límite para usar más datos
         num_workers=os.cpu_count() # Usa todos los núcleos disponibles
     )
 
