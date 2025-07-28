@@ -115,7 +115,7 @@ if __name__ == "__main__":
     # --- Entrenar el Modelo ---
     history = model.fit(
         X_train_keras, y_train_keras,
-        epochs=200, # Establece un número alto de épocas, EarlyStopping lo detendrá
+        epochs=500, # Establece un número alto de épocas, EarlyStopping lo detendrá
         batch_size=128,
         validation_data=(X_test_keras, y_test_keras),
         callbacks=[early_stopping, reduce_lr], # Pasa la lista de callbacks aquí
