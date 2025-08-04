@@ -20,7 +20,7 @@ if __name__ == "__main__":
 
 
 #Resumen
-#✅ preprocesamiento.py → Carga imágenes en un formato numérico.
-#✅ entrenamiento.py → Entrena KNN + Red Neuronal con TODAS las imágenes a la vez.
-#✅ clasificacion.py → Usa los modelos entrenados para predecir letras/números en nuevas imágenes.
-#✅ main.py → Ejecuta todo el proceso automáticamente.
+#preprocesamiento.py  Carga imágenes en un formato numérico.
+#entrenamiento.py  Entrena KNN + Red Neuronal con TODAS las imágenes a la vez.
+#clasificacion.py  Usa los modelos entrenados para predecir letras/números en nuevas imágenes.
+#main.py  Ejecuta todo el proceso automáticamente.
