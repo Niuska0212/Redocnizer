@@ -48,6 +48,3 @@ if __name__ == "__main__":
         label_correcto = int(input("Ingrese la categoria correcta: "))
         actualizar_datos(ruta_imagen, imagen, label_correcto, "datos_corregidos.npz")
         print("La informacion se ha guardado")
-
-    
-# Compare this snippet from scr/clasificacion.py:
