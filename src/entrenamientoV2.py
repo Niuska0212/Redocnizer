@@ -84,6 +84,9 @@ if __name__ == "__main__":
         Conv2D(32, (3, 3), activation='relu', name='conv_layer_1'),
         MaxPooling2D((2, 2), name='pooling_layer_1'),
 
+        Conv2D(64, (3, 3), activation='relu', name='conv_layer_2'),
+        MaxPooling2D((2, 2), name='pooling_layer_2'),
+
         # 5. Aplanar las características para la capa densa
         Flatten(name='flatten_features'),
 
@@ -91,7 +94,7 @@ if __name__ == "__main__":
         Dense(512, activation='relu', name='hidden_dense_layer'),
 
         # 7. Capa de Dropout para regularización
-        Dropout(0.5, name='dropout_layer'),
+        Dropout(0.7, name='dropout_layer'),
 
         # 8. Capa de Salida
         Dense(num_classes, activation='softmax', name='output_layer')
