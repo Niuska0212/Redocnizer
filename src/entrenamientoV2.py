@@ -11,7 +11,7 @@ from tensorflow.keras.utils import to_categorical
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
 
 # Importar las nuevas capas de aumento de datos
-from tensorflow.keras.layers import RandomRotation, RandomZoom, RandomTranslation # Agregadas para aumento de datos
+from tensorflow.keras.layers import RandomRotation, RandomZoom, RandomTranslation, RandomShear # Agregadas para aumento de datos
 
 # Importar tu función de carga de datos
 from preprocesamiento import cargar_datos_split
@@ -52,7 +52,7 @@ if __name__ == "__main__":
 
     # --- Preprocesamiento de Datos para Keras ---
     # Paso CRÍTICO: Remodelar las imágenes para que tengan 1 canal (escala de grises)
-    # y convertir a float32. ¡No normalizar aquí!
+    # y convertir a float32. 
     X_train_keras = X_train_raw.reshape(-1, 28, 28, 1).astype(np.float32)
     X_test_keras = X_test_raw.reshape(-1, 28, 28, 1).astype(np.float32)
 
@@ -74,6 +74,7 @@ if __name__ == "__main__":
         RandomRotation(factor=0.05, seed=42, name='data_augmentation_rotation'),
         RandomZoom(height_factor=0.1, width_factor=0.1, seed=42, name='data_augmentation_zoom'),
         RandomTranslation(height_factor=0.1, width_factor=0.1, seed=42, name='data_augmentation_translation'),
+        RandomShear(x_factor=(0.2), y_factor=(0.2), fill_mode='constant', fill_value=0), # Agregada para distorsión adicional
         
         # 3. Capa de normalización: Convierte los valores de píxeles de [0, 255] a [0, 1]
         # Esto debe ir DESPUÉS de las capas de aumento, y ANTES de la primera Conv2D
@@ -86,6 +87,9 @@ if __name__ == "__main__":
 
         Conv2D(64, (3, 3), activation='relu', name='conv_layer_2'),
         MaxPooling2D((2, 2), name='pooling_layer_2'),
+
+        Conv2D(128, (3, 3), activation='relu', name='conv_layer_3'),
+        MaxPooling2D((2, 2), name='pooling_layer_3'),
 
         # 5. Aplanar las características para la capa densa
         Flatten(name='flatten_features'),
