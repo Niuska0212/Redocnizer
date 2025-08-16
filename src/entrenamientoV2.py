@@ -14,7 +14,7 @@ from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
 from tensorflow.keras.layers import RandomRotation, RandomZoom, RandomTranslation, RandomShear # Agregadas para aumento de datos
 
 # Importar tu función de carga de datos
-from preprocesamiento import cargar_datos_split
+from preprocesamientoV2 import cargar_datos_split
 
 # --- Funciones Auxiliares ---
 def interpretar_prediccion(prediccion_softmax, class_labels_map):
@@ -98,7 +98,7 @@ if __name__ == "__main__":
         Dense(512, activation='relu', name='hidden_dense_layer'),
 
         # 7. Capa de Dropout para regularización
-        Dropout(0.7, name='dropout_layer'),
+        Dropout(0.5, name='dropout_layer'),
 
         # 8. Capa de Salida
         Dense(num_classes, activation='softmax', name='output_layer')

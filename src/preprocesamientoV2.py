@@ -5,17 +5,21 @@ import random
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+
 def cargar_imagen_individual(ruta):
-    """Carga y redimensiona una imagen individual."""
+    #Carga y redimensiona una imagen individual.
     imagen = cv2.imread(ruta, cv2.IMREAD_GRAYSCALE)
     if imagen is None:
         return None
     imagen_suavizada = cv2.GaussianBlur(imagen, (7,7),0) # Metodo de Gauss para reducion de ruido
-    imagen_binarizada = cv2.daptivethreshold(imagen_suavizada, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 15,2) #Ajustar el threshold adaptativo para mejora de contraste
+    imagen_binarizada = cv2.adaptiveThreshold(imagen_suavizada, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 15,2)
     kernel = np.ones((1,1), np.uint8)
     imagen_dilatada = cv2.dilate(imagen_binarizada, kernel, iterations=1) # Dilatacion para eliminar ruido
     imagen = cv2.resize(imagen_dilatada, (28, 28)) 
     return imagen
+
+
+
 
 def cargar_datos_split(directorio, test_size=0.2, random_state=42, max_por_carpeta=None, num_workers=os.cpu_count()):
     X = []
