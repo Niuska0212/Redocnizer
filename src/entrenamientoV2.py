@@ -74,7 +74,7 @@ if __name__ == "__main__":
         RandomRotation(factor=0.05, seed=42, name='data_augmentation_rotation'),
         RandomZoom(height_factor=0.1, width_factor=0.1, seed=42, name='data_augmentation_zoom'),
         RandomTranslation(height_factor=0.1, width_factor=0.1, seed=42, name='data_augmentation_translation'),
-        RandomShear(x_factor=(0.2), y_factor=(0.2), fill_mode='constant', fill_value=0), # Agregada para distorsión adicional
+        #RandomShear(x_factor=(0.2), y_factor=(0.2), fill_mode='constant', fill_value=0), # Agregada para distorsión adicional
         
         # 3. Capa de normalización: Convierte los valores de píxeles de [0, 255] a [0, 1]
         # Esto debe ir DESPUÉS de las capas de aumento, y ANTES de la primera Conv2D
