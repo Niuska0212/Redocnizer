@@ -71,7 +71,7 @@ if __name__ == "__main__":
 
         # 2. Capas de Aumento de Datos (solo se aplican durante el entrenamiento)
         # Reciben imágenes en rango [0, 255]
-        RandomRotation(factor=0.05, seed=42, name='data_augmentation_rotation'),
+        RandomRotation(factor=0.04, seed=42, name='data_augmentation_rotation'),
         RandomZoom(height_factor=0.1, width_factor=0.1, seed=42, name='data_augmentation_zoom'),
         RandomTranslation(height_factor=0.1, width_factor=0.1, seed=42, name='data_augmentation_translation'),
         #RandomShear(x_factor=(0.2), y_factor=(0.2), fill_mode='constant', fill_value=0), # Agregada para distorsión adicional
@@ -82,13 +82,13 @@ if __name__ == "__main__":
 
         # 4. Capas Convolucionales y de Pooling (Núcleo de la CNN)
         # La primera Conv2D ya NO necesita input_shape porque la capa Input lo define
-        Conv2D(32, (3, 3), activation='relu', name='conv_layer_1'),
+        Conv2D(64, (3, 3), activation='relu', name='conv_layer_1'),
         MaxPooling2D((2, 2), name='pooling_layer_1'),
 
-        Conv2D(64, (3, 3), activation='relu', name='conv_layer_2'),
+        Conv2D(128, (3, 3), activation='relu', name='conv_layer_2'),
         MaxPooling2D((2, 2), name='pooling_layer_2'),
 
-        Conv2D(128, (3, 3), activation='relu', name='conv_layer_3'),
+        Conv2D(256, (3, 3), activation='relu', name='conv_layer_3'),
         MaxPooling2D((2, 2), name='pooling_layer_3'),
 
         # 5. Aplanar las características para la capa densa
@@ -98,10 +98,10 @@ if __name__ == "__main__":
         Dense(512, activation='relu', name='hidden_dense_layer'),
 
         # 7. Capa de Dropout para regularización
-        Dropout(0.5, name='dropout_layer'),
+        Dropout(0.2, name='dropout_layer'),
 
         # 8. Capa de Salida
-        Dense(num_classes, activation='softmax', name='output_layer')
+        Dense(num_classes, activation='softmax', name='outputent_layer')
     ])
 
     # --- Compilar el Modelo ---
@@ -114,7 +114,7 @@ if __name__ == "__main__":
     # --- Callbacks para Early Stopping y Reducción del Learning Rate ---
     early_stopping = EarlyStopping(
         monitor='val_loss',
-        patience=30,
+        patience=10,
         restore_best_weights=True,
         verbose=1
     )
@@ -122,7 +122,7 @@ if __name__ == "__main__":
     reduce_lr = ReduceLROnPlateau(
         monitor='val_loss',
         factor=0.2,
-        patience=15,
+        patience=5,
         min_lr=0.000001,
         verbose=1
     )
