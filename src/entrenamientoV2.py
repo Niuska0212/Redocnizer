@@ -3,32 +3,23 @@ import numpy as np
 import joblib
 from sklearn.metrics import classification_report, confusion_matrix
 
-# Importar las clases de Keras necesarias
 import tensorflow as tf
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout
+from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout, BatchNormalization
 from tensorflow.keras.utils import to_categorical
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
-
-# Importar las nuevas capas de aumento de datos
-from tensorflow.keras.layers import RandomRotation, RandomZoom, RandomTranslation, RandomShear # Agregadas para aumento de datos
+from tensorflow.keras.layers import RandomRotation, RandomZoom, RandomTranslation, RandomShear
 
 # Importar tu función de carga de datos
 from preprocesamientoV2 import cargar_datos_split
 
 # --- Funciones Auxiliares ---
 def interpretar_prediccion(prediccion_softmax, class_labels_map):
-    """
-    Interpreta las probabilidades de salida de la red neuronal y devuelve la etiqueta de clase predicha.
-    """
     indice_predicho = np.argmax(prediccion_softmax)
     letra_predicha = next(key for key, value in class_labels_map.items() if value == indice_predicho)
     return letra_predicha
 
 def etiqueta_a_letra(etiquetas_indices, class_labels_map):
-    """
-    Convierte una lista de índices numéricos de etiquetas a sus correspondientes letras/caracteres.
-    """
     index_to_label_map = {v: k for k, v in class_labels_map.items()}
     return [index_to_label_map[idx] for idx in etiquetas_indices]
 
@@ -51,12 +42,8 @@ if __name__ == "__main__":
     num_classes = len(class_labels_map)
 
     # --- Preprocesamiento de Datos para Keras ---
-    # Paso CRÍTICO: Remodelar las imágenes para que tengan 1 canal (escala de grises)
-    # y convertir a float32. 
     X_train_keras = X_train_raw.reshape(-1, 28, 28, 1).astype(np.float32)
     X_test_keras = X_test_raw.reshape(-1, 28, 28, 1).astype(np.float32)
-
-    # Convertir las etiquetas a formato one-hot encoding
     y_train_keras = to_categorical(y_train, num_classes=num_classes)
     y_test_keras = to_categorical(y_test, num_classes=num_classes)
 
@@ -65,23 +52,18 @@ if __name__ == "__main__":
 
     # --- Definición del Modelo Keras con Aumento de Datos y Dropout ---
     model = Sequential([
-        # 1. Capa de entrada explícita: crucial para las capas de preprocesamiento
-        # Asegúrate de que la forma de entrada coincida con X_train_keras (28, 28, 1)
-        tf.keras.Input(shape=(28, 28, 1)), 
+        tf.keras.Input(shape=(28, 28, 1)),
 
-        # 2. Capas de Aumento de Datos (solo se aplican durante el entrenamiento)
-        # Reciben imágenes en rango [0, 255]
+        # Capas de Aumento de Datos
         RandomRotation(factor=0.04, seed=42, name='data_augmentation_rotation'),
         RandomZoom(height_factor=0.1, width_factor=0.1, seed=42, name='data_augmentation_zoom'),
         RandomTranslation(height_factor=0.1, width_factor=0.1, seed=42, name='data_augmentation_translation'),
-        #RandomShear(x_factor=(0.2), y_factor=(0.2), fill_mode='constant', fill_value=0), # Agregada para distorsión adicional
-        
-        # 3. Capa de normalización: Convierte los valores de píxeles de [0, 255] a [0, 1]
-        # Esto debe ir DESPUÉS de las capas de aumento, y ANTES de la primera Conv2D
+        # RandomShear(x_factor=(0.2), y_factor=(0.2), fill_mode='constant', fill_value=0),
+
+        # Capa de normalización
         tf.keras.layers.Rescaling(1./255, name='rescaling_pixels'),
 
-        # 4. Capas Convolucionales y de Pooling (Núcleo de la CNN)
-        # La primera Conv2D ya NO necesita input_shape porque la capa Input lo define
+        # Capas Convolucionales y de Pooling
         Conv2D(64, (3, 3), activation='relu', name='conv_layer_1'),
         MaxPooling2D((2, 2), name='pooling_layer_1'),
 
@@ -89,18 +71,28 @@ if __name__ == "__main__":
         MaxPooling2D((2, 2), name='pooling_layer_2'),
 
         Conv2D(256, (3, 3), activation='relu', name='conv_layer_3'),
-        MaxPooling2D((2, 2), name='pooling_layer_3'),
+        MaxPooling2D((2, 2), name='pooling_layer_3'), # Salida aquí es (None, 1, 1, 256)
 
-        # 5. Aplanar las características para la capa densa
+        # --- NUEVA CAPA CONVOLUCIONAL ---
+        # No se añade un MaxPooling2D después de esta si la salida ya es 1x1.
+        # Si la salida de pooling_layer_3 fuera mayor a 1x1, podrías añadir un MaxPooling2D aquí.
+        # En este caso, la conv_layer_3 + pooling_layer_3 ya reducen a 1x1.
+        # Para que esta capa conv_layer_4 tenga un impacto, los kernels deberían ser (1,1)
+        # o tendríamos que cambiar las capas de pooling anteriores.
+        # Si la intención es solo añadir capacidad sin más reducción espacial,
+        # simplemente la agregamos sin pooling.
+        Conv2D(512, (1, 1), activation='relu', name='conv_layer_4'), # Usar (1,1) kernel si la entrada es 1x1
+
+        # Aplanar las características
         Flatten(name='flatten_features'),
 
-        # 6. Capa Densa (Fully Connected)
+        # Capa Densa (Fully Connected)
         Dense(512, activation='relu', name='hidden_dense_layer'),
 
-        # 7. Capa de Dropout para regularización
+        # Capa de Dropout para regularización
         Dropout(0.5, name='dropout_layer'),
 
-        # 8. Capa de Salida
+        # Capa de Salida
         Dense(num_classes, activation='softmax', name='outputent_layer')
     ])
 
@@ -114,7 +106,7 @@ if __name__ == "__main__":
     # --- Callbacks para Early Stopping y Reducción del Learning Rate ---
     early_stopping = EarlyStopping(
         monitor='val_loss',
-        patience=15,
+        patience=20, # Aumenté la paciencia para dar más oportunidades al modelo más grande
         restore_best_weights=True,
         verbose=1
     )
@@ -122,7 +114,7 @@ if __name__ == "__main__":
     reduce_lr = ReduceLROnPlateau(
         monitor='val_loss',
         factor=0.2,
-        patience=8,
+        patience=8, # Aumenté la paciencia aquí también
         min_lr=0.000001,
         verbose=1
     )
