@@ -98,7 +98,7 @@ if __name__ == "__main__":
         Dense(512, activation='relu', name='hidden_dense_layer'),
 
         # 7. Capa de Dropout para regularización
-        Dropout(0.2, name='dropout_layer'),
+        Dropout(0.5, name='dropout_layer'),
 
         # 8. Capa de Salida
         Dense(num_classes, activation='softmax', name='outputent_layer')
@@ -114,7 +114,7 @@ if __name__ == "__main__":
     # --- Callbacks para Early Stopping y Reducción del Learning Rate ---
     early_stopping = EarlyStopping(
         monitor='val_loss',
-        patience=10,
+        patience=15,
         restore_best_weights=True,
         verbose=1
     )
@@ -122,7 +122,7 @@ if __name__ == "__main__":
     reduce_lr = ReduceLROnPlateau(
         monitor='val_loss',
         factor=0.2,
-        patience=5,
+        patience=8,
         min_lr=0.000001,
         verbose=1
     )
