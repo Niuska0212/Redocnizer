@@ -83,6 +83,8 @@ if __name__ == "__main__":
         # simplemente la agregamos sin pooling.
         Conv2D(512, (1, 1), activation='relu', name='conv_layer_4'), # Usar (1,1) kernel si la entrada es 1x1
 
+        Conv2D(1024, (1, 1), activation='relu', name='conv_layer_5'),
+
         # Aplanar las características
         Flatten(name='flatten_features'),
 
