@@ -8,6 +8,7 @@ import random
 # Carpeta donde está este script
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
+#hola cambios
 # Archivo de palabras
 palabras_file = os.path.join(BASE_DIR, "..", "data", "data", "palabras.txt")
 palabras_file = os.path.abspath(palabras_file)
