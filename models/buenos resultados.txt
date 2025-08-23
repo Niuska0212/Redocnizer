@@ -1,11 +1,11 @@
-=== Evaluación de Modelo Keras con Aumento de Datos ===
+=== Evaluaciï¿½n de Modelo Keras con Aumento de Datos ===
 
-Precisión en prueba: 91.25%
+Precisiï¿½n en prueba: 91.25%
 
 Etiquetas de clase:
 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, A_U, B_U, C_U, D_U, E_U, F_U, G_U, H_U, I_U, J_U, K_U, L_U, M_U, N_U, O_U, P_U, Q_U, R_U, S_U, T_U, U_U, V_U, W_U, X_U, Y_U, Z_U, a_L, b_L, c_L, d_L, e_L, f_L, g_L, h_L, i_L, j_L, k_L, l_L, m_L, n_L, o_L, p_L, q_L, r_L, s_L, t_L, u_L, v_L, w_L, x_L, y_L, z_L
 
-Reporte de Clasificación:
+Reporte de Clasificaciï¿½n:
               precision    recall  f1-score   support
 
            0       0.73      0.56      0.63       821
@@ -75,7 +75,7 @@ Reporte de Clasificación:
    macro avg       0.91      0.91      0.91     59445
 weighted avg       0.91      0.91      0.91     59445
 
-Matriz de confusión:
+Matriz de confusiï¿½n:
 [[ 459    0    0 ...    0    0    0]
  [   0  714    0 ...    0    1    0]
  [   0    0 1008 ...    0    1   19]
