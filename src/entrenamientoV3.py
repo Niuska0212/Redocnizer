@@ -3,9 +3,10 @@ import numpy as np
 import cv2
 import tensorflow as tf
 from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, BatchNormalization, Reshape, Dense, Bidirectional, LSTM
+from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, BatchNormalization, Reshape, Dense, Bidirectional, LSTM, Dropout
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
 from tensorflow.keras import backend as K
+from tensorflow.keras.utils import plot_model
 from sklearn.model_selection import train_test_split
 import joblib
 
@@ -126,6 +127,8 @@ x = MaxPooling2D(pool_size=(2, 2), name='max_pool_2')(x)
 x = Conv2D(128, (3, 3), activation='relu', padding='same', name='conv_3')(x)
 x = BatchNormalization(name='bn_3')(x)
 
+x = Dropout(0.2, name='dropout_cnn')(x)
+
 # Conectar a las capas LSTM (usamos Bidirectional para mejor contexto)
 # CORRECCIÓN: Ajustar el target_shape para que coincida con la salida de la CNN
 # La salida es (batch_size, img_height/4, img_width/4, 128)
@@ -174,6 +177,7 @@ modelo_ctc_entrenamiento.fit(
 # Creamos un modelo de inferencia sin la capa de pérdida CTC
 modelo_inferencia = Model(inputs=input_img, outputs=output)
 modelo_inferencia.save(os.path.join(ruta_modelos, "keras_cnn_lstm_v3_ctc.h5"))
+plot_model(modelo_inferencia, to_file=os.path.join(ruta_modelos, "modelo_inferencia_v3.png"), show_shapes=True, show_layer_names=True)
 joblib.dump({
     'char_to_index': char_to_index, 
     'index_to_char': index_to_char, 
