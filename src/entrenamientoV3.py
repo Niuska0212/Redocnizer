@@ -238,7 +238,7 @@ def main():
 
     # Guardar el modelo y el vocabulario
     modelo_inferencia.save(os.path.join(ruta_modelos, "keras_cnn_lstm_v3_ctc.h5"))
-    plot_model(modelo_inferencia, to_file=os.path.join(ruta_modelos, "modelo_inferencia_v3.png"), show_shapes=True, show_layer_names=True)
+    #plot_model(modelo_inferencia, to_file=os.path.join(ruta_modelos, "modelo_inferencia_v3.png"), show_shapes=True, show_layer_names=True)
     joblib.dump({
         'char_to_index': char_to_index, 
         'index_to_char': index_to_char, 
