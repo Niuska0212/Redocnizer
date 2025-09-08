@@ -5,10 +5,9 @@ from sklearn.metrics import classification_report, confusion_matrix
 
 import tensorflow as tf
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout, BatchNormalization
+from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout, BatchNormalization, RandomRotation, RandomZoom, RandomTranslation, RandomShear
 from tensorflow.keras.utils import to_categorical
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
-from tensorflow.keras.layers import RandomRotation, RandomZoom, RandomTranslation, RandomShear
 
 # Importar tu función de carga de datos
 from preprocesamientoV2 import cargar_datos_split

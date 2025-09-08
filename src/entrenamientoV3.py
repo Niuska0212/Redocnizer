@@ -3,7 +3,7 @@ import numpy as np
 import cv2
 import tensorflow as tf
 from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, BatchNormalization, Reshape, Dense, Bidirectional, LSTM, Dropout
+from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, BatchNormalization, Reshape, Dense, Bidirectional, LSTM, Dropout, RandomRotation, RandomZoom, RandomTranslation, Rescaling
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau, Callback
 from tensorflow.keras import backend as K
 from tensorflow.keras.utils import plot_model
@@ -91,6 +91,13 @@ def load_and_preprocess_data():
 def build_crnn_model(num_chars):
     """Construye y compila el modelo CRNN con una capa de pérdida CTC."""
     input_img = Input(shape=(img_height, img_width, 1), name='input_img')
+
+    x = RandomRotation(factor=0.05, name='aug_rotation')(input_img)
+    x = RandomZoom(height_factor=0.1, width_factor=0.1, name='aug_zoom')(x)
+    x = RandomTranslation(height_factor=0.1, width_factor=0.1, name='aug_translation')(x)
+
+    # Normalización
+    x = Rescaling(1./255)(x)
 
     # Bloque CNN para extraer características
     x = Conv2D(64, (3, 3), activation='relu', padding='same', name='conv_1')(input_img)
