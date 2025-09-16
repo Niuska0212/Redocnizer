@@ -10304,7 +10304,8 @@ fecha_10302.png,28/04/15
 fecha_10303.png,07/11/10
 fecha_10304.png,05/01/08
 fecha_10305.png,13/06/14
-fecha_10306.png,20/05/02fecha_10307.png,22/01/19
+fecha_10306.png,20/05/02
+fecha_10307.png,22/01/19
 fecha_10308.png,05/10/19
 fecha_10309.png,29/07/04
 fecha_10310.png,01/05/30
@@ -10704,3 +10705,8 @@ fecha_10703.png,04/11/00
 fecha_10704.png,31/10/26
 fecha_10705.png,16/04/29
 fecha_10706.png,08/12/17
+10707.png,mariposa
+10708.png,volcán
+10709.png,jirafa
+10710.png,galaxia
+10711.png,tornado

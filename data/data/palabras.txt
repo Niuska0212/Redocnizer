@@ -1998,7 +1998,6 @@ palabra 997
 palabra 998
 palabra 999
 palabra 1000
-
 GONI800101XXX
 RAML900202ABC
 PERE750315XYZ
@@ -2035,10 +2034,6 @@ GACG800726M19
 ARSM901201K74
 RECG8305096R1
 LECR790306F51
-No puedo crear un archivo de texto (.txt) real en tu computadora, pero puedo generar la lista completa de 300 RFCs simulados para que la copies y la guardes en un archivo si lo deseas.
-
-Aquí tienes la lista completa:
-
 PEGG9802219I0
 SUDM851214D9A
 LAAM7207047B4
@@ -2398,9 +2393,6 @@ GAAG870119H70
 LOAC930323N71
 CAGE900606L18
 PEMA810714D20
-
-Aquí tienes una lista con 300 nombres completos simulados, escritos en mayúsculas e incluyendo algunos con "Ñ" y acentos. Estos nombres son una combinación aleatoria de nombres y apellidos comunes en español para crear perfiles ficticios.
-
 JOSÉ ARMANDO VÁSQUEZ GONZÁLEZ
 MARÍA DE LA LUZ HERNÁNDEZ LÓPEZ
 JUAN CARLOS RAMÍREZ PÉREZ
@@ -2713,8 +2705,6 @@ CARLOS ENRIQUE GÓMEZ HERNÁNDEZ
 ADRIANA PATRICIA LÓPEZ PÉREZ
 JOSÉ ALFREDO SÁNCHEZ LÓPEZ
 ELENA CRISTINA PÉREZ GONZÁLEZ
-Aquí tienes una lista de 300 nombres completos, simulados de forma aleatoria, sin acentos ni la letra "ñ". Los nombres están en mayúsculas y son variados para crear perfiles ficticios.
-
 JOSE ARMANDO VASQUEZ GONZALEZ
 MARIA DE LA LUZ HERNANDEZ LOPEZ
 JUAN CARLOS RAMIREZ PEREZ
@@ -3027,8 +3017,6 @@ CARLOS ENRIQUE GOMEZ HERNANDEZ
 ADRIANA PATRICIA LOPEZ PEREZ
 JOSE ALFREDO SANCHEZ LOPEZ
 ELENA CRISTINA PEREZ GONZALEZ
-A continuación, te presento una lista de 400 palabras en mayúsculas, seleccionadas de forma variada, que incluyen sustantivos, verbos, adjetivos y otras categorías gramaticales.
-
 TIEMPO
 HISTORIA
 PUEBLO
@@ -10262,3 +10250,8 @@ UNIR
 3456789
 9012345
 6789012
+mariposa
+volcán
+jirafa
+galaxia
+tornado
