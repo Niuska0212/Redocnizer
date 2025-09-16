@@ -3,13 +3,13 @@ import numpy as np
 import cv2
 import tensorflow as tf
 from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, BatchNormalization, Reshape, Dense, Bidirectional, LSTM, Dropout, RandomRotation, RandomZoom, RandomTranslation, Rescaling
+from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, BatchNormalization, Reshape, Dense, Bidirectional, LSTM, Dropout, RandomRotation, RandomZoom, RandomTranslation
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau, Callback
 from tensorflow.keras import backend as K
-from tensorflow.keras.utils import plot_model
 from sklearn.model_selection import train_test_split
 import joblib
 from difflib import SequenceMatcher
+from tensorflow.keras.optimizers import Adam
 
 # -------------------------------
 # CONFIGURACIÓN Y PARÁMETROS
@@ -24,7 +24,9 @@ os.makedirs(ruta_errores, exist_ok=True)
 
 img_height = 32
 img_width = 256
-output_sequence_length = img_width // 4
+# La longitud de la secuencia de salida se ajusta a la nueva arquitectura más profunda.
+# Ahora hay 3 capas de MaxPooling, por lo que 256 / (2*2*2) = 32.
+output_sequence_length = img_width // 8
 
 # -------------------------------
 # PROCESAMIENTO DE DATOS
@@ -64,9 +66,7 @@ def load_and_preprocess_data():
         if img is None:
             return np.zeros((img_height, img_width), dtype=np.float32)
         img = cv2.resize(img, (img_width, img_height), interpolation=cv2.INTER_AREA)
-        img = cv2.GaussianBlur(img, (7, 7), 0)
-        img = cv2.adaptiveThreshold(img, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 15, 2)
-        return img / 255.0
+        return img
 
     X = np.array([cargar_imagen(p) for p in imagenes_paths])
     X = X.reshape(-1, img_height, img_width, 1).astype(np.float32)
@@ -95,28 +95,31 @@ def build_crnn_model(num_chars):
     x = RandomRotation(factor=0.05, name='aug_rotation')(input_img)
     x = RandomZoom(height_factor=0.1, width_factor=0.1, name='aug_zoom')(x)
     x = RandomTranslation(height_factor=0.1, width_factor=0.1, name='aug_translation')(x)
+    
+    x = tf.keras.layers.Rescaling(1./255)(x)
 
-    # Normalización
-    x = Rescaling(1./255)(x)
-
-    # Bloque CNN para extraer características
-    x = Conv2D(64, (3, 3), activation='relu', padding='same', name='conv_1')(input_img)
+    x = Conv2D(64, (3, 3), activation='relu', padding='same', name='conv_1')(x)
     x = BatchNormalization(name='bn_1')(x)
     x = MaxPooling2D(pool_size=(2, 2), name='max_pool_1')(x)
 
     x = Conv2D(128, (3, 3), activation='relu', padding='same', name='conv_2')(x)
     x = BatchNormalization(name='bn_2')(x)
     x = MaxPooling2D(pool_size=(2, 2), name='max_pool_2')(x)
-
+    
     x = Conv2D(256, (3, 3), activation='relu', padding='same', name='conv_3')(x)
     x = BatchNormalization(name='bn_3')(x)
-    x = Dropout(0.2, name='dropout_cnn')(x)
+    
+    x = Conv2D(512, (3, 3), activation='relu', padding='same', name='conv_4')(x)
+    x = BatchNormalization(name='bn_4')(x)
+    x = MaxPooling2D(pool_size=(2, 2), name='max_pool_3')(x)
+    
+    x = Dropout(0.3, name='dropout_cnn')(x)
 
-    # Conectar a las capas LSTM
-    x = Reshape(target_shape=(output_sequence_length, (img_height // 4) * 256), name='reshape')(x)
-    x = Dense(128, activation='relu', name='dense_pre_lstm')(x) 
-    x = Bidirectional(LSTM(128, return_sequences=True, dropout=0.2, name='lstm_1'))(x) 
-    x = Bidirectional(LSTM(64, return_sequences=True, dropout=0.2, name='lstm_2'))(x)
+    x = Reshape(target_shape=(output_sequence_length, (img_height // 8) * 512), name='reshape')(x)
+    x = Dropout(0.3, name='dropout_pre_lstm')(x) 
+    
+    x = Bidirectional(LSTM(256, return_sequences=True, dropout=0.3, name='lstm_1'))(x)
+    x = Bidirectional(LSTM(128, return_sequences=True, dropout=0.3, name='lstm_2'))(x)
 
     output = Dense(num_chars + 1, activation='softmax', name='output')(x)
 
@@ -131,7 +134,8 @@ def build_crnn_model(num_chars):
         inputs=[input_img, y_true, input_length, label_length],
         outputs=ctc_loss
     )
-    modelo_entrenamiento.compile(optimizer='adam', loss={'ctc_loss': lambda y_true, y_pred: y_pred})
+    # AQUI EL CAMBIO: Se usa el optimizador Adam con un learning rate más bajo
+    modelo_entrenamiento.compile(optimizer=Adam(learning_rate=1e-4), loss={'ctc_loss': lambda y_true, y_pred: y_pred})
     
     return modelo_entrenamiento, output, input_img
 
@@ -243,9 +247,7 @@ def main():
         verbose=1
     )
 
-    # Guardar el modelo y el vocabulario
     modelo_inferencia.save(os.path.join(ruta_modelos, "keras_cnn_lstm_v3_ctc.h5"))
-    #plot_model(modelo_inferencia, to_file=os.path.join(ruta_modelos, "modelo_inferencia_v3.png"), show_shapes=True, show_layer_names=True)
     joblib.dump({
         'char_to_index': char_to_index, 
         'index_to_char': index_to_char, 
@@ -254,7 +256,6 @@ def main():
         }, os.path.join(ruta_modelos, "vocabulario_v3.pkl"))
     print("\nEntrenamiento V3 completado y modelo guardado.")
     
-    # Evaluación final y reporte
     y_pred_probs = modelo_inferencia.predict(X_test)
     pred_words = decode_batch_predictions(y_pred_probs, index_to_char, output_sequence_length)
     
