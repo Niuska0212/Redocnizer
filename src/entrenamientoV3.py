@@ -24,8 +24,6 @@ os.makedirs(ruta_errores, exist_ok=True)
 
 img_height = 32
 img_width = 256
-# La longitud de la secuencia de salida se ajusta a la nueva arquitectura más profunda.
-# Ahora hay 3 capas de MaxPooling, por lo que 256 / (2*2*2) = 32.
 output_sequence_length = img_width // 8
 
 # -------------------------------
@@ -163,8 +161,7 @@ def calculate_levenshtein_distance(true_words, pred_words):
     total_length = 0
     for true, pred in zip(true_words, pred_words):
         total_distance += SequenceMatcher(None, true, pred).ratio()
-        total_length += 1
-    return 1 - (total_distance / total_length)
+    return 1 - (total_distance / len(true_words))
 
 def generate_error_report(true_words, pred_words, X_test, ruta_errores):
     """Genera un reporte de errores y guarda las imágenes fallidas."""
@@ -173,13 +170,17 @@ def generate_error_report(true_words, pred_words, X_test, ruta_errores):
         if true_word.lower().strip() != pred_word.lower().strip(): # Comparación insensibble a mayúsculas
             incorrect_predictions.append((true_word, pred_word, i))
             
+    if not incorrect_predictions:
+        print("\n¡Excelente! No se encontraron errores de predicción en el conjunto de prueba.")
+        return
+
     print("\n--- Reporte de Errores ---")
     print(f"Número de predicciones incorrectas: {len(incorrect_predictions)}")
     
     for i, (true, pred, idx) in enumerate(incorrect_predictions[:10]):
         print(f"Error {i+1}:")
-        print(f"  Verdadera: '{true}'")
-        print(f"  Predicción: '{pred}'")
+        print(f"   Verdadera: '{true}'")
+        print(f"   Predicción: '{pred}'")
         
         # Guardar la imagen del error
         img_to_save = (X_test[idx] * 255).astype(np.uint8).squeeze()
@@ -190,35 +191,13 @@ def generate_error_report(true_words, pred_words, X_test, ruta_errores):
         print(f"... y {len(incorrect_predictions)-10} errores más guardados en '{ruta_errores}'")
 
 # -------------------------------
-# CALLBACK PARA VALIDACIÓN DURANTE EL ENTRENAMIENTO
-# -------------------------------
-class WordAccuracyCallback(Callback):
-    def __init__(self, model_inferencia, X_test, true_words_test, index_to_char, output_sequence_length):
-        super().__init__()
-        self.model_inferencia = model_inferencia
-        self.X_test = X_test
-        self.true_words_test = true_words_test
-        self.index_to_char = index_to_char
-        self.output_sequence_length = output_sequence_length
-
-    def on_epoch_end(self, epoch, logs=None):
-        if (epoch + 1) % 5 == 0:  # Evaluar cada 5 épocas
-            y_pred_probs = self.model_inferencia.predict(self.X_test)
-            pred_words = decode_batch_predictions(y_pred_probs, self.index_to_char, self.output_sequence_length)
-            
-            correct_predictions = sum(1 for true, pred in zip(self.true_words_test, pred_words) if true.lower().strip() == pred.lower().strip())
-            accuracy = correct_predictions / len(self.true_words_test)
-            
-            print(f"\n--- Precisión de la palabra de validación en la época {epoch+1}: {accuracy * 100:.2f}% ---")
-            
-# -------------------------------
 # FUNCIÓN PRINCIPAL DE ENTRENAMIENTO
 # -------------------------------
 def main():
     (X_train, y_train, input_length_train, label_length_train), \
     (X_test, y_test, input_length_test, label_length_test, true_words_test), \
     (char_to_index, index_to_char, num_chars, blank_token_index) = load_and_preprocess_data()
-
+    
     print("\n--- Longitudes de Secuencia para Debugging ---")
     print(f"Longitud de secuencia de salida del modelo: {output_sequence_length}")
     print(f"Longitud máxima de etiqueta: {np.max([len(s) for s in true_words_test])}")
@@ -226,7 +205,7 @@ def main():
     print("-" * 40)
     
     modelo_entrenamiento, output_layer, input_img = build_crnn_model(num_chars)
-    modelo_entrenamiento.summary()
+    # modelo_entrenamiento.summary()
     
     # Modelo de inferencia para usar en la decodificación de CTC
     modelo_inferencia = Model(inputs=input_img, outputs=output_layer)
@@ -234,17 +213,18 @@ def main():
     # Callbacks
     early_stopping = EarlyStopping(monitor='val_loss', patience=15, restore_best_weights=True)
     reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=8, min_lr=1e-7)
-    word_accuracy_callback = WordAccuracyCallback(modelo_inferencia, X_test, true_words_test, index_to_char, output_sequence_length)
 
     print("\nEntrenando Modelo V3 (CNN-BiLSTM con CTC)...")
+    print("Este proceso se ejecuta en modo silencioso. Por favor, espere a los resultados finales...")
+    
     history = modelo_entrenamiento.fit(
         x=[X_train, y_train, input_length_train, label_length_train],
         y=np.zeros(len(X_train)),
         validation_data=([X_test, y_test, input_length_test, label_length_test], np.zeros(len(X_test))),
         epochs=100,
         batch_size=32,
-        callbacks=[early_stopping, reduce_lr, word_accuracy_callback],
-        verbose=1
+        callbacks=[early_stopping, reduce_lr],
+        verbose=0 # Se desactiva la salida por época
     )
 
     modelo_inferencia.save(os.path.join(ruta_modelos, "keras_cnn_lstm_v3_ctc.h5"))
@@ -256,18 +236,29 @@ def main():
         }, os.path.join(ruta_modelos, "vocabulario_v3.pkl"))
     print("\nEntrenamiento V3 completado y modelo guardado.")
     
-    y_pred_probs = modelo_inferencia.predict(X_test)
+    # Evaluación final
+    print("\n--- Evaluando el modelo... ---")
+    y_pred_probs = modelo_inferencia.predict(X_test, verbose=0)
     pred_words = decode_batch_predictions(y_pred_probs, index_to_char, output_sequence_length)
     
     correct_predictions = sum([1 for pred, true in zip(pred_words, true_words_test) if pred.lower().strip() == true.lower().strip()])
     accuracy_word = correct_predictions / len(true_words_test)
     levenshtein_dist = calculate_levenshtein_distance(true_words_test, pred_words)
 
-    print(f"\n--- Evaluación Final ---")
+    print(f"\n--- Resultados Finales ---")
     print(f"Precisión de coincidencia exacta a nivel de palabra: {accuracy_word * 100:.2f}%")
-    print(f"Distancia de Levenshtein (ERROR) promedio: {levenshtein_dist:.4f}")
+    print(f"Error de Levenshtein promedio: {levenshtein_dist:.4f}")
     
     generate_error_report(true_words_test, pred_words, X_test, ruta_errores)
+    print("\nAnálisis de errores completado. Las imágenes con predicciones incorrectas se han guardado.")
+    print("-" * 40)
+
 
 if __name__ == "__main__":
+    # Verificamos si hay una GPU disponible para acelerar el entrenamiento.
+    if tf.config.list_physical_devices('GPU'):
+        print("GPU detectada y configurada. El entrenamiento será más rápido.")
+    else:
+        print("No se encontró GPU. El entrenamiento se ejecutará en la CPU.")
+    
     main()
