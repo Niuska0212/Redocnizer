@@ -64,6 +64,9 @@ def load_and_preprocess_data():
         if img is None:
             return np.zeros((img_height, img_width), dtype=np.float32)
         img = cv2.resize(img, (img_width, img_height), interpolation=cv2.INTER_AREA)
+        # Aplicamos un filtro Gaussiano para suavizar la imagen y reducir el ruido.
+        # Esto puede ayudar a que el modelo generalice mejor.
+        img = cv2.GaussianBlur(img, (3, 3), 0)
         return img
 
     X = np.array([cargar_imagen(p) for p in imagenes_paths])
@@ -182,7 +185,6 @@ def generate_error_report(true_words, pred_words, X_test, ruta_errores):
         print(f"   Verdadera: '{true}'")
         print(f"   Predicción: '{pred}'")
         
-        # Guardar la imagen del error
         img_to_save = (X_test[idx] * 255).astype(np.uint8).squeeze()
         error_filename = f"error_{i:02d}_{true.replace('/', '_')}_pred_{pred.replace('/', '_')}.png"
         cv2.imwrite(os.path.join(ruta_errores, error_filename), img_to_save)
@@ -207,10 +209,8 @@ def main():
     modelo_entrenamiento, output_layer, input_img = build_crnn_model(num_chars)
     # modelo_entrenamiento.summary()
     
-    # Modelo de inferencia para usar en la decodificación de CTC
     modelo_inferencia = Model(inputs=input_img, outputs=output_layer)
     
-    # Callbacks
     early_stopping = EarlyStopping(monitor='val_loss', patience=15, restore_best_weights=True)
     reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=8, min_lr=1e-7)
 
@@ -221,7 +221,7 @@ def main():
         x=[X_train, y_train, input_length_train, label_length_train],
         y=np.zeros(len(X_train)),
         validation_data=([X_test, y_test, input_length_test, label_length_test], np.zeros(len(X_test))),
-        epochs=100,
+        epochs=200,
         batch_size=32,
         callbacks=[early_stopping, reduce_lr],
         verbose=0 # Se desactiva la salida por época
