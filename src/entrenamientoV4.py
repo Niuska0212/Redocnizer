@@ -90,11 +90,12 @@ def procesar_contrato(ruta_contrato, modelo_ocr, vocabulario):
     datos_extraidos = defaultdict(lambda: 'no_encontrado')
     
     # Expresiones regulares para la extracción de datos con patrones conocidos
+    # Se usan para capturar valores que no tienen una etiqueta específica cerca
     patrones = {
-        'RFC': r'\b([A-ZÑ&]{3,4}\d{6}[A-Z\d]{3})\b',
-        'CURP': r'\b([A-Z]{4}\d{6}[HM][A-Z]{5}[A-Z0-9]{2})\b',
-        'N_IMSS': r'\b(\d{11})\b',
-        'CRN': r'\b(\d{5})\b',
+        'rfc': r'\b([A-ZÑ&]{3,4}\d{6}[A-Z\d]{3})\b',
+        'curp': r'\b([A-Z]{4}\d{6}[HM][A-Z]{5}[A-Z0-9]{2})\b',
+        'n_imss': r'\b(\d{11})\b',
+        'crn': r'\b(\d{5})\b',
     }
 
     # Definir los campos que quieres extraer con sus posibles etiquetas
@@ -103,13 +104,9 @@ def procesar_contrato(ruta_contrato, modelo_ocr, vocabulario):
         'apellido_paterno': ['PATERNO'],
         'apellido_materno': ['MATERNO'],
         'nombre': ['NOMBRE(S)'],
-        'codigo': ['CÓDIGO', 'CÓDIGO P', 'CODIGO'],
-        'rfc': ['RFC'],
-        'n_imss': ['No. AFIL. IMSS', 'No. AFIL. IMSS'],
-        'curp': ['CURP'],
+        'codigo': ['CÓDIGO', 'CÓDIGO P', 'CODIGO P'],
         'categoria': ['CATEGORIA'],
         'nombre_materia': ['NOMBRE DE LA MATERIA/CURSO'],
-        'crn': ['CRN'],
         'fecha_inicio': ['DESDE'],
         'fecha_fin': ['HASTA'],
         'dependencia': ['DEPENDENCIA DE ADSCRIPCIÓN'],
@@ -117,10 +114,6 @@ def procesar_contrato(ruta_contrato, modelo_ocr, vocabulario):
         'escolaridad': ['ESCOLARIDAD'],
         'domicilio': ['DOMICILIO'],
         'telefono': ['TELÉFONO'],
-        # Las firmas son difíciles de extraer solo por texto. Podrías buscar
-        # las etiquetas y asumir que el espacio después es la firma.
-        'firma_universidad': ['POR LA UNIVERSIDAD'],
-        'firma_trabajador': ['EL TRABAJADOR']
     }
 
     for i, img in enumerate(imagenes_paginas):
@@ -136,6 +129,9 @@ def procesar_contrato(ruta_contrato, modelo_ocr, vocabulario):
         sorted_contours = sorted(contours, key=lambda c: cv2.boundingRect(c)[1])
         
         texto_de_pagina = ""
+        texto_por_linea = []
+
+        # Paso 1: Reconocer el texto en cada recorte y almacenarlo
         for contour in sorted_contours:
             x, y, w, h = cv2.boundingRect(contour)
             if w < 15 or h < 8 or w > img.shape[1] * 0.9 or h > img.shape[0] * 0.9:
@@ -150,40 +146,33 @@ def procesar_contrato(ruta_contrato, modelo_ocr, vocabulario):
                 pred_probs = modelo_ocr.predict(prepro_recorte, verbose=0)
                 pred_words = decode_batch_predictions(pred_probs, vocabulario['index_to_char'], vocabulario['output_sequence_length'])
                 
-                if not pred_words:
-                    continue
-                
-                texto_reconocido = " ".join(pred_words)
-                texto_de_pagina += texto_reconocido + " "
+                if pred_words:
+                    texto_por_linea.append(" ".join(pred_words))
                 
             except Exception as e:
                 logging.error(f"Error al procesar el recorte: {e}")
-                
-        # 3. Extracción de información estructurada con regex en el texto completo
-        # La lógica se vuelve más robusta al buscar en toda la página
+        
+        texto_de_pagina = "\n".join(texto_por_linea)
+        
+        # Paso 2: Extraer datos del texto de la página completa
         for nombre_campo, palabras_clave in campos_a_extraer.items():
             if datos_extraidos[nombre_campo] == 'no_encontrado':
                 for palabra_clave in palabras_clave:
-                    # Construye un patrón flexible para encontrar la palabra clave y el valor
-                    # Se usa '\S+' para capturar el texto hasta el siguiente espacio
-                    palabra_regex = re.escape(palabra_clave).replace(" ", r"\s+")
-                    pattern = fr'{palabra_regex}\s*[:]?\s*(\S+)'
-                    match = re.search(pattern, texto_de_pagina, re.IGNORECASE)
+                    # Búsqueda flexible para la palabra clave y el valor en la misma línea o siguiente
+                    pattern = f'{re.escape(palabra_clave)}[^\n]*\s*([^\s]+)'
+                    match = re.search(pattern, texto_de_pagina, re.IGNORECASE | re.DOTALL)
                     if match:
                         datos_extraidos[nombre_campo] = match.group(1).strip()
                         logging.info(f"  {nombre_campo} extraído: {datos_extraidos[nombre_campo]}")
                         break
         
-        # Extracción de campos que no tienen una palabra clave explícita (e.g. los que se encuentran en tablas)
-        if datos_extraidos['rfc'] == 'no_encontrado':
-            match = re.search(patrones['RFC'], texto_de_pagina)
-            if match:
-                datos_extraidos['rfc'] = match.group(1)
-        
-        if datos_extraidos['curp'] == 'no_encontrado':
-            match = re.search(patrones['CURP'], texto_de_pagina)
-            if match:
-                datos_extraidos['curp'] = match.group(1)
+        # Buscar valores con patrones de regex sin una palabra clave
+        for key, pattern in patrones.items():
+            if datos_extraidos[key] == 'no_encontrado':
+                match = re.search(pattern, texto_de_pagina)
+                if match:
+                    datos_extraidos[key] = match.group(1).strip()
+                    logging.info(f"  {key} extraído por regex: {datos_extraidos[key]}")
 
         # Si ya se encontraron los campos principales, salimos del bucle
         campos_principales = ['numero_contrato', 'codigo', 'rfc', 'curp']
