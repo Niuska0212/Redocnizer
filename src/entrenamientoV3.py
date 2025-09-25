@@ -1,3 +1,4 @@
+#entrenamientoV3.py
 import os
 import numpy as np
 import cv2
