@@ -5,11 +5,12 @@ import os
 import pandas as pd
 import numpy as np
 import pytesseract 
-import tensorflow.keras.backend as K 
+from tensorflow.keras import backend as K 
 from difflib import SequenceMatcher # Necesario para calcular la similitud (Levenshtein)
+from PIL import Image
 
 # Importamos solo lo que se puede exportar fácilmente desde crnn_inference.py
-from crnn_inference import load_inference_model 
+from CRNN_inference import load_inference_model 
 from preprocessing import prepare_roi_for_ocr 
 
 # >>> CONFIGURACIÓN IMPORTANTE DE TESSERACT <<<
@@ -39,28 +40,150 @@ def decode_batch_predictions(y_pred_probs, index_to_char, output_sequence_length
         decoded_words.append(word.strip())
     return decoded_words
 
+def split_full_name(full_name: str) -> dict:
+    #Dividir el nombre completo en partes
+    words =full_name.upper().strip().split()
+
+    #Manejar el caso en el que OCR haya fallado o solo extraiga una palabra
+    if len(words) < 2:
+        return {'PATERNO': full_name, 'MATERNO': '', 'NOMBRE_S': ''}
+    
+    #Asume: paterno (primera palabra), materno (segunda palabra), nombre(s) (resto)
+    paterno = words[0]
+    materno = words[1]
+    nombre_s = " ".join(words[2:]) 
+
+    return {'PATERNO': paterno, 'MATERNO': materno, 'NOMBRE_S': nombre_s}
 
 # =========================================================================
-# === DEFINICIÓN DE LAS REGIONES DE INTERÉS (ROI) - COORDENADAS AJUSTADAS ===
+# === SEGMENTACION DINAMICA CON TESSERACT Y PANDAS (PSM 3) ===
 # =========================================================================
-ROIS_CONTRATO = {
-    'PATERNO': [205, 110, 40, 205],
-    'MATERNO': [205, 305, 40, 205],
-    'NOMBRE_S': [205, 515, 40, 315],
-    'NUM': [261, 808, 50, 252],     
-    'CODIGO': [315, 872, 60, 176],  
-    'RFC': [380, 132, 60, 213],     
-    'IMSS': [378, 339, 61, 231],    
-    'CURP': [377, 563, 55, 489],    
-    'DOMICILIO': [432, 131, 63, 747],
-    'TELEFONO': [429, 870, 66, 180],
-    'CRN': [653, 134, 67, 178],
-    'HRS_TOTALES': [651, 306, 69, 278],
-    'DESDE': [650, 571, 68, 250],
-    'HASTA': [649, 812, 66, 245],
-    'DEPENDENCIA': [715, 134, 135, 932], 
-}
 
+def get_dynamic_rois(img_full: np.ndarray) -> dict:
+    # Definición dinámica de ROIs basada en las dimensiones de la imagen
+
+    # Converititr a PIL para pytesseract.image_to_data
+    img_pil = Image.fromarray(img_full)
+
+    # 1. Obtenemos todos los datos de ubicacion de tesseract con PSM 3 (para bloques de texto)
+    data_df = pytesseract.image_to_data(
+        img_pil,
+        output_type=pytesseract.Output.DATAFRAME,
+        config='--psm 3'  # PSM 3: para bloques de texto
+    )
+
+    #Limpiamos filas sin texto
+    data_df = data_df.dropna(subset=['text'])
+    # Se hace copy para evitar un warning de pandas
+    data_df = data_df[data_df['conf'] > 50].copy()
+    data_df['text'] = data_df['text'].str.upper().str.strip() # Normalizamos para la busqueda
+    
+    # --- Configuración de dimensiones ---
+    TOTAL_WIDTH_NOMBRE = 736 # Ancho total de la celda de nombre
+    CELL_HEIGHT_NOMBRE = 26  # Altura de la celda de nombre
+
+    TOTAL_HEIGHT_DEP =  99
+    CELL_HEIGHT_DEP = int(TOTAL_HEIGHT_DEP / 3) # Alto de cada sub-celda
+    CELL_WIDTH_DEP = 792
+
+    # 2. Definimos las palabras claves y grupos
+
+    #Grupo A: Nombres y Apellidos (composite fields)
+    name_keywords = ['PATERNO', 'MATERNO' 'NOMBRE(S)']
+
+    #Grupo B: Dependencia (multi-cell field)
+    dep_keywords = ['DEPENDENCIA', 'DEPENDENCIAS']
+    #Grupo C: Campos sencillos (simple fields)
+    simple_fields = {
+        'NUM': ['NÚM', 'NUM'],
+        'CODIGO': ['CÓDIGO', 'CODIGO'],
+        'RFC': ['RFC'],
+        'IMSS': ['IMSS', 'AFIL IMSS', 'No. AFIL IMSS'],
+        'CURP': ['CURP'],
+        'DOMICILIO': ['DOMICILIO'],
+        'TELEFONO': ['TELÉFONO', 'TELEFONO', 'TEL'],
+        'CRN': ['CRN'],
+        'HRS_TOTALES': ['HRS. TOTALES', 'HRS TOTALES', 'HORAS TOTALES', 'HRS. TOTALES CURSO'],
+        'DESDE': ['DESDE'],
+        'HASTA': ['HASTA']
+    }
+
+    dynamic_rois = {}
+
+    # 3. Logica para extraer el nombre completo (3 campos en una sola fila)
+    header_matches= data_df[data_df['text'].isin(name_keywords)]
+
+    if not header_matches.empty:
+        #Calcular limites del encabezado
+        min_x_key = header_matches['left'].min()
+        max_y_key_bottom = (header_matches['top'] + header_matches['height']).max()
+
+        y_search_start = max_y_key_bottom + 5  # Un poco más abajo del encabezado
+
+        #Buscar el bloque de texto debajo que contiene los nombres
+        value_candidates = data_df[
+            (data_df['top'] >= y_search_start) &
+            (data_df['left'] >= min_x_key - 10)
+        ].sort_values(by='top')
+
+        if not value_candidates.empty:
+            first_value_word = value_candidates.iloc[0]
+            x_start = first_value_word['left']
+            y_start = first_value_word['top']
+
+            #Definir y Separar los 3 subcampos
+            dynamic_rois['NOMBRE_COMPLETO_RAW'] = [y_start, x_start, CELL_HEIGHT_NOMBRE, TOTAL_WIDTH_NOMBRE]
+
+    # 4. Logica para el bloque de DEPENDENCIA (multi-line)
+    for keyword in dep_keywords:
+        matches = data_df[data_df['text'] == keyword]
+        if not matches.empty:
+            key_row = matches.iloc[0]
+            x_key = key_row['left']
+            h_key = key_row['height']
+            y_search_start = key_row['top'] + h_key + 5
+
+            value_candidates = data_df[
+                (data_df['top'] >= y_search_start) &
+                (data_df['left'] >= x_key - 10)
+            ].sort_values(by='top')
+
+            if not value_candidates.empty:
+                first_value_word = value_candidates.iloc[0]
+                x_start = first_value_word['left']
+                y_start = first_value_word['top']
+
+                #Definir el área de la dependencia (3 filas)
+                dynamic_rois['DEPENDENCIA_1'] = [y_start, x_start, CELL_HEIGHT_DEP, CELL_WIDTH_DEP]
+                dynamic_rois['DEPENDENCIA_2'] = [y_start, x_start, CELL_HEIGHT_DEP, CELL_WIDTH_DEP]
+                dynamic_rois['DEPENDENCIA_3'] = [y_start, x_start + 2 * CELL_WIDTH_DEP, CELL_HEIGHT_DEP, CELL_WIDTH_DEP]
+                break
+
+    # 5. Logica para los campos sencillos (single-line)                 
+    for field_name, keywords in simple_fields.items():
+        for keyword in keywords:
+            matches= data_df[data_df['text'] == keyword]
+            if not matches.empty:
+                key_row = matches.iloc[0]
+                x_key = key_row['left']
+                h_key = key_row['height']
+                y_search_start = key_row['top'] + h_key + 5
+
+                value_candidates = data_df[
+                    (data_df['top'] >= y_search_start) &
+                    (data_df['left'] >= x_key - 10) &
+                    (data_df['top'] <= x_key + 50)
+                ].sort_values(by='top')
+
+                if not value_candidates.empty:
+                    first_value_word = value_candidates.iloc[0]
+                    x_start = first_value_word['left']
+                    y_start = first_value_word['top']
+                    
+                    #Roi para campos sencillos (y,x,h,w)
+                    dynamic_rois[field_name] = [y_start, x_start, 50, 300]
+                break
+    return dynamic_rois
 
 # =========================================================================
 # === FUNCIONES DE LECTURA OCR ===
@@ -89,9 +212,20 @@ def extract_data_from_image(image_path, modelo_inferencia, index_to_char, output
     if img_full is None:
         return extracted_data, f"Error: No se pudo cargar la imagen {os.path.basename(image_path)}"
 
-    for field_name, (y, x, h, w) in ROIS_CONTRATO.items():
-        roi_image = img_full[y : y + h, x : x + w]
-        if roi_image.size == 0:
+    rois_dinamicas = get_dynamic_rois(img_full)
+
+    for field_name, (y, x, h, w) in rois_dinamicas.items():
+        img_height, img_width = img_full.shape[:2]
+        
+        y_end = min(y + h, img_height)
+        x_end = min(x + w, img_width)
+        y_start = max(y, 0)
+        x_start = max(x, 0)
+
+        roi_image = img_full[y_start : y_end, x_start : x_end]
+
+        #Verificar si la ROI es válida
+        if roi_image.size == 0 or y_end <= y_start or x_end <= x_start:
             extracted_data[field_name] = ""
             continue
 
@@ -106,18 +240,15 @@ def extract_data_from_image(image_path, modelo_inferencia, index_to_char, output
         # 2. Lectura con el modelo de REFUERZO (Tesseract)
         ocr_result_refuerzo = read_with_tesseract(roi_image).upper().strip() # Normalizamos a mayúsculas
         
-        
         # 3. Lógica de SELECCIÓN Y CORRECCIÓN (Levenshtein)
-        
         final_result = ocr_result_base
+        # Umbral de Similitud: Si son muy diferentes, es probable que el CRNN se haya equivocado.
+        SIMILARITY_THRESHOLD = 0.70
         
         # Ambos resultados existen: Aplicamos la validación cruzada
         if ocr_result_base and ocr_result_refuerzo:
             # Calcular la similitud entre las dos predicciones
             similarity = SequenceMatcher(None, ocr_result_base, ocr_result_refuerzo).ratio()
-            
-            # Umbral de Similitud: Si son muy diferentes, es probable que el CRNN se haya equivocado.
-            SIMILARITY_THRESHOLD = 0.70 
             
             if similarity < SIMILARITY_THRESHOLD:
                 # Si son muy diferentes (error de precisión), confiamos en el Plan B (Tesseract)
