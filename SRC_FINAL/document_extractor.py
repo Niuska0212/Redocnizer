@@ -2,12 +2,14 @@
 import random
 import cv2
 import os
+import shutil
 import pandas as pd
+import re
 import numpy as np
 import pytesseract 
 from tensorflow.keras import backend as K 
 from difflib import SequenceMatcher # Necesario para calcular la similitud (Levenshtein)
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 
 # Importamos solo lo que se puede exportar fácilmente desde crnn_inference.py
 from CRNN_inference import load_inference_model 
@@ -20,6 +22,7 @@ from preprocessing import prepare_roi_for_ocr
 # --- CONFIGURACIÓN DE RUTAS ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RUTA_IMAGENES = os.path.join(BASE_DIR, "..", "data", "data", "contratos", "imagenes_jpg")
+RUTA_PREVIEW = os.path.join(BASE_DIR, "..", "data", "data", "contratos", "preview")
 RUTA_SALIDA_CSV = os.path.join(BASE_DIR, "datos_extraidos_contratos.csv")
 # Si necesitas las constantes de imagen:
 # from crnn_inference import IMG_HEIGHT, IMG_WIDTH # Descomenta si las necesitas en este script
@@ -55,6 +58,24 @@ def split_full_name(full_name: str) -> dict:
 
     return {'PATERNO': paterno, 'MATERNO': materno, 'NOMBRE_S': nombre_s}
 
+def clean_name_contamination(name: str) -> str:
+
+    name = name.strip()
+
+    name = re.sub(r'\s+[A-Z0-9-]{5,15}$', '', name, flags=re.IGNORECASE).strip()
+
+    name = re.sub(r'\s+\d{3,4}$', '', name).strip()
+
+    name = re.sub(r'[\s\W]*[|\-,]$', '', name).strip()
+
+    if not name:
+        return ""
+    
+    #if len(name) < 5 and bool(re.search(r'\d', name)):
+    #    return ""
+
+    return name.strip()
+
 # =========================================================================
 # === SEGMENTACION DINAMICA CON TESSERACT Y PANDAS (PSM 3) ===
 # =========================================================================
@@ -62,8 +83,30 @@ def split_full_name(full_name: str) -> dict:
 def get_dynamic_rois(img_full: np.ndarray) -> dict:
     # Definición dinámica de ROIs basada en las dimensiones de la imagen
 
+    H, W = img_full.shape[:2]
+
+    std_dev =np.std(img_full)
+    THRESHOLD_STD = 43
+
+    if std_dev < THRESHOLD_STD:
+        print(f"Pre-procesamiento: fondo uniforme (Otsu). STD: {std_dev:.2f}")
+        # Intentar el umbral de Otsu
+        try:
+            img_full_bin = cv2.threshold(img_full, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
+        except Exception:
+            img_full_bin = img_full
+    else:
+        print(f"Pre-procesamiento: fondo complejo (Adaptative). STD: {std_dev:.2f}")
+        # Intentar el umbral adaptativo
+        try:
+            img_full_bin = cv2.adaptiveThreshold(
+                img_full, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 31, 10
+                )
+        except Exception:
+            img_full_bin = img_full
+
     # Converititr a PIL para pytesseract.image_to_data
-    img_pil = Image.fromarray(img_full)
+    img_pil = Image.fromarray(img_full_bin)
 
     # 1. Obtenemos todos los datos de ubicacion de tesseract con PSM 3 (para bloques de texto)
     data_df = pytesseract.image_to_data(
@@ -75,12 +118,12 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
     #Limpiamos filas sin texto
     data_df = data_df.dropna(subset=['text'])
     # Se hace copy para evitar un warning de pandas
-    data_df = data_df[data_df['conf'] > 40].copy()
+    data_df = data_df[data_df['conf'] > 3].copy()
     data_df['text'] = data_df['text'].str.upper().str.strip() # Normalizamos para la busqueda
     
     # --- Configuración de dimensiones ---
-    TOTAL_WIDTH_NOMBRE = 736 # Ancho total de la celda de nombre
-    CELL_HEIGHT_NOMBRE = 26  # Altura de la celda de nombre
+    TOTAL_WIDTH_NOMBRE = 500 # Ancho total de la celda de nombre
+    CELL_HEIGHT_NOMBRE = 30  # Altura de la celda de nombre
 
     TOTAL_HEIGHT_DEP =  99
     CELL_WIDTH_DEP = 792
@@ -90,13 +133,13 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
     # 2. Definimos las palabras claves y grupos
 
     #Grupo A: Nombres y Apellidos (composite fields)
-    name_keywords = ['PATERNO', 'MATERNO' 'NOMBRE(S)', 'NOMBRE', 'APELLIDO PATERNO', 'APELLIDO MATERNO']
+    name_keywords = ['PATERNO', 'MATERNO' 'NOMBRE(S)', 'APELLIDO PATERNO', 'APELLIDO MATERNO', 'APELLIDOS']
 
     #Grupo B: Dependencia (multi-cell field)
     dep_keywords = ['DEPENDENCIA', 'DEPENDENCIAS']
+
     #Grupo C: Campos sencillos (simple fields)
-    simple_fields = {
-        'NUM': ['NÚM', 'NUM'],
+    simple_fields_below = {
         'CODIGO': ['CÓDIGO', 'CODIGO'],
         'RFC': ['RFC'],
         'IMSS': ['IMSS', 'AFIL IMSS', 'No. AFIL IMSS'],
@@ -109,6 +152,11 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
         'HASTA': ['HASTA']
     }
 
+    #Grupo C2: Campos sencillos (informacion a la derecha)
+    simple_fields_right ={
+        'NUM': ['NÚM', 'NUM']
+    }
+
     dynamic_rois = {}
 
     # 3. Logica para extraer el nombre completo (3 campos en una sola fila)
@@ -119,21 +167,29 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
         min_x_key = header_matches['left'].min()
         max_y_key_bottom = (header_matches['top'] + header_matches['height']).max()
 
-        y_search_start = max_y_key_bottom + 5  # Un poco más abajo del encabezado
+        y_search_start = max_y_key_bottom + 2  # Un poco más abajo del encabezado
 
         #Buscar el bloque de texto debajo que contiene los nombres
         value_candidates = data_df[
             (data_df['top'] >= y_search_start) &
-            (data_df['left'] >= min_x_key - 10)
+            (data_df['left'] >= min_x_key - 45)
         ].sort_values(by='top')
 
         if not value_candidates.empty:
+            
             first_value_word = value_candidates.iloc[0]
-            x_start = first_value_word['left']
+            
             y_start = first_value_word['top']
+        else:
+            y_start = int(max_y_key_bottom + 5)
 
-            #Definir y Separar los 3 subcampos
-            dynamic_rois['NOMBRE_COMPLETO_RAW'] = [y_start, x_start, CELL_HEIGHT_NOMBRE, TOTAL_WIDTH_NOMBRE]
+        X_offset = 80
+
+        x_roi_start = int(min_x_key) - X_offset
+        x_roi_start = max(0, x_roi_start)  # Asegurar que no sea negativo
+
+        #Definir y Separar los 3 subcampos
+        dynamic_rois['NOMBRE_COMPLETO_RAW'] = [y_start, x_roi_start, CELL_HEIGHT_NOMBRE, TOTAL_WIDTH_NOMBRE]
 
     # 4. Logica para el bloque de DEPENDENCIA (multi-line)
     for keyword in dep_keywords:
@@ -170,9 +226,35 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
                 dynamic_rois['DEPENDENCIA_3'] = [y3, x_start, h_dep, w_dep]
                 break
 
-    # 5. Logica para los campos sencillos (single-line)                 
-    for field_name, keywords in simple_fields.items():
-        if field_name in dynamic_rois:
+    # 5.1 Logica para los campos sencillos (a la derecha)
+    for field_name, keywords in simple_fields_right.items():
+        if field_name not in dynamic_rois:
+            for keyword in keywords:
+                matches= data_df[data_df['text'] == keyword]
+                if not matches.empty:
+                    key_row = matches.iloc[0]
+                    key_block_num = key_row['block_num']
+                    key_line_num = key_row['line_num']
+                    key_right = key_row['left'] + key_row['width']
+
+                    value_candidates = data_df[
+                        (data_df['block_num'] == key_block_num) &
+                        (data_df['line_num'] == key_line_num) &
+                        (data_df['left'] >= key_right + 5)
+                    ].sort_values(by='left')
+
+                    if not value_candidates.empty:
+                        first_value_word = value_candidates.iloc[0]
+                        x_start = int(first_value_word['left'])
+                        y_start = int(first_value_word['top'])
+                        
+                        #Roi para campos sencillos (y,x,h,w)
+                        dynamic_rois[field_name] = [y_start, x_start, 50, 300]
+                    break
+
+    # 5.2 Logica para los campos sencillos (Debajo)               
+    for field_name, keywords in simple_fields_below.items():
+        if field_name not in dynamic_rois:
             for keyword in keywords:
                 matches= data_df[data_df['text'] == keyword]
                 if not matches.empty:
@@ -184,7 +266,7 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
                     value_candidates = data_df[
                         (data_df['top'] >= y_search_start) &
                         (data_df['left'] >= x_key - 10) &
-                        (data_df['left'] <= x_key + 50)
+                        (data_df['left'] <= x_key + 100)
                     ].sort_values(by='top')
 
                     if not value_candidates.empty:
@@ -196,6 +278,16 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
                         dynamic_rois[field_name] = [y_start, x_start, 50, 300]
                     break
     return dynamic_rois
+
+def clean_border_chars(text: str) -> str:
+    if not text:
+        return ""
+    
+    # Elimina caracteres no alfanuméricos al inicio y final del texto
+    text = re.sub(r'[-!|\/ \-]', '', text)
+
+    text = re.sub(r'\s+', ' ', text)  # Reemplaza múltiples espacios por uno solo
+    return text.strip()
 
 # =========================================================================
 # === FUNCIONES DE LECTURA OCR ===
@@ -214,17 +306,45 @@ def read_with_tesseract(roi_image: np.ndarray) -> str:
         return ""
 
 
-def extract_data_from_image(image_path, modelo_inferencia, index_to_char, output_sequence_length):
+
+def extract_data_from_image(image_path, modelo_inferencia, index_to_char, output_sequence_length, output_dir_preview):
     """
     Coordina la extracción de datos usando el CRNN y Tesseract con validación híbrida.
     """
+    extracted_data = {'Archivo': os.path.basename(image_path)}
+
     img_full = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
     
     if img_full is None:
-        return {'Archivo': os.path.basename(image_path)}, f"Error: No se pudo cargar la imagen {os.path.basename(image_path)}"
+        return extracted_data, f"Error: No se pudo cargar la imagen {os.path.basename(image_path)}"
 
     rois_dinamicas = get_dynamic_rois(img_full)
     all_extracted_data = {} # Diccionario temporal para todos los campos
+
+    img_color = cv2.cvtColor(img_full, cv2.COLOR_GRAY2BGR) # Para debug visual si es necesario
+    output_filename = "Vizualizacion_"+ os.path.basename(image_path)
+    output_dir = output_dir_preview
+
+    COLORS = {
+        'NOMBRE_COMPLETO_RAW': (0, 0, 255),  # Rojo para nombre completo
+        'DEPENDENCIA': (255, 0, 0),        # Azul para dependencia
+        'SIMPLE_FIELD': (0, 255, 0)        # Verde para campos simples
+    }
+
+    for field_name, (y, x, h, w) in rois_dinamicas.items():
+        color = COLORS.get(field_name, COLORS['SIMPLE_FIELD'])
+        if field_name.startswith('DEPENDENCIA'):
+            color = COLORS['DEPENDENCIA']
+            
+        x_end = x + w
+        y_end = y + h
+        cv2.rectangle(img_color, (x, y), (x_end, y_end), color, 2)
+
+        cv2.putText(img_color, field_name, (x, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+    
+    save_path = os.path.join(output_dir, output_filename)
+    cv2.imwrite(save_path, img_color)
+    print(f"Visualización guardada en: {save_path}")
 
     for field_name, roi_data in rois_dinamicas.items():
 
@@ -279,7 +399,9 @@ def extract_data_from_image(image_path, modelo_inferencia, index_to_char, output
         
         # Un resultado existe y el otro no: Actúa como respaldo simple (el CRNN tiene prioridad)
         elif not ocr_result_base and ocr_result_refuerzo:
-            final_result = ocr_result_refuerzo 
+            final_result = ocr_result_refuerzo
+
+            final_result = clean_border_chars(final_result)
             
         # Fallo Total o solo el CRNN predice algo (lo cual ya está en final_result)
         
@@ -300,6 +422,13 @@ def extract_data_from_image(image_path, modelo_inferencia, index_to_char, output
     return extracted_data, None
 
 
+def clean_and_recreate_directory(dir_path):
+    """Limpia y recrea un directorio."""
+    if os.path.exists(dir_path):
+        shutil.rmtree(dir_path)
+    
+    os.makedirs(dir_path, exist_ok=True)
+
 # =========================================================================
 # === FUNCIÓN PRINCIPAL ===
 # =========================================================================
@@ -310,6 +439,8 @@ def main():
     if modelo_inferencia is None:
         print("\nEl programa no puede continuar sin el modelo de inferencia.")
         return
+    
+    clean_and_recreate_directory(RUTA_PREVIEW)
 
     # Preparar el proceso de extracción
     all_files = [f for f in os.listdir(RUTA_IMAGENES) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
@@ -327,7 +458,8 @@ def main():
             image_path, 
             modelo_inferencia, 
             index_to_char, 
-            output_sequence_length
+            output_sequence_length,
+            RUTA_PREVIEW
         )
 
         if data:
