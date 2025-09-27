@@ -10,6 +10,7 @@ import pytesseract
 from tensorflow.keras import backend as K 
 from difflib import SequenceMatcher # Necesario para calcular la similitud (Levenshtein)
 from PIL import Image, ImageDraw, ImageFont
+from segmentacion_dinamica import get_dynamic_rois, clean_data_by_field, clean_border_chars
 
 # Importamos solo lo que se puede exportar fácilmente desde crnn_inference.py
 from CRNN_inference import load_inference_model 
@@ -17,7 +18,7 @@ from preprocessing import prepare_roi_for_ocr
 
 # >>> CONFIGURACIÓN IMPORTANTE DE TESSERACT <<<
 # Reemplaza esta ruta con la ruta donde instalaste tesseract.exe, ¡solo si es necesario!
-# pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
 # --- CONFIGURACIÓN DE RUTAS ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -56,7 +57,13 @@ def split_full_name(full_name: str) -> dict:
     materno = words[1]
     nombre_s = " ".join(words[2:]) 
 
-    return {'PATERNO': paterno, 'MATERNO': materno, 'NOMBRE_S': nombre_s}
+    return {
+        'PATERNO': clean_border_chars(paterno), 
+        'MATERNO': clean_border_chars(materno), 
+        'NOMBRE_S': clean_border_chars(nombre_s)
+    }
+
+    #return {'PATERNO': paterno, 'MATERNO': materno, 'NOMBRE_S': nombre_s}
 
 def clean_name_contamination(name: str) -> str:
 
@@ -76,218 +83,6 @@ def clean_name_contamination(name: str) -> str:
 
     return name.strip()
 
-# =========================================================================
-# === SEGMENTACION DINAMICA CON TESSERACT Y PANDAS (PSM 3) ===
-# =========================================================================
-
-def get_dynamic_rois(img_full: np.ndarray) -> dict:
-    # Definición dinámica de ROIs basada en las dimensiones de la imagen
-
-    H, W = img_full.shape[:2]
-
-    std_dev =np.std(img_full)
-    THRESHOLD_STD = 43
-
-    if std_dev < THRESHOLD_STD:
-        print(f"Pre-procesamiento: fondo uniforme (Otsu). STD: {std_dev:.2f}")
-        # Intentar el umbral de Otsu
-        try:
-            img_full_bin = cv2.threshold(img_full, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
-        except Exception:
-            img_full_bin = img_full
-    else:
-        print(f"Pre-procesamiento: fondo complejo (Adaptative). STD: {std_dev:.2f}")
-        # Intentar el umbral adaptativo
-        try:
-            img_full_bin = cv2.adaptiveThreshold(
-                img_full, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 31, 10
-                )
-        except Exception:
-            img_full_bin = img_full
-
-    # Converititr a PIL para pytesseract.image_to_data
-    img_pil = Image.fromarray(img_full_bin)
-
-    # 1. Obtenemos todos los datos de ubicacion de tesseract con PSM 3 (para bloques de texto)
-    data_df = pytesseract.image_to_data(
-        img_pil,
-        output_type=pytesseract.Output.DATAFRAME,
-        config='--psm 3'  # PSM 3: para bloques de texto
-    )
-
-    #Limpiamos filas sin texto
-    data_df = data_df.dropna(subset=['text'])
-    # Se hace copy para evitar un warning de pandas
-    data_df = data_df[data_df['conf'] > 3].copy()
-    data_df['text'] = data_df['text'].str.upper().str.strip() # Normalizamos para la busqueda
-    
-    # --- Configuración de dimensiones ---
-    TOTAL_WIDTH_NOMBRE = 500 # Ancho total de la celda de nombre
-    CELL_HEIGHT_NOMBRE = 30  # Altura de la celda de nombre
-
-    TOTAL_HEIGHT_DEP =  99
-    CELL_WIDTH_DEP = 792
-    CELL_HEIGHT_DEP = int(TOTAL_HEIGHT_DEP / 3) # Alto de cada sub-celda
-   
-
-    # 2. Definimos las palabras claves y grupos
-
-    #Grupo A: Nombres y Apellidos (composite fields)
-    name_keywords = ['PATERNO', 'MATERNO' 'NOMBRE(S)', 'APELLIDO PATERNO', 'APELLIDO MATERNO', 'APELLIDOS']
-
-    #Grupo B: Dependencia (multi-cell field)
-    dep_keywords = ['DEPENDENCIA', 'DEPENDENCIAS']
-
-    #Grupo C: Campos sencillos (simple fields)
-    simple_fields_below = {
-        'CODIGO': ['CÓDIGO', 'CODIGO'],
-        'RFC': ['RFC'],
-        'IMSS': ['IMSS', 'AFIL IMSS', 'No. AFIL IMSS'],
-        'CURP': ['CURP'],
-        'DOMICILIO': ['DOMICILIO'],
-        'TELEFONO': ['TELÉFONO', 'TELEFONO', 'TEL'],
-        'CRN': ['CRN'],
-        'HRS_TOTALES': ['HRS. TOTALES', 'HRS TOTALES', 'HORAS TOTALES', 'HRS. TOTALES CURSO'],
-        'DESDE': ['DESDE'],
-        'HASTA': ['HASTA']
-    }
-
-    #Grupo C2: Campos sencillos (informacion a la derecha)
-    simple_fields_right ={
-        'NUM': ['NÚM', 'NUM']
-    }
-
-    dynamic_rois = {}
-
-    # 3. Logica para extraer el nombre completo (3 campos en una sola fila)
-    header_matches= data_df[data_df['text'].isin(name_keywords)]
-
-    if not header_matches.empty:
-        #Calcular limites del encabezado
-        min_x_key = header_matches['left'].min()
-        max_y_key_bottom = (header_matches['top'] + header_matches['height']).max()
-
-        y_search_start = max_y_key_bottom + 2  # Un poco más abajo del encabezado
-
-        #Buscar el bloque de texto debajo que contiene los nombres
-        value_candidates = data_df[
-            (data_df['top'] >= y_search_start) &
-            (data_df['left'] >= min_x_key - 45)
-        ].sort_values(by='top')
-
-        if not value_candidates.empty:
-            
-            first_value_word = value_candidates.iloc[0]
-            
-            y_start = first_value_word['top']
-        else:
-            y_start = int(max_y_key_bottom + 5)
-
-        X_offset = 80
-
-        x_roi_start = int(min_x_key) - X_offset
-        x_roi_start = max(0, x_roi_start)  # Asegurar que no sea negativo
-
-        #Definir y Separar los 3 subcampos
-        dynamic_rois['NOMBRE_COMPLETO_RAW'] = [y_start, x_roi_start, CELL_HEIGHT_NOMBRE, TOTAL_WIDTH_NOMBRE]
-
-    # 4. Logica para el bloque de DEPENDENCIA (multi-line)
-    for keyword in dep_keywords:
-        matches = data_df[data_df['text'] == keyword]
-        if not matches.empty:
-            key_row = matches.iloc[0]
-            x_key = key_row['left']
-            h_key = key_row['height']
-            y_search_start = key_row['top'] + h_key + 5
-
-            value_candidates = data_df[
-                (data_df['top'] >= y_search_start) &
-                (data_df['left'] >= x_key - 10)
-            ].sort_values(by='top')
-
-            if not value_candidates.empty:
-                first_value_word = value_candidates.iloc[0]
-                x_start = int(first_value_word['left'])
-                y_start = int(first_value_word['top'])
-
-                h_dep = int(CELL_HEIGHT_DEP)
-                w_dep = int(CELL_WIDTH_DEP)
-
-                #Definir el área de la dependencia (3 filas)
-                #ROI 1: Comienza en y_start
-                dynamic_rois['DEPENDENCIA_1'] = [y_start, x_start, h_dep, w_dep]
-
-                #ROI 2: Desplazada hacia abajo
-                y2 = y_start + h_dep
-                dynamic_rois['DEPENDENCIA_2'] = [y2, x_start, h_dep, w_dep]
-
-                #ROI 3: Deplazado 2 alturas abajo
-                y3 = y_start + 2 * h_dep
-                dynamic_rois['DEPENDENCIA_3'] = [y3, x_start, h_dep, w_dep]
-                break
-
-    # 5.1 Logica para los campos sencillos (a la derecha)
-    for field_name, keywords in simple_fields_right.items():
-        if field_name not in dynamic_rois:
-            for keyword in keywords:
-                matches= data_df[data_df['text'] == keyword]
-                if not matches.empty:
-                    key_row = matches.iloc[0]
-                    key_block_num = key_row['block_num']
-                    key_line_num = key_row['line_num']
-                    key_right = key_row['left'] + key_row['width']
-
-                    value_candidates = data_df[
-                        (data_df['block_num'] == key_block_num) &
-                        (data_df['line_num'] == key_line_num) &
-                        (data_df['left'] >= key_right + 5)
-                    ].sort_values(by='left')
-
-                    if not value_candidates.empty:
-                        first_value_word = value_candidates.iloc[0]
-                        x_start = int(first_value_word['left'])
-                        y_start = int(first_value_word['top'])
-                        
-                        #Roi para campos sencillos (y,x,h,w)
-                        dynamic_rois[field_name] = [y_start, x_start, 50, 300]
-                    break
-
-    # 5.2 Logica para los campos sencillos (Debajo)               
-    for field_name, keywords in simple_fields_below.items():
-        if field_name not in dynamic_rois:
-            for keyword in keywords:
-                matches= data_df[data_df['text'] == keyword]
-                if not matches.empty:
-                    key_row = matches.iloc[0]
-                    x_key = key_row['left']
-                    h_key = key_row['height']
-                    y_search_start = key_row['top'] + h_key + 5
-
-                    value_candidates = data_df[
-                        (data_df['top'] >= y_search_start) &
-                        (data_df['left'] >= x_key - 10) &
-                        (data_df['left'] <= x_key + 100)
-                    ].sort_values(by='top')
-
-                    if not value_candidates.empty:
-                        first_value_word = value_candidates.iloc[0]
-                        x_start = first_value_word['left']
-                        y_start = first_value_word['top']
-                        
-                        #Roi para campos sencillos (y,x,h,w)
-                        dynamic_rois[field_name] = [y_start, x_start, 50, 300]
-                    break
-    return dynamic_rois
-
-def clean_border_chars(text: str) -> str:
-    if not text:
-        return ""
-    
-    # Elimina caracteres no alfanuméricos al inicio y final del texto
-    text = re.sub(r'[-!|\/ \-]', '', text)
-
-    text = re.sub(r'\s+', ' ', text)  # Reemplaza múltiples espacios por uno solo
-    return text.strip()
 
 # =========================================================================
 # === FUNCIONES DE LECTURA OCR ===
@@ -405,20 +200,30 @@ def extract_data_from_image(image_path, modelo_inferencia, index_to_char, output
             
         # Fallo Total o solo el CRNN predice algo (lo cual ya está en final_result)
         
-        all_extracted_data[field_name] = final_result
+        all_extracted_data[field_name] = clean_border_chars(final_result)
 
-        # --- POST-PROCESAMIENTO ---
+    # --- POST-PROCESAMIENTO Y ESTRUCTURACIÓN DE SALIDA ---
         extracted_data = {'Archivo': os.path.basename(image_path)}
 
-        for key, value in all_extracted_data.items():
-            if key == 'NOMBRE_COMPLETO_RAW':
-                # Aplicar la funcion de division de nombre completo
-                name_parts = split_full_name(value)
-                extracted_data.update(name_parts)
-            else:
-                # Añadir todos los demás campos (incluyendo DEPENDENCIA y simples)
-                extracted_data[key] = value
-            
+    for key, value in all_extracted_data.items():
+        # Aplicamos la limpieza general Y la limpieza específica por campo
+        cleaned_value = clean_data_by_field(key, clean_border_chars(value))
+
+        if key == 'NOMBRE_COMPLETO_RAW':
+            # Aplicar la funcion de division de nombre completo y añadir los 3 campos
+            name_parts = split_full_name(cleaned_value)
+            extracted_data.update(name_parts)
+        elif key.startswith('DEPENDENCIA'):
+            extracted_data[key] = cleaned_value
+        # Si el campo es 'DOMICILIO', la clave no existirá aquí porque se eliminó de rois_dinamicas
+        else:
+            extracted_data[key] = cleaned_value
+
+    # Asegurar que los campos PATERNO, MATERNO y NOMBRE_S existan en la salida
+    if 'PATERNO' not in extracted_data: extracted_data['PATERNO'] = ''
+    if 'MATERNO' not in extracted_data: extracted_data['MATERNO'] = ''
+    if 'NOMBRE_S' not in extracted_data: extracted_data['NOMBRE_S'] = ''
+
     return extracted_data, None
 
 
@@ -445,8 +250,8 @@ def main():
     # Preparar el proceso de extracción
     all_files = [f for f in os.listdir(RUTA_IMAGENES) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
 
-    if len(all_files) > 100:
-        all_files = random.sample(all_files, 100)  # Para pruebas, limitar a 100 imágenes
+    if len(all_files) > 50:
+        all_files = random.sample(all_files, 50)  # Para pruebas, limitar a 100 imágenes
     all_data = []
 
     print(f"\nIniciando extracción híbrida de datos de {len(all_files)} documentos...")
