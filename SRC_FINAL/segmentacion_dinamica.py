@@ -15,7 +15,6 @@ from PIL import Image, ImageDraw, ImageFont
 # === SEGMENTACION DINAMICA CON TESSERACT Y PANDAS (PSM 3) ===
 # =========================================================================
 
-
 def get_dynamic_rois(img_full: np.ndarray) -> dict:
     H, W = img_full.shape[:2]
 
@@ -64,13 +63,15 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
     NUM_FALLBACK_X = 930
     NUM_FALLBACK_Y = 230
 
-    # ANCHOS ESPECÍFICOS PARA RFC, IMSS, CURP
+    # ANCHOS ESPECÍFICOS Y POSICIONES FIJAS PARA RFC, IMSS, CURP
     RFC_WIDTH = 230
     IMSS_WIDTH = 230
     CURP_WIDTH = 350
 
-    # POSICIÓN BASE PARA RFC, IMSS, CURP (más a la izquierda)
-    BASE_RFC_X = 150  # Más a la izquierda que los demás campos
+    # POSICIONES FIJAS ABSOLUTAS (más a la izquierda)
+    RFC_X = 100
+    IMSS_X = RFC_X + RFC_WIDTH + 10   # 100 + 230 + 10 = 340
+    CURP_X = IMSS_X + IMSS_WIDTH + 10 # 340 + 230 + 10 = 580
 
     name_keywords = ['PATERNO', 'MATERNO', 'NOMBRE(S)', 'APELLIDO PATERNO', 'APELLIDO MATERNO', 'APELLIDOS']
     dep_keywords = ['DEPENDENCIA', 'DEPENDENCIAS']
@@ -87,15 +88,6 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
         'HRS_TOTALES': ['HRS. TOTALES', 'HRS TOTALES', 'HORAS TOTALES', 'HRS. TOTALES CURSO'],
         'DESDE': ['DESDE'],
         'HASTA': ['HASTA'],
-    }
-
-    # Campos en GRUPOS HORIZONTALES (misma fila)
-    horizontal_groups = {
-        'RFC_IMSS_CURP': {
-            'RFC': ['RFC'],
-            'IMSS': ['IMSS', 'AFIL IMSS', 'No. AFIL IMSS'],
-            'CURP': ['CURP']
-        }
     }
 
     dynamic_rois = {}
@@ -146,81 +138,67 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
         if field_name not in dynamic_rois:
             for keyword in keywords:
                 matches = data_df[data_df['text'].str.contains(r'|'.join(keywords), case=False, regex=True)]
-
                 if not matches.empty:
                     key_row = matches.iloc[0]
                     key_right = key_row['left'] + key_row['width']
                     y_start_label = key_row['top']
                     
-                    w_roi = 160
-                    h_roi = 40
-                    x_start = 800
-                    y_start = y_start_label
-
+                    w_roi, h_roi = 160, 40
+                    
                     value_candidates = data_df[
-                        (data_df['top'] >= y_start_label - 10) &
-                        (data_df['top'] <= y_start_label + 10) &
-                        (data_df['left'] >= key_right + 10)
+                        (data_df['top'] >= y_start_label - 15) &
+                        (data_df['top'] <= y_start_label + 15) &
+                        (data_df['left'] >= key_right + 5)
                     ].sort_values(by='left').head(1)
 
-                    if not value_candidates.empty:
+                    if value_candidates.empty:
+                        x_start, y_start = NUM_FALLBACK_X, NUM_FALLBACK_Y
+                    else:
                         x_start = int(value_candidates.iloc[0]['left']) - 15
                         y_start = int(value_candidates.iloc[0]['top']) - 15
-                    else:
-                        x_start = NUM_FALLBACK_X
-                        y_start = NUM_FALLBACK_Y
 
                     dynamic_rois[field_name] = [y_start, x_start, h_roi, w_roi]
                     break
 
+    # 4. Lógica para RFC, IMSS, CURP (POSICIONES FIJAS INDEPENDIENTES)
+    base_row_y = None
     
-    # 4. Lógica para GRUPOS HORIZONTALES (RFC, IMSS, CURP)
-    for group_name, fields in horizontal_groups.items():
-        base_y = None
-        base_x = 150  # Posición base más a la izquierda
-        
-        for field_name, keywords in fields.items():
-            if field_name not in dynamic_rois:
-                for keyword in keywords:
-                    matches = data_df[data_df['text'].str.contains(keyword, case=False, regex=True)]
-                    if matches.empty:
-                        continue
-                    
-                    key_row = matches.iloc[0]
-                    y_search_start = key_row['top'] + key_row['height'] + 5
-                    
-                    # Buscar valor debajo de la etiqueta
-                    value_candidates = data_df[
-                        (data_df['top'] >= y_search_start) &
-                        (data_df['top'] <= y_search_start + 50) &
-                        (data_df['left'] >= key_row['left'] - 50) &
-                        (data_df['left'] <= key_row['left'] + 400)
-                    ].sort_values(by='top').head(1)
+    # Primero buscar todos para establecer la fila base común
+    rfc_matches = data_df[data_df['text'].str.contains('RFC', case=False, regex=True)]
+    imss_matches = data_df[data_df['text'].str.contains('IMSS|AFIL IMSS|No. AFIL IMSS', case=False, regex=True)]
+    curp_matches = data_df[data_df['text'].str.contains('CURP', case=False, regex=True)]
+    
+    # Establecer base_row_y con el primer campo que se encuentre
+    for matches in [rfc_matches, imss_matches, curp_matches]:
+        if not matches.empty:
+            key_row = matches.iloc[0]
+            y_search_start = key_row['top'] + key_row['height'] + 5
+            value_candidates = data_df[
+                (data_df['top'] >= y_search_start) &
+                (data_df['top'] <= y_search_start + 50) &
+                (data_df['left'] >= key_row['left'] - 50) &
+                (data_df['left'] <= key_row['left'] + 400)
+            ].sort_values(by='top').head(1)
+            
+            if not value_candidates.empty:
+                base_row_y = value_candidates.iloc[0]['top'] - 10
+                break
+    
+    # Si no se encontró ningún valor, usar posición por defecto
+    if base_row_y is None:
+        base_row_y = 400  # Posición Y por defecto
 
-                    # Establecer base_y con el primer campo encontrado
-                    if base_y is None and not value_candidates.empty:
-                        base_y = value_candidates.iloc[0]['top'] - 10
-                    
-                    # Usar base_y si está establecida, sino buscar individualmente
-                    y_start = base_y if base_y is not None else (
-                        value_candidates.iloc[0]['top'] - 10 if not value_candidates.empty else y_search_start
-                    )
+    # Procesar RFC (si existe)
+    if not rfc_matches.empty:
+        dynamic_rois['RFC'] = [base_row_y, RFC_X, 54, RFC_WIDTH]
 
-                    # Posicionamiento horizontal relativo
-                    if field_name == 'RFC':
-                        w_roi, h_roi = 230, 54
-                        x_start = base_x if not value_candidates.empty else base_x
-                    
-                    elif field_name == 'IMSS':
-                        w_roi, h_roi = 230, 54
-                        x_start = base_x + 240  # RFC (230) + 10px separación
-                    
-                    elif field_name == 'CURP':
-                        w_roi, h_roi = 350, 54
-                        x_start = base_x + 480  # RFC (230) + IMSS (230) + 20px separación
+    # Procesar IMSS (si existe) - INDEPENDIENTE DE RFC
+    if not imss_matches.empty:
+        dynamic_rois['IMSS'] = [base_row_y, IMSS_X, 54, IMSS_WIDTH]
 
-                    dynamic_rois[field_name] = [y_start, x_start, h_roi, w_roi]
-                    break
+    # Procesar CURP (si existe) - INDEPENDIENTE DE LOS OTROS
+    if not curp_matches.empty:
+        dynamic_rois['CURP'] = [base_row_y, CURP_X, 54, CURP_WIDTH]
 
     # 5. Lógica para campos DEBAJO (CÓDIGO, TELÉFONO, CRN, etc.)
     for field_name, keywords in simple_fields_below.items():
@@ -231,7 +209,6 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
                     key_row = matches.iloc[0]
                     y_search_start = key_row['top'] + key_row['height'] + 5
 
-                    # Buscar valor debajo
                     value_candidates = data_df[
                         (data_df['top'] >= y_search_start) &
                         (data_df['top'] <= y_search_start + 50) &
@@ -252,12 +229,10 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
                     # Ajustes específicos
                     if field_name == 'CODIGO':
                         w_roi = 150
-                        # Posicionar más a la derecha (donde está el valor)
                         x_start = 700 if value_candidates.empty else value_candidates.iloc[0]['left'] - 10
                     
                     elif field_name == 'TELEFONO':
                         w_roi = 200
-                        # Posicionar más a la derecha
                         x_start = 700 if value_candidates.empty else value_candidates.iloc[0]['left'] - 10
                     
                     elif field_name == 'CRN':
@@ -277,7 +252,6 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
                     break
                 
     return dynamic_rois
-
 
 
 def clean_border_chars(text: str) -> str:
