@@ -68,9 +68,10 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
     IMSS_WIDTH = 230
     CURP_WIDTH = 350
 
+    #la altura de IMSS se encuentra 
     # POSICIONES FIJAS ABSOLUTAS (más a la izquierda)
     RFC_X = 100
-    IMSS_X = RFC_X + RFC_WIDTH + 10   # 100 + 230 + 10 = 340
+    IMSS_X = RFC_X + RFC_WIDTH + 20   # 100 + 230 + 10 = 340
     CURP_X = IMSS_X + IMSS_WIDTH + 10 # 340 + 230 + 10 = 580
 
     name_keywords = ['PATERNO', 'MATERNO', 'NOMBRE(S)', 'APELLIDO PATERNO', 'APELLIDO MATERNO', 'APELLIDOS']
@@ -165,7 +166,10 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
     
     # Primero buscar todos para establecer la fila base común
     rfc_matches = data_df[data_df['text'].str.contains('RFC', case=False, regex=True)]
-    imss_matches = data_df[data_df['text'].str.contains('IMSS|AFIL IMSS|No. AFIL IMSS', case=False, regex=True)]
+    #codigo mejorado para RFC
+    #rfc_matches = data_df[data_df['text'].str.contains(r'R\.?F\.?C\.c*RFC', case=False, regex=True)]
+    # CÓDIGO MEJORADO PARA IMSS
+    imss_matches = data_df[data_df['text'].str.contains(r'I\.?M\.?S\.?S|AFIL\.?\s*IMSS|NO\.?\s*AFIL\.?\s*IMSS', case=False, regex=True)]
     curp_matches = data_df[data_df['text'].str.contains('CURP', case=False, regex=True)]
     
     # Establecer base_row_y con el primer campo que se encuentre
@@ -187,14 +191,13 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
     # Si no se encontró ningún valor, usar posición por defecto
     if base_row_y is None:
         base_row_y = 400  # Posición Y por defecto
-
     # Procesar RFC (si existe)
     if not rfc_matches.empty:
         dynamic_rois['RFC'] = [base_row_y, RFC_X, 54, RFC_WIDTH]
 
     # Procesar IMSS (si existe) - INDEPENDIENTE DE RFC
     if not imss_matches.empty:
-        dynamic_rois['IMSS'] = [base_row_y, IMSS_X, 54, IMSS_WIDTH]
+        dynamic_rois['IMSS'] = [base_row_y - 5 , IMSS_X, 54, IMSS_WIDTH]
 
     # Procesar CURP (si existe) - INDEPENDIENTE DE LOS OTROS
     if not curp_matches.empty:
@@ -243,10 +246,10 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
                         x_start = 330
                     elif field_name == 'DESDE':
                         w_roi = 240
-                        x_start = 500
+                        x_start = 550
                     elif field_name == 'HASTA':
                         w_roi = 240
-                        x_start = 750
+                        x_start = 800
 
                     dynamic_rois[field_name] = [y_start, x_start, h_roi, w_roi]
                     break
@@ -287,8 +290,6 @@ def clean_data_by_field(field_name: str, text: str) -> str:
         # Eliminar TODOS los caracteres especiales y espacios
         text = re.sub(r'[^A-Z0-9]', '', text.upper())
         
-
-        
         # Validaciones específicas por tipo de campo
         if field_name == 'RFC':
             # RFC debe tener 12-13 caracteres alfanuméricos
@@ -304,6 +305,8 @@ def clean_data_by_field(field_name: str, text: str) -> str:
             # Patrón básico de CURP: 4 letras, 6 números, 1 letra, 1 sexo, 2 letras, 3 números
             text = re.sub(r'^([A-Z]{4}\d{6}[A-Z]{6}\d{2}).*', r'\1', text)
             
+        # En la función clean_data_by_field (Línea ~280)
+
         elif field_name == 'IMSS':
             # IMSS generalmente son 11 dígitos, pero puede variar
             # Mantener solo números para IMSS
@@ -346,10 +349,14 @@ def validate_field_format(field_name: str, text: str) -> str:
         if len(text) >= 16:
             text = text[:18]
             
+    # CÓDIGO MEJORADO PARA IMSS (Línea ~279)
     elif field_name == 'IMSS':
+        # IMSS generalmente son 11 dígitos, pero puede variar
+        # Mantener solo números para IMSS
         text = re.sub(r'[^0-9]', '', text)
         if len(text) > 11:
             text = text[:11]
+        
         
     elif field_name == 'TELEFONO':
         text = re.sub(r'[^0-9]', '', text)
@@ -367,6 +374,19 @@ def validate_field_format(field_name: str, text: str) -> str:
         text = re.sub(r'[^0-9]', '', text)
         if len(text) > 6:
             text = text[:6]
+
+    elif field_name == 'DESDE' or field_name == 'HASTA':
+        # Asegurar formato de fecha DD/MM/YYYY o DD-MM-YYYY
+        match = re.match(r'(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})', text)
+        if match:
+            day, month, year = match.groups()
+            day = day.zfill(2)
+            month = month.zfill(2)
+            if len(year) == 2:
+                year = '20' + year  # Asumir siglo 21 para años de 2 dígitos
+            text = f"{day}/{month}/{year}"
+        else:
+            text = ""
 
             
     return text
