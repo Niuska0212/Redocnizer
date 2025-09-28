@@ -60,26 +60,47 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
     W_FIXED_VAL_COL = 350
     H_FIXED_VAL_CELL = 57
 
+    # POSICIONES FIJAS PARA FALLBACK
+    NUM_FALLBACK_X = 930
+    NUM_FALLBACK_Y = 230
+
+    # ANCHOS ESPECÍFICOS PARA RFC, IMSS, CURP
+    RFC_WIDTH = 230
+    IMSS_WIDTH = 230
+    CURP_WIDTH = 350
+
+    # POSICIÓN BASE PARA RFC, IMSS, CURP (más a la izquierda)
+    BASE_RFC_X = 150  # Más a la izquierda que los demás campos
+
     name_keywords = ['PATERNO', 'MATERNO', 'NOMBRE(S)', 'APELLIDO PATERNO', 'APELLIDO MATERNO', 'APELLIDOS']
     dep_keywords = ['DEPENDENCIA', 'DEPENDENCIAS']
+    
+    simple_fields_right = {
+        'NUM': ['NÚM', 'NUM', 'NUM:', 'NÚM:'],
+    }
+    
+    # CÓDIGO y TELÉFONO están DEBAJO de sus etiquetas
     simple_fields_below = {
+        'CODIGO': ['CÓDIGO', 'CODIGO'],
+        'TELEFONO': ['TELÉFONO', 'TELEFONO', 'TEL'],
         'CRN': ['CRN'],
         'HRS_TOTALES': ['HRS. TOTALES', 'HRS TOTALES', 'HORAS TOTALES', 'HRS. TOTALES CURSO'],
         'DESDE': ['DESDE'],
-        'HASTA': ['HASTA']
+        'HASTA': ['HASTA'],
     }
-    simple_fields_right = {
-        'NUM': ['NÚM', 'NUM', 'NUM:', 'NÚM:'],
-        'CODIGO': ['CÓDIGO', 'CODIGO'],
-        'RFC': ['RFC'],
-        'IMSS': ['IMSS', 'AFIL IMSS', 'No. AFIL IMSS'],
-        'CURP': ['CURP'],
-        'TELEFONO': ['TELÉFONO', 'TELEFONO', 'TEL'],
+
+    # Campos en GRUPOS HORIZONTALES (misma fila)
+    horizontal_groups = {
+        'RFC_IMSS_CURP': {
+            'RFC': ['RFC'],
+            'IMSS': ['IMSS', 'AFIL IMSS', 'No. AFIL IMSS'],
+            'CURP': ['CURP']
+        }
     }
 
     dynamic_rois = {}
 
-    # 3. Lógica para extraer el nombre completo
+    # 1. Lógica para extraer el nombre completo
     header_matches = data_df[data_df['text'].isin(name_keywords)]
     if not header_matches.empty:
         anchor_row = header_matches.iloc[0]
@@ -95,7 +116,7 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
         x_roi_start = 100
         dynamic_rois['NOMBRE_COMPLETO_RAW'] = [y_start, x_roi_start, CELL_HEIGHT_NOMBRE, TOTAL_WIDTH_NOMBRE]
 
-    # 4. Lógica para el bloque de DEPENDENCIA
+    # 2. Lógica para el bloque de DEPENDENCIA
     for keyword in dep_keywords:
         matches = data_df[data_df['text'] == keyword]
         if not matches.empty:
@@ -120,7 +141,7 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
             dynamic_rois['DEPENDENCIA_3'] = [y_start + 2 * h_dep, x_start, h_dep, w_dep]
             break
 
-    # 5.1 Lógica para los campos sencillos (a la derecha y en la misma fila)
+    # 3. Lógica SOLO para NUM (a la derecha)
     for field_name, keywords in simple_fields_right.items():
         if field_name not in dynamic_rois:
             for keyword in keywords:
@@ -130,7 +151,11 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
                     key_row = matches.iloc[0]
                     key_right = key_row['left'] + key_row['width']
                     y_start_label = key_row['top']
-                    h_roi = 54
+                    
+                    w_roi = 160
+                    h_roi = 40
+                    x_start = 800
+                    y_start = y_start_label
 
                     value_candidates = data_df[
                         (data_df['top'] >= y_start_label - 10) &
@@ -139,60 +164,65 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
                     ].sort_values(by='left').head(1)
 
                     if not value_candidates.empty:
-                        x_start = int(value_candidates.iloc[0]['left'])
-                        y_start = int(value_candidates.iloc[0]['top'])
+                        x_start = int(value_candidates.iloc[0]['left']) - 15
+                        y_start = int(value_candidates.iloc[0]['top']) - 15
                     else:
-                        if field_name in ['NUM', 'CODIGO', 'TELEFONO']:
-                            x_start = 800
-                            w_roi = 200
-                        else:
-                            x_start = X_START_VAL_COL
-                            w_roi = 350
-                        y_start = y_start_label
-
-                    if field_name == 'NUM':
-                        w_roi = 160
-                        h_roi = 40
-                        if not value_candidates.empty:
-                            x_start = int(value_candidates.iloc[0]['left'])
-                            y_start = int(value_candidates.iloc[0]['top']) - 5
-                        else:
-                            x_start = 800
-                            y_start = key_row['top']
-
-                    elif field_name == 'CODIGO':
-                        w_roi = 150
-                        h_roi = 40
-                        x_start = 830
-                        y_start = key_row['top']
-
-                    elif field_name == 'RFC':
-                        if not value_candidates.empty:
-                            y_start = int(value_candidates.iloc[0]['top']) - 5
-                        x_start = X_START_VAL_COL - 100  # Menor posición X
-                        w_roi = 250  # Menor ancho
-                        h_roi = 54
-
-                    elif field_name == 'IMSS':
-                        if 'RFC' in dynamic_rois:
-                            rfc_roi = dynamic_rois['RFC']
-                            y_start = rfc_roi[0]  # misma altura que RFC
-                            x_start = rfc_roi[1] + rfc_roi[3] + 5  # justo a la derecha de RFC
-                            w_roi = 200
-                            h_roi = rfc_roi[2]
-
-                    elif field_name == 'CURP':
-                        if 'IMSS' in dynamic_rois:
-                            imss_roi = dynamic_rois['IMSS']
-                            y_start = imss_roi[0]  # misma altura que IMSS
-                            x_start = imss_roi[1] + imss_roi[3] + 5  # justo a la derecha de IMSS
-                            w_roi = 480
-                            h_roi = 54
+                        x_start = NUM_FALLBACK_X
+                        y_start = NUM_FALLBACK_Y
 
                     dynamic_rois[field_name] = [y_start, x_start, h_roi, w_roi]
                     break
 
-    # 5.2 Lógica para los campos sencillos (Debajo)
+    
+    # 4. Lógica para GRUPOS HORIZONTALES (RFC, IMSS, CURP)
+    for group_name, fields in horizontal_groups.items():
+        base_y = None
+        base_x = 150  # Posición base más a la izquierda
+        
+        for field_name, keywords in fields.items():
+            if field_name not in dynamic_rois:
+                for keyword in keywords:
+                    matches = data_df[data_df['text'].str.contains(keyword, case=False, regex=True)]
+                    if matches.empty:
+                        continue
+                    
+                    key_row = matches.iloc[0]
+                    y_search_start = key_row['top'] + key_row['height'] + 5
+                    
+                    # Buscar valor debajo de la etiqueta
+                    value_candidates = data_df[
+                        (data_df['top'] >= y_search_start) &
+                        (data_df['top'] <= y_search_start + 50) &
+                        (data_df['left'] >= key_row['left'] - 50) &
+                        (data_df['left'] <= key_row['left'] + 400)
+                    ].sort_values(by='top').head(1)
+
+                    # Establecer base_y con el primer campo encontrado
+                    if base_y is None and not value_candidates.empty:
+                        base_y = value_candidates.iloc[0]['top'] - 10
+                    
+                    # Usar base_y si está establecida, sino buscar individualmente
+                    y_start = base_y if base_y is not None else (
+                        value_candidates.iloc[0]['top'] - 10 if not value_candidates.empty else y_search_start
+                    )
+
+                    # Posicionamiento horizontal relativo
+                    if field_name == 'RFC':
+                        w_roi, h_roi = 230, 54
+                        x_start = base_x if not value_candidates.empty else base_x
+                    
+                    elif field_name == 'IMSS':
+                        w_roi, h_roi = 230, 54
+                        x_start = base_x + 240  # RFC (230) + 10px separación
+                    
+                    elif field_name == 'CURP':
+                        w_roi, h_roi = 350, 54
+                        x_start = base_x + 480  # RFC (230) + IMSS (230) + 20px separación
+
+                    dynamic_rois[field_name] = [y_start, x_start, h_roi, w_roi]
+                    break
+
+    # 5. Lógica para campos DEBAJO (CÓDIGO, TELÉFONO, CRN, etc.)
     for field_name, keywords in simple_fields_below.items():
         if field_name not in dynamic_rois:
             for keyword in keywords:
@@ -201,34 +231,54 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
                     key_row = matches.iloc[0]
                     y_search_start = key_row['top'] + key_row['height'] + 5
 
-                    x_start = X_START_VAL_COL
-                    y_start = y_search_start
-                    h_roi = H_FIXED_VAL_CELL
-                    w_roi = W_FIXED_VAL_COL
-
+                    # Buscar valor debajo
                     value_candidates = data_df[
                         (data_df['top'] >= y_search_start) &
-                        (data_df['left'] >= X_START_VAL_COL - 50) &
-                        (data_df['left'] < X_START_VAL_COL + W_FIXED_VAL_COL)
+                        (data_df['top'] <= y_search_start + 50) &
+                        (data_df['left'] >= key_row['left'] - 50) &
+                        (data_df['left'] <= key_row['left'] + 400)
                     ].sort_values(by='top').head(1)
 
-                    if not value_candidates.empty:
-                        y_start = value_candidates.iloc[0]['top']
+                    # Valores por defecto
+                    x_start = key_row['left']
+                    y_start = y_search_start
+                    h_roi = 54
+                    w_roi = 200
 
-                    if field_name == 'CRN':
+                    if not value_candidates.empty:
+                        y_start = value_candidates.iloc[0]['top'] - 10
+                        x_start = value_candidates.iloc[0]['left'] - 10
+
+                    # Ajustes específicos
+                    if field_name == 'CODIGO':
+                        w_roi = 150
+                        # Posicionar más a la derecha (donde está el valor)
+                        x_start = 700 if value_candidates.empty else value_candidates.iloc[0]['left'] - 10
+                    
+                    elif field_name == 'TELEFONO':
+                        w_roi = 200
+                        # Posicionar más a la derecha
+                        x_start = 700 if value_candidates.empty else value_candidates.iloc[0]['left'] - 10
+                    
+                    elif field_name == 'CRN':
                         w_roi = 170
-                        h_roi = 54
+                        x_start = 150
                     elif field_name == 'HRS_TOTALES':
-                        w_roi = W_FIXED_VAL_COL
-                        h_roi = H_FIXED_VAL_CELL
-                    elif field_name in ['DESDE', 'HASTA']:
-                        x_start = X_START_VAL_COL + 200
+                        w_roi = 120
+                        x_start = 330
+                    elif field_name == 'DESDE':
                         w_roi = 240
-                        h_roi = 55
+                        x_start = 500
+                    elif field_name == 'HASTA':
+                        w_roi = 240
+                        x_start = 750
 
                     dynamic_rois[field_name] = [y_start, x_start, h_roi, w_roi]
+                    break
                 
     return dynamic_rois
+
+
 
 def clean_border_chars(text: str) -> str:
     if not text:
@@ -250,7 +300,7 @@ def clean_data_by_field(field_name: str, text: str) -> str:
         return ""
     
     # 1. Campos que SÓLO deberían ser Números (o casi)
-    if field_name in ['TELEFONO', 'CODIGO', 'NUM']:
+    if field_name in ['TELEFONO', 'CODIGO', 'NUM', 'HRS_TOTALES', 'CRN']:
         # Elimina cualquier letra (a-z) en el texto
         text = re.sub(r'[A-Z]', '', text, flags=re.IGNORECASE)
         # Elimina cualquier símbolo, manteniendo solo números y espacios
@@ -258,15 +308,91 @@ def clean_data_by_field(field_name: str, text: str) -> str:
         # Limpia espacios extra
         text = re.sub(r'\s+', ' ', text).strip()
     
-    # 2. Campos Alfa-Numéricos (RFC, IMSS, CURP)
+    # 2. Campos Alfa-Numéricos (RFC, IMSS, CURP) - LIMPIEZA MÁS AGRESIVA
     elif field_name in ['RFC', 'CURP', 'IMSS']:
-        # Elimina caracteres de ruido comunes al inicio y final
+        # Eliminar TODOS los caracteres especiales y espacios
+        text = re.sub(r'[^A-Z0-9]', '', text.upper())
+        
+
+        
+        # Validaciones específicas por tipo de campo
+        if field_name == 'RFC':
+            # RFC debe tener 12-13 caracteres alfanuméricos
+            if len(text) > 13:
+                text = text[:13]
+            # Eliminar dígitos extra al final si tiene más de 13
+            text = re.sub(r'^([A-Z&Ñ]{3,4}\d{6}[A-Z0-9]{3}).*', r'\1', text)
+            
+        elif field_name == 'CURP':
+            # CURP debe tener 18 caracteres exactos
+            if len(text) > 18:
+                text = text[:18]
+            # Patrón básico de CURP: 4 letras, 6 números, 1 letra, 1 sexo, 2 letras, 3 números
+            text = re.sub(r'^([A-Z]{4}\d{6}[A-Z]{6}\d{2}).*', r'\1', text)
+            
+        elif field_name == 'IMSS':
+            # IMSS generalmente son 11 dígitos, pero puede variar
+            # Mantener solo números para IMSS
+            text = re.sub(r'[^0-9]', '', text)
+            if len(text) > 11:
+                text = text[:11]
+    
+    # 3. Campos de texto general (Dependencias, Nombres)
+    else:
+        # Eliminar contaminación en campos de dependencia
+        text = re.sub(r'^((\d\.)+\d?\s*|22\s*|\d+)\s+', '', text)
+        
+        # Eliminar caracteres no alfanuméricos al inicio y final
         text = re.sub(r'^[-\s!|\/,\?]+', '', text)
         text = re.sub(r'[-\s!|\/,\?]+$', '', text)
-        # Elimina subcadenas comunes de ruido: "6VGVP", "AE", "IJ", "ZÑZÓ", etc.
-        text = re.sub(r'(6VGVP|AE|IJ|CUO09 TS|ZÑZÓ|SES\s*R\s*TES)', '', text, flags=re.IGNORECASE) 
-        # Limpia múltiples espacios
+        
+        # Limpiar espacios múltiples
         text = re.sub(r'\s+', ' ', text).strip()
-    
-    # Los demás campos (Dependencias, Nombres) seguirán con clean_border_chars
+
     return text.strip()
+
+# Función adicional para validación específica
+def validate_field_format(field_name: str, text: str) -> str:
+    """Valida y corrige el formato de campos específicos."""
+    if not text:
+        return text
+        
+    text = text.upper().strip()
+    
+    if field_name == 'RFC':
+        # Eliminar espacios y caracteres especiales
+        text = re.sub(r'[^A-Z0-9]', '', text)
+        # Asegurar formato: 4 letras, 6 números, 3 alfanuméricos
+        if len(text) >= 10:
+            # Tomar primeros 13 caracteres máximo
+            text = text[:13]
+            
+    elif field_name == 'CURP':
+        text = re.sub(r'[^A-Z0-9]', '', text)
+        if len(text) >= 16:
+            text = text[:18]
+            
+    elif field_name == 'IMSS':
+        text = re.sub(r'[^0-9]', '', text)
+        if len(text) > 11:
+            text = text[:11]
+        
+    elif field_name == 'TELEFONO':
+        text = re.sub(r'[^0-9]', '', text)
+        if len(text) > 10:
+            text = text[:10]
+    
+    elif field_name == 'NUM':
+        # asegurar que num sea numerico y tenga maximo 7 caracteres
+        text = re.sub(r'[^0-9]', '', text)
+        if len(text) >= 7:
+            text = text[:7]
+
+    elif field_name == 'RNC':
+        # asegurar que rnc sea numerico y tenga maximo 10 caracteres
+        text = re.sub(r'[^0-9]', '', text)
+        if len(text) > 6:
+            text = text[:6]
+
+            
+    return text
