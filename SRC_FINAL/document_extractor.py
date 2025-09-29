@@ -10,7 +10,7 @@ import pytesseract
 from tensorflow.keras import backend as K 
 from difflib import SequenceMatcher # Necesario para calcular la similitud (Levenshtein)
 from PIL import Image, ImageDraw, ImageFont
-from segmentacion_dinamica import get_dynamic_rois, clean_data_by_field, clean_border_chars
+from segmentacion_dinamica import get_dynamic_rois, clean_data_by_field, clean_border_chars, validate_field_format
 
 #la parte del orden de las columnas del archivo csv se maneja en pandas al momento de crear el dataframe en la linea 377
 
@@ -252,14 +252,16 @@ def extract_data_from_image(image_path, modelo_inferencia, index_to_char, output
 
     for key, value in all_extracted_data.items():
         cleaned_value = clean_data_by_field(key, clean_border_chars(value))
+        final_validate_value = validate_field_format(key, cleaned_value)
+
         if key == 'NOMBRE_COMPLETO_RAW':
-            name_parts = split_full_name(cleaned_value)
+            name_parts = split_full_name(final_validate_value)
             extracted_data.update(name_parts)
         elif key.startswith('DEPENDENCIA'):
-            extracted_data[key] = cleaned_value
+            extracted_data[key] = final_validate_value
         else:
             # Usamos claves sin tildes en todo el flujo (recomiendo 'NUM' no 'NÚM')
-            extracted_data[key] = cleaned_value
+            extracted_data[key] = final_validate_value
 
     # asegurar campos obligatorios
     if 'PATERNO' not in extracted_data: extracted_data['PATERNO'] = ''

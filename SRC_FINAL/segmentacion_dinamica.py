@@ -48,7 +48,7 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
     data_df = data_df[data_df['conf'] > 3].copy()
     data_df['text'] = data_df['text'].str.upper().str.strip()
 
-    TOTAL_WIDTH_NOMBRE = 700
+    TOTAL_WIDTH_NOMBRE = 600
     CELL_HEIGHT_NOMBRE = 25
 
     TOTAL_HEIGHT_DEP = 99
@@ -78,7 +78,7 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
     dep_keywords = ['DEPENDENCIA', 'DEPENDENCIAS']
     
     simple_fields_right = {
-        'NUM': ['NÚM', 'NUM', 'NUM:', 'NÚM:'],
+        'NUM': ['NÚM', 'NUM', 'NUM:', 'NÚM:']
     }
     
     # CÓDIGO y TELÉFONO están DEBAJO de sus etiquetas
@@ -106,7 +106,7 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
             y_start = value_candidates.iloc[0]['top'] - 5
         else:
             y_start = y_start_base
-        x_roi_start = 100
+        x_roi_start = 200
         dynamic_rois['NOMBRE_COMPLETO_RAW'] = [y_start, x_roi_start, CELL_HEIGHT_NOMBRE, TOTAL_WIDTH_NOMBRE]
 
     # 2. Lógica para el bloque de DEPENDENCIA
@@ -165,12 +165,12 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
     base_row_y = None
     
     # Primero buscar todos para establecer la fila base común
-    rfc_matches = data_df[data_df['text'].str.contains('RFC', case=False, regex=True)]
+    rfc_matches = data_df[data_df['text'].str.contains(r'R\.?F\.?C\.?\s*$', case=False, regex=True)]
     #codigo mejorado para RFC
     #rfc_matches = data_df[data_df['text'].str.contains(r'R\.?F\.?C\.c*RFC', case=False, regex=True)]
     # CÓDIGO MEJORADO PARA IMSS
     imss_matches = data_df[data_df['text'].str.contains(r'I\.?M\.?S\.?S|AFIL\.?\s*IMSS|NO\.?\s*AFIL\.?\s*IMSS', case=False, regex=True)]
-    curp_matches = data_df[data_df['text'].str.contains('CURP', case=False, regex=True)]
+    curp_matches = data_df[data_df['text'].str.contains(r'CURP\.?\s*$', case=False, regex=True)]
     
     # Establecer base_row_y con el primer campo que se encuentre
     for matches in [rfc_matches, imss_matches, curp_matches]:
@@ -193,15 +193,15 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
         base_row_y = 400  # Posición Y por defecto
     # Procesar RFC (si existe)
     if not rfc_matches.empty:
-        dynamic_rois['RFC'] = [base_row_y, RFC_X, 54, RFC_WIDTH]
+        dynamic_rois['RFC'] = [base_row_y, RFC_X, 45, RFC_WIDTH]
 
     # Procesar IMSS (si existe) - INDEPENDIENTE DE RFC
     if not imss_matches.empty:
-        dynamic_rois['IMSS'] = [base_row_y - 5 , IMSS_X, 54, IMSS_WIDTH]
+        dynamic_rois['IMSS'] = [base_row_y - 2 , IMSS_X, 40, IMSS_WIDTH]
 
     # Procesar CURP (si existe) - INDEPENDIENTE DE LOS OTROS
     if not curp_matches.empty:
-        dynamic_rois['CURP'] = [base_row_y, CURP_X, 54, CURP_WIDTH]
+        dynamic_rois['CURP'] = [base_row_y, CURP_X, 45, CURP_WIDTH]
 
     # 5. Lógica para campos DEBAJO (CÓDIGO, TELÉFONO, CRN, etc.)
     for field_name, keywords in simple_fields_below.items():
@@ -214,7 +214,7 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
 
                     value_candidates = data_df[
                         (data_df['top'] >= y_search_start) &
-                        (data_df['top'] <= y_search_start + 50) &
+                        (data_df['top'] <= y_search_start + 80) &
                         (data_df['left'] >= key_row['left'] - 50) &
                         (data_df['left'] <= key_row['left'] + 400)
                     ].sort_values(by='top').head(1)
@@ -264,8 +264,8 @@ def clean_border_chars(text: str) -> str:
     text = re.sub(r'^((\d\.)+\d?\s*|22\s*|\d+)\s+', '', text)
     
     # Elimina caracteres no alfanuméricos al inicio y final del texto
-    text = re.sub(r'^[-\s!|\/,\?]+', '', text)
-    text = re.sub(r'[-\s!|\/,\?]+$', '', text)
+    text = re.sub(r'^[-\s!|\/,\?.]+', '', text)
+    text = re.sub(r'[-\s!|\/,\?.]+$', '', text)
 
     text = re.sub(r'\s+', ' ', text)  # Reemplaza múltiples espacios por uno solo
     return text.strip()
@@ -354,6 +354,9 @@ def validate_field_format(field_name: str, text: str) -> str:
         # IMSS generalmente son 11 dígitos, pero puede variar
         # Mantener solo números para IMSS
         text = re.sub(r'[^0-9]', '', text)
+        if len(text) < 5:
+            return ""
+
         if len(text) > 11:
             text = text[:11]
         
@@ -372,6 +375,9 @@ def validate_field_format(field_name: str, text: str) -> str:
     elif field_name == 'RNC':
         # asegurar que rnc sea numerico y tenga maximo 10 caracteres
         text = re.sub(r'[^0-9]', '', text)
+        if len(text) < 2:
+            return ""
+
         if len(text) > 6:
             text = text[:6]
 
