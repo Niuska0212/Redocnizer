@@ -238,6 +238,19 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
                     if field_name == 'CODIGO':
                         w_roi = 150
                         x_start = 700 if value_candidates.empty else value_candidates.iloc[0]['left'] - 10
+                        
+                        # 🚨 Fallback extra si no lo encuentra directamente
+                        if value_candidates.empty:
+                            # Buscar si tenemos el ROI de NOMBRE o NUM para apoyarnos
+                            if 'NOMBRE_COMPLETO_RAW' in dynamic_rois:
+                                nombre_y, nombre_x, nombre_h, nombre_w = dynamic_rois['NOMBRE_COMPLETO_RAW']
+                                y_start = nombre_y
+                                x_start = nombre_x + nombre_w + 130  # 130px a la derecha de nombre
+                            
+                            elif 'NUM' in dynamic_rois:
+                                num_y, num_x, num_h, num_w = dynamic_rois['NUM']
+                                y_start = num_y + 5   # misma altura aprox
+                                x_start = num_x + 30  # 30px a la derecha de num
                     
                     elif field_name == 'TELEFONO':
                         w_roi = 200
@@ -428,7 +441,7 @@ def clean_name_specific(text: str) -> str:
     if not text:
         return ""
     #para poner que no haya A solitaria antes del apellido
-    text = re.sub(r'\bA\b', '', text)  # Elimina 'A' solitaria
+    text = re.sub(r'^\bA\bZ\b', '', text)  # Elimina 'A' solitaria
     # Eliminar casos específicos problemáticos
     text = re.sub(r'^=,', '', text)  # Caso: "=,MARISCAL"
     text = re.sub(r':\s*$', '', text)  # Caso: "JOSE CARLOS:"
