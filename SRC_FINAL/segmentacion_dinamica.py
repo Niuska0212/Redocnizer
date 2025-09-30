@@ -11,6 +11,11 @@ from tensorflow.keras import backend as K
 from difflib import SequenceMatcher # Necesario para calcular la similitud (Levenshtein)
 from PIL import Image, ImageDraw, ImageFont
 
+
+# Constantes de estandarización
+PHONE_EMPTY_TOKENS = ["-", "—", "0", "00", "000", "N/A", "NA"] 
+EMPTY_DATA_PLACEHOLDER = "NO_INFO_DOC"
+
 # =========================================================================
 # === SEGMENTACION DINAMICA CON TESSERACT Y PANDAS (PSM 3) ===
 # =========================================================================
@@ -197,8 +202,8 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
 
     # Procesar IMSS (si existe) - INDEPENDIENTE DE RFC
     if not imss_matches.empty:
-        dynamic_rois['IMSS'] = [base_row_y - 2 , IMSS_X, 40, IMSS_WIDTH]
-
+        dynamic_rois['IMSS'] = [base_row_y + 3, IMSS_X, 33, IMSS_WIDTH]
+        
     # Procesar CURP (si existe) - INDEPENDIENTE DE LOS OTROS
     if not curp_matches.empty:
         dynamic_rois['CURP'] = [base_row_y, CURP_X, 45, CURP_WIDTH]
@@ -240,6 +245,7 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
                     
                     elif field_name == 'CRN':
                         w_roi = 170
+                        h_roi = 35
                         x_start = 150
                     elif field_name == 'HRS_TOTALES':
                         w_roi = 120
@@ -264,11 +270,16 @@ def clean_border_chars(text: str) -> str:
     text = re.sub(r'^((\d\.)+\d?\s*|22\s*|\d+)\s+', '', text)
     
     # Elimina caracteres no alfanuméricos al inicio y final del texto
-    text = re.sub(r'^[-\s!|\/,\?.]+', '', text)
-    text = re.sub(r'[-\s!|\/,\?.]+$', '', text)
+    text = re.sub(r'^[-\s!|\/,\?=:._-]+', '', text)
+    text = re.sub(r'[-\s!|\/,\?=:._-]+$', '', text)
+
+
+    # text = re, sub(r'^=,', '', text)  # Elimina '=' al inicio
 
     text = re.sub(r'\s+', ' ', text)  # Reemplaza múltiples espacios por uno solo
     return text.strip()
+
+
 
 
 def clean_data_by_field(field_name: str, text: str) -> str:
@@ -276,14 +287,23 @@ def clean_data_by_field(field_name: str, text: str) -> str:
     if not text:
         return ""
     
+    cleaned_value = text.upper().strip()
     # 1. Campos que SÓLO deberían ser Números (o casi)
     if field_name in ['TELEFONO', 'CODIGO', 'NUM', 'HRS_TOTALES', 'CRN']:
+        # --- Lógica Específica para TELEFONO ---
+        if field_name == 'TELEFONO':
+            # 1. Si el valor coincide con un token de 'dato vacío en el documento', estandarizar.
+            if cleaned_value in PHONE_EMPTY_TOKENS:
+                return EMPTY_DATA_PLACEHOLDER
         # Elimina cualquier letra (a-z) en el texto
         text = re.sub(r'[A-Z]', '', text, flags=re.IGNORECASE)
         # Elimina cualquier símbolo, manteniendo solo números y espacios
         text = re.sub(r'[^\d\s\-\.]', '', text).strip()
         # Limpia espacios extra
         text = re.sub(r'\s+', ' ', text).strip()
+
+        if field_name == 'TELEFONO' and not text:
+            return ""
     
     # 2. Campos Alfa-Numéricos (RFC, IMSS, CURP) - LIMPIEZA MÁS AGRESIVA
     elif field_name in ['RFC', 'CURP', 'IMSS']:
@@ -318,10 +338,10 @@ def clean_data_by_field(field_name: str, text: str) -> str:
     else:
         # Eliminar contaminación en campos de dependencia
         text = re.sub(r'^((\d\.)+\d?\s*|22\s*|\d+)\s+', '', text)
-        
-        # Eliminar caracteres no alfanuméricos al inicio y final
-        text = re.sub(r'^[-\s!|\/,\?]+', '', text)
-        text = re.sub(r'[-\s!|\/,\?]+$', '', text)
+
+        # Eliminar caracteres no alfanuméricos al inicio y final, para agregar mas limpieza debes poner aqui las reglas de la siguiete forma : text = re.sub(r'^[-\s!|\/,\?]+', '', text)
+        text = re.sub(r'^[-\s!|\/,\?=:-]+', '', text)
+        text = re.sub(r'[-\s!|\/,\?=:-]+$', '', text)
         
         # Limpiar espacios múltiples
         text = re.sub(r'\s+', ' ', text).strip()
@@ -333,6 +353,11 @@ def validate_field_format(field_name: str, text: str) -> str:
     """Valida y corrige el formato de campos específicos."""
     if not text:
         return text
+    
+    # LIMPIEZA GENERAL PARA TODOS LOS CAMPOS - ELIMINAR CARACTERES PROBLEMÁTICOS
+    problematic_chars = ['=', ':', '!', '|', '\\', '?', ',', ';', '"', "'", '`', '~', '^', '<', '>', '*', '+', '%', '$', '#', '@', '(', ')', '{', '}', '[', ']', '_', '¢', '€', '¥']
+    for char in problematic_chars:
+        text = text.replace(char, '')
         
     text = text.upper().strip()
     
@@ -396,3 +421,21 @@ def validate_field_format(field_name: str, text: str) -> str:
 
             
     return text
+
+
+def clean_name_specific(text: str) -> str:
+    """Limpieza específica para campos de nombre"""
+    if not text:
+        return ""
+    #para poner que no haya A solitaria antes del apellido
+    text = re.sub(r'\bA\b', '', text)  # Elimina 'A' solitaria
+    # Eliminar casos específicos problemáticos
+    text = re.sub(r'^=,', '', text)  # Caso: "=,MARISCAL"
+    text = re.sub(r':\s*$', '', text)  # Caso: "JOSE CARLOS:"
+    text = re.sub(r'!\s*', ' ', text)  # Caso: "NAYELI! ARELI"
+    text = re.sub(r'\s+7$', '', text)  # Caso: "HECTOR GUILLERMO 7"
+    
+    # Eliminar caracteres problemáticos en general
+    text = re.sub(r'[=:!]', '', text)
+    
+    return text.strip()

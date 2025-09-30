@@ -57,6 +57,47 @@ def prepare_roi_for_ocr(roi_image: np.ndarray) -> np.ndarray:
 
     return X_input
 
+
+def invert_image_color(img_full: np.ndarray) -> np.ndarray:
+    """Invierte los colores de una imagen en escala de grises."""
+    if len(img_full.shape) == 3: # Si es color, convertir a gris primero
+        img_gray = cv2.cvtColor(img_full, cv2.COLOR_BGR2GRAY)
+    else:
+        img_gray = img_full
+        
+    # Inversión simple de la imagen
+    img_inverted = cv2.bitwise_not(img_gray)
+    
+    # Opcional: Ecualización de histograma para aumentar el contraste en la imagen invertida
+    img_inverted = cv2.equalizeHist(img_inverted) 
+    
+    return img_inverted
+
+
+def rotate_image(img: np.ndarray, angle: float) -> np.ndarray:
+    """Rota la imagen alrededor de su centro sin recortar el contenido."""
+    # Asegurar que la imagen sea gris, aunque cv2.getRotationMatrix2D funciona con gris.
+    (h, w) = img.shape[:2]
+    (cX, cY) = (w // 2, h // 2)
+
+    # Obtener la matriz de rotación
+    M = cv2.getRotationMatrix2D((cX, cY), angle, 1.0)
+    
+    # Calcular el nuevo tamaño de la imagen para evitar el recorte
+    cos = np.abs(M[0, 0])
+    sin = np.abs(M[0, 1])
+    
+    # Nuevas dimensiones
+    nW = int((h * sin) + (w * cos))
+    nH = int((h * cos) + (w * sin))
+    
+    # Ajustar la matriz para que la rotación se realice sobre el centro
+    M[0, 2] += (nW / 2) - cX
+    M[1, 2] += (nH / 2) - cY
+
+    # Aplicar la transformación (interpolación cúbica para mejor calidad)
+    return cv2.warpAffine(img, M, (nW, nH), flags=cv2.INTER_CUBIC, borderValue=(255))
+
 # Ejemplo de uso (solo para pruebas internas)
 if __name__ == '__main__':
     # Crear una imagen simulada (blanca) de 100x40 píxeles
