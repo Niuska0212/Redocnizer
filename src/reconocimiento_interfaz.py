@@ -22,7 +22,7 @@ try:
     print("Modelo y mapeo de clases cargados exitosamente.")
 except Exception as e:
     messagebox.showerror("Error de Carga", f"No se pudo cargar el modelo o el mapeo de clases: {e}\n"
-                                           f"Asegúrate de que '{model_path}' y '{class_map_path}' existan.")
+                                        f"Asegúrate de que '{model_path}' y '{class_map_path}' existan.")
     model = None
     class_labels_map = None
 

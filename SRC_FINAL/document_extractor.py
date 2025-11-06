@@ -188,7 +188,7 @@ def extract_data_from_image(image_path, modelo_inferencia, index_to_char, output
         if attempt == 1:
             # Revisa si el intento 0 fue suficiente. Si sí, termina.
             if extracted_data_list and len([v for v in extracted_data_list[0].values() if v and len(str(v).strip()) > 1]) >= MIN_REQUIRED_FIELDS:
-                 break
+                break
             print("  [REINTENTO 1] Intentando con imagen invertida.")
             current_img = invert_image_color(img_full_original)
         
@@ -197,7 +197,7 @@ def extract_data_from_image(image_path, modelo_inferencia, index_to_char, output
             # Nota: Si el intento 1 fue el mejor, se habría roto en el chequeo anterior,
             # pero este chequeo es de seguridad.
             if extracted_data_list and len([v for v in extracted_data_list[0].values() if v and len(str(v).strip()) > 1]) >= MIN_REQUIRED_FIELDS:
-                 break
+                break
             
             print("  [REINTENTO 2] Intentando con imagen ligeramente rotada (2 grados).")
             # Usamos la imagen original para rotar y evitar rotar la ya invertida.
