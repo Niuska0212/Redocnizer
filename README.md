@@ -74,7 +74,7 @@ Se recomienda encarecidamente usar un **Entorno Virtual** (`.venv`).
 
 1.  **Clonar el repositorio:**
     ```powershell
-    git clone [TU ENLACE DE REPOSITORIO]
+    git clone Niuska0212/Proyecto-modular
     cd Proyecto-modular
     ```
 
@@ -150,8 +150,8 @@ Para retrain o experimentar con nuevas épocas y datasets:
 
 **Autor:** Niuska Isabel Gonzalez Rangel y Luis Diego Uribe Sandoval
 
-  * **GitHub:** 
-  * **Correo Electrónico:** 
+  * **GitHub:**  https://github.com/Niuska0212 y https://github.com/luigi10072
+
 
 Para reportar errores o sugerir mejoras, por favor abrir un **Issue** detallado en este repositorio.
 
@@ -159,13 +159,5 @@ Para reportar errores o sugerir mejoras, por favor abrir un **Issue** detallado 
 
 ## 📜 Licencia
 
-Este proyecto se encuentra bajo la Licencia ** MIT, Apache 2.0**
+Este proyecto está bajo la licencia MIT. Ver archivo `LICENSE` para más detalles.
 
-```
-
----
-
-**¡Listo!** Tienes un README profesional, estructurado, con índice, y que destaca el valor técnico de tu proyecto.
-
-Si deseas que te ayude a generar el archivo **`requirements.txt`** exacto a partir de la lista de paquetes que mencionaste, para que solo tengan que usar `pip install -r requirements.txt`, ¡solo dímelo!
-```
