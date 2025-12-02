@@ -1,0 +1,17 @@
+dataset:
+  labels_path: data/data/dataset_palabras/labels.txt
+  img_height: 32
+  img_width: 256
+
+model:
+  rnn_units: [256,128]
+  channels: 1
+
+training:
+  batch_size: 32
+  epochs: 200
+  initial_lr: 1e-4
+  patience_lr: 8
+  patience_es: 20
+  checkpoint_dir: models
+  logs_dir: logs

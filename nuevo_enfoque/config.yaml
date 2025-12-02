@@ -1,0 +1,18 @@
+dataset:
+  fonts_dir: fonts
+  images_dir: dataset_entrenamiento/dataset
+  labels_path: dataset_entrenamiento/dataset/labels.txt
+model:
+  channels: 1
+  include_blank: true
+  input_height: 32
+  input_width: 256
+  vocab_chars: '%+-.\/0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÁáéíñóú'
+training:
+  batch_size: 96
+  checkpoint_dir: dataset_entrenamiento/checkpoints
+  epochs: 100
+  gradient_clip_norm: 1.0
+  learning_rate: 0.001
+  logs_dir: dataset_entrenamiento/logs
+  warmup_epochs: 3

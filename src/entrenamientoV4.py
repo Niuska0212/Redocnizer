@@ -1,450 +1,358 @@
-# =================================================================
-# entrenamientoV4_Optimizado.py - Listo para GPU DirectML y Producción
-# =================================================================
+# entrenamientoV3_modular.py
+"""
+Versión modular y optimizada de tu entrenamiento V3.
+- Usa tf.data (cache + prefetch + autotune)
+- Separa 'base model' (CRNN) y modelo de entrenamiento con CTC
+- Callbacks: ModelCheckpoint, ReduceLROnPlateau, EarlyStopping, TensorBoard, CSVLogger
+- Callback personalizado para CER y muestra ejemplos
+- Soporta cargar pesos de modelos previos (transfer learning) con remapeo básico
+"""
 
 import os
+import time
+import json
+from pathlib import Path
 import numpy as np
-import cv2
 import tensorflow as tf
-from sklearn.model_selection import train_test_split
+from tensorflow.keras import backend as K
+from tensorflow.keras.layers import Input
+from tensorflow.keras.callbacks import (
+    ModelCheckpoint, ReduceLROnPlateau, EarlyStopping,
+    TensorBoard, CSVLogger, Callback
+)
+from tensorflow.keras.optimizers import Adam
 import joblib
+import cv2
+from sklearn.model_selection import train_test_split
 from difflib import SequenceMatcher
 
-# -------------------------------
-# CONFIGURACIÓN INICIAL Y DEPURACIÓN
-# -------------------------------
-# Constantes para la compatibilidad forzada
-GPU_DISPONIBLE = False
-AUTOTUNE = tf.data.AUTOTUNE # Usar AUTOTUNE para optimización de tf.data
+# -----------------------------
+# CONFIG (puedes mover a config.yaml)
+# -----------------------------
+BASE_DIR = Path(__file__).parent
+DATA_DIR = BASE_DIR.parent / "data" / "data" / "dataset_palabras"
+LABELS_FILE = DATA_DIR / "labels.txt"
+MODELS_DIR = BASE_DIR.parent / "models"
+REPORT_DIR = MODELS_DIR / "errores_prediccion_v3"
+os.makedirs(MODELS_DIR, exist_ok=True)
+os.makedirs(REPORT_DIR, exist_ok=True)
 
-# Desactiva los mensajes de depuración de TensorFlow (INFO y WARNINGs)
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
-# También puedes silenciar el warning específico de NUMA (aunque a veces no funciona con DML)
-os.environ["KMP_AFFINITY"] = "noverbose"
+# Imagen
+IMG_H = 32
+IMG_W = 256
+CHANNELS = 1
+BATCH_SIZE = 32
+EPOCHS = 200
+OUTPUT_SEQ_LEN = IMG_W // 8  # coincide con pooling de 3 capas (2*2*2)
+AUTOTUNE = tf.data.AUTOTUNE
 
-# 1. Verificar Versiones y GPU (Asegúrate de que tus versiones coincidan con las instaladas)
-try:
-    print(f"Versión de TensorFlow: {tf.__version__}")
-    print(f"Versión de NumPy: {np.__version__}")
-    print(f"Versión de OpenCV (cv2): {cv2.__version__}")
-    print("---")
-    
-    gpus = tf.config.experimental.list_physical_devices('GPU')
-    if gpus:
-        for gpu in gpus:
-            tf.config.experimental.set_memory_growth(gpu, True)
-        print(f"✅ GPUs detectadas (DirectML): {gpus}")
-        print("El entrenamiento usará el backend /GPU:0 (DirectML).")
-        GPU_DISPONIBLE = True
+# Training
+INITIAL_LR = 1e-4
+PATIENCE_LR = 8
+PATIENCE_ES = 20
+
+# Transfer learning: ruta opcional a pesos previos (h5 o .weights.h5)
+PRETRAINED_WEIGHTS = None  # Path or None
+
+VOCAB_SAVE_PATH = MODELS_DIR / "vocab_v3.joblib"
+CHECKPOINT_BEST = MODELS_DIR / "model_best.weights.h5"
+CHECKPOINT_EPOCH = MODELS_DIR / "model_epoch_{epoch:03d}.weights.h5"
+TB_LOGDIR = BASE_DIR / "logs" / time.strftime("%Y%m%d-%H%M%S")
+
+# -----------------------------
+# UTIL: lectura etiquetas y vocab
+# -----------------------------
+def read_labels_file(path):
+    lines = []
+    with open(path, "r", encoding="utf-8") as f:
+        for l in f:
+            s = l.strip()
+            if not s:
+                continue
+            parts = s.split(",", 1)
+            if len(parts) != 2:
+                continue
+            imgpath, word = parts
+            full = os.path.join(path.parent, imgpath)
+            lines.append((full, word))
+    return lines
+
+def build_vocab_from_words(words, include_blank=True):
+    chars = sorted(list(set("".join(words))))
+    char_to_idx = {c: i+1 for i, c in enumerate(chars)}  # reserve 0 for blank/pad
+    if include_blank:
+        blank_index = 0
     else:
-        print("⚠️ No se detectaron dispositivos GPU. El entrenamiento usará la CPU.")
-        GPU_DISPONIBLE = False
-except Exception as e:
-    print(f"Error en la verificación de entorno: {e}")
-    GPU_DISPONIBLE = False
+        blank_index = len(char_to_idx)
+    idx_to_char = {i: c for c, i in char_to_idx.items()}
+    return char_to_idx, idx_to_char, blank_index
 
-# Sustitución de Keras 2 y Keras 3 (Usar tf.keras)
-Model = tf.keras.models.Model
-Input = tf.keras.layers.Input
-Conv2D = tf.keras.layers.Conv2D
-MaxPooling2D = tf.keras.layers.MaxPooling2D
-BatchNormalization = tf.keras.layers.BatchNormalization
-Reshape = tf.keras.layers.Reshape
-Dense = tf.keras.layers.Dense
-Bidirectional = tf.keras.layers.Bidirectional
-LSTM = tf.keras.layers.LSTM
-Dropout = tf.keras.layers.Dropout
-Rescaling = tf.keras.layers.Rescaling
-# Se eliminan las capas de aumento de Keras (RandomRotation, etc.) del modelo
-# para evitar problemas de compatibilidad en el pipeline, se recomienda aplicar
-# la aumentación de imagen fuera del pipeline de tf.data si es necesario.
+# -----------------------------
+# PREPROCESS (CPU) -> imagen normalizada
+# -----------------------------
+def load_and_preprocess_image(path):
+    # path: bytes (from tf.data) or str
+    if isinstance(path, bytes):
+        path = path.decode("utf-8")
+    img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
+    if img is None:
+        img = np.zeros((IMG_H, IMG_W), dtype=np.uint8)
+    img = cv2.resize(img, (IMG_W, IMG_H), interpolation=cv2.INTER_AREA)
+    # Suavizado opcional:
+    img = cv2.GaussianBlur(img, (3,3), 0)
+    img = img.astype(np.float32) / 255.0
+    img = np.expand_dims(img, axis=-1)
+    return img
 
-EarlyStopping = tf.keras.callbacks.EarlyStopping
-ReduceLROnPlateau = tf.keras.callbacks.ReduceLROnPlateau
-Callback = tf.keras.callbacks.Callback
+def encode_label_to_seq(word, char_to_idx, blank_index, maxlen=OUTPUT_SEQ_LEN):
+    seq = [char_to_idx.get(c, 0) for c in word]
+    # No incluir blank in label seq; padding value 0 (already blank/pad)
+    if len(seq) > maxlen:
+        # truncate (prefer rare cases)
+        seq = seq[:maxlen]
+    # pad post with 0
+    seq = seq + [0] * (maxlen - len(seq))
+    return np.array(seq, dtype=np.int32), len(word)
 
-K = tf.keras.backend 
-Adam = tf.keras.optimizers.Adam
+# -----------------------------
+# TF.DATA pipeline
+# -----------------------------
+def make_tf_dataset(pairs, char_to_idx, blank_index, batch_size=BATCH_SIZE, augment=False, shuffle=True):
+    image_paths = [p for p, w in pairs]
+    words = [w for p, w in pairs]
+    # encode labels in numpy arrays (to simplify)
+    X_paths = np.array(image_paths)
+    y_seqs = []
+    label_lengths = []
+    for w in words:
+        seq, ll = encode_label_to_seq(w, char_to_idx, blank_index, maxlen=OUTPUT_SEQ_LEN)
+        y_seqs.append(seq)
+        label_lengths.append(ll)
+    y_seqs = np.array(y_seqs, dtype=np.int32)
+    label_lengths = np.array(label_lengths, dtype=np.int32)
+    input_lengths = np.full(len(X_paths), OUTPUT_SEQ_LEN, dtype=np.int32)
 
-# -------------------------------
-# CONFIGURACIÓN Y PARÁMETROS
-# -------------------------------
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-ruta_dataset_palabras = os.path.join(BASE_DIR, "..", "data", "data", "dataset_palabras")
-labels_file_path = os.path.join(ruta_dataset_palabras, "labels.txt")
-ruta_modelos = os.path.join(BASE_DIR, "..", "models")
-ruta_errores = os.path.join(ruta_modelos, "errores_prediccion_v4")
-os.makedirs(ruta_modelos, exist_ok=True)
-os.makedirs(ruta_errores, exist_ok=True)
+    ds = tf.data.Dataset.from_tensor_slices((X_paths, y_seqs, input_lengths, label_lengths))
+    if shuffle:
+        ds = ds.shuffle(buffer_size=len(X_paths))
+    def _map_fn(path, y, in_len, lab_len):
+        img = tf.numpy_function(func=load_and_preprocess_image, inp=[path], Tout=tf.float32)
+        img.set_shape((IMG_H, IMG_W, 1))
+        return {"input_img": img, "y_true": y, "input_length": in_len, "label_length": lab_len}, np.zeros(())  # dummy y for CTC-loss model
 
-img_height = 32
-img_width = 1024 # Aumentado a 1024 para una mejor longitud de secuencia
-output_sequence_length = img_width // 4 # 1024 / 4 = 256 pasos (Más adecuado para BiLSTM)
-BATCH_SIZE = 8 # Aumento a 8 para saturar la GPU
+    ds = ds.map(_map_fn, num_parallel_calls=AUTOTUNE)
+    ds = ds.cache()  # si cabe en RAM; si dataset es grande, quitar o usar cache(filename)
+    ds = ds.batch(batch_size)
+    ds = ds.prefetch(AUTOTUNE)
+    return ds
 
-# =================================================================
-# 2. PROCESAMIENTO DE DATOS (tf.data optimizado)
-# =================================================================
+# -----------------------------
+# MODEL: base CRNN (devuelve base_model y modelo de entrenamiento con loss lambda)
+# -----------------------------
+from tensorflow.keras.layers import (
+    Conv2D, MaxPooling2D, BatchNormalization, Reshape, Dense, Bidirectional, LSTM, Dropout
+)
 
-def load_data_paths_and_vocab():
-    """Carga las rutas, las etiquetas, construye el vocabulario y devuelve los paths y labels."""
-    global blank_token_index
-    with open(labels_file_path, "r", encoding="utf-8") as f:
-        lines = [line.strip() for line in f if line.strip()]
+def build_crnn_base(input_shape=(IMG_H, IMG_W, 1), rnn_units=(256,128), num_chars=30):
+    inp = Input(shape=input_shape, name="input_img")
+    x = inp
 
-    imagenes_paths, palabras = [], []
-    for line in lines:
-        parts = line.split(",", 1)
-        if len(parts) == 2:
-            path = os.path.join(ruta_dataset_palabras, parts[0])
-            if os.path.exists(path):
-                palabra = parts[1]
-                # Filtrar palabras demasiado largas para evitar errores de CTC
-                if len(palabra) <= output_sequence_length: 
-                    imagenes_paths.append(path)
-                    palabras.append(palabra)
+    # Simple CNN stack similar a tu V3
+    x = Conv2D(64, (3,3), activation='relu', padding='same')(x)
+    x = BatchNormalization()(x)
+    x = MaxPooling2D((2,2))(x)
 
-    if not imagenes_paths:
-        print("Error: No hay imágenes válidas para entrenar.")
-        exit()
+    x = Conv2D(128, (3,3), activation='relu', padding='same')(x)
+    x = BatchNormalization()(x)
+    x = MaxPooling2D((2,2))(x)
 
-    # --- Construir vocabulario / mappings para CTC ---
-    charset = sorted({ch for w in palabras for ch in w})
-    char_to_index = {c: i for i, c in enumerate(charset)}
-    index_to_char = {i: c for c, i in char_to_index.items()}
-    num_chars = len(charset)
-    blank_token_index = num_chars  # índice reservado para el token 'blank' de CTC
+    x = Conv2D(256, (3,3), activation='relu', padding='same')(x)
+    x = BatchNormalization()(x)
 
-    # Convertir palabras a secuencias de índices
-    y_seq = [[char_to_index[c] for c in w] for w in palabras]
-    
-    # Dividir: paths, secuencias de índices, palabras originales
-    X_train_paths, X_test_paths, y_train_seq_idx, y_test_seq_idx, _, true_words_test = train_test_split(
-        imagenes_paths, y_seq, palabras, test_size=0.2, random_state=42
-    )
+    x = Conv2D(512, (3,3), activation='relu', padding='same')(x)
+    x = BatchNormalization()(x)
+    x = MaxPooling2D((2,2))(x)
 
-    # Padding de las secuencias de etiquetas (¡Importante para batching!)
-    # Se utiliza el índice del token 'blank' para el relleno
-    y_train_padded = tf.keras.preprocessing.sequence.pad_sequences(
-        y_train_seq_idx, padding='post', value=blank_token_index, maxlen=output_sequence_length
-    )
-    y_test_padded = tf.keras.preprocessing.sequence.pad_sequences(
-        y_test_seq_idx, padding='post', value=blank_token_index, maxlen=output_sequence_length
-    )
-    
-    return (X_train_paths, y_train_padded), \
-        (X_test_paths, y_test_padded, true_words_test), \
-        (char_to_index, index_to_char, num_chars, blank_token_index)
+    x = Dropout(0.3)(x)
+    # reshape to (T, features)
+    features = (IMG_H // 8) * 512
+    x = Reshape((OUTPUT_SEQ_LEN, features))(x)
+    x = Dropout(0.3)(x)
 
-@tf.function
-def parse_and_preprocess(image_path, label_sequence):
-    """Función de preprocesamiento para tf.data que carga, redimensiona y prepara la imagen."""
-    global blank_token_index
-    
-    img_height_t = tf.constant(img_height, dtype=tf.int32)
-    img_width_t = tf.constant(img_width, dtype=tf.int32)
-    output_seq_len_t = tf.constant(float(output_sequence_length), dtype=tf.float32)
+    x = Bidirectional(LSTM(rnn_units[0], return_sequences=True, dropout=0.3))(x)
+    x = Bidirectional(LSTM(rnn_units[1], return_sequences=True, dropout=0.3))(x)
 
-    # Cargar y decodificar imagen (Optimización: usa tf.io en lugar de cv2)
-    img = tf.io.read_file(image_path)
-    img = tf.image.decode_jpeg(img, channels=1) # Asumimos JPEG, ajusta si es PNG
-    
-    # Redimensionar
-    img = tf.image.resize(img, [img_height_t, img_width_t], method=tf.image.ResizeMethod.AREA)
-    
-    # Convertir a float32 (la normalización / 255 se hace en la capa Rescaling del modelo)
-    img = tf.image.convert_image_dtype(img, tf.float32) 
-    
-    # Calcular input_length y label_length para CTC
-    input_length = tf.expand_dims(output_seq_len_t, axis=0)
-    
-    # La longitud real de la etiqueta es la suma de los elementos que NO son el token blank.
-    # Usamos tf.int64 para label_sequence para evitar problemas de casting.
-    label_length_val = tf.reduce_sum(tf.cast(tf.not_equal(label_sequence, blank_token_index), tf.int32))
-    label_length = tf.cast(tf.expand_dims(label_length_val, axis=0), tf.float32)
+    out = Dense(num_chars + 1, activation='softmax', name='output')(x)  # +1 for blank/pad
+    base_model = tf.keras.Model(inputs=inp, outputs=out, name="crnn_base")
+    return base_model
 
-    # El modelo de entrenamiento espera 4 inputs, 1 output ficticio
-    return (img, label_sequence, input_length, label_length), tf.constant(0.0)
-
-def create_dataset(paths, labels_padded, blank_token_index, is_training=True):
-    """Crea y optimiza el pipeline de tf.data.Dataset."""
-    
-    # Crear Dataset a partir de paths y etiquetas
-    dataset = tf.data.Dataset.from_tensor_slices((paths, labels_padded))
-
-    if is_training:
-        # 1. Mezclar (shuffle)
-        dataset = dataset.shuffle(buffer_size=len(paths))
-        # 2. Mapear y preprocesar
-        dataset = dataset.map(lambda x, y: parse_and_preprocess(x, y), num_parallel_calls=AUTOTUNE) # <--- CORREGIDO
-        # 3. Cachear (si el dataset cabe en RAM) o Prefetch
-        # dataset = dataset.cache() 
-        # 4. Batching
-        dataset = dataset.batch(BATCH_SIZE)
-        # 5. Prefetch
-        dataset = dataset.prefetch(AUTOTUNE)
-    else:
-        # Para validación/prueba, no mezclar
-        dataset = dataset.map(lambda x, y: parse_and_preprocess(x, y), num_parallel_calls=AUTOTUNE) # <--- CORREGIDO
-        dataset = dataset.batch(BATCH_SIZE)
-        dataset = dataset.prefetch(AUTOTUNE)
-        
-    return dataset
-
-# =================================================================
-# 3. ARQUITECTURA DEL MODELO CRNN CON CTC
-# =================================================================
-
-def ctc_loss_lambda_func(args):
+# CTC Loss lambda
+def ctc_lambda_func(args):
     y_true, y_pred, input_length, label_length = args
+    # y_pred shape: (B, T, C)
     return K.ctc_batch_cost(y_true, y_pred, input_length, label_length)
 
-def build_crnn_model(num_chars):
-    """Construye y compila el modelo CRNN con implementación LSTM compatible con DML."""
-    
-    base_filters = [64, 128, 256, 512]
+def build_training_model(base_model):
+    # inputs
+    y_true = Input(shape=(OUTPUT_SEQ_LEN,), dtype='int32', name='y_true')
+    input_length = Input(shape=(1,), dtype='int32', name='input_length')
+    label_length = Input(shape=(1,), dtype='int32', name='label_length')
 
-    input_img = Input(shape=(img_height, img_width, 1), name='input_img')
-
-    # Normalización: Necesaria cuando se usa tf.data
-    x = Rescaling(1./255)(input_img) 
-
-    # --- Capas CNN ---
-    x = Conv2D(base_filters[0], (3, 3), activation='relu', padding='same', name='conv_1')(x)
-    x = BatchNormalization(name='bn_1')(x)
-    x = MaxPooling2D(pool_size=(2, 2), name='max_pool_1')(x) # 1/2
-
-    x = Conv2D(base_filters[1], (3, 3), activation='relu', padding='same', name='conv_2')(x)
-    x = BatchNormalization(name='bn_2')(x)
-    x = MaxPooling2D(pool_size=(2, 2), name='max_pool_2')(x) # 1/4
-    
-    x = Conv2D(base_filters[2], (3, 3), activation='relu', padding='same', name='conv_3')(x)
-    x = BatchNormalization(name='bn_3')(x)
-    
-    x = Conv2D(base_filters[3], (3, 3), activation='relu', padding='same', name='conv_4')(x)
-    x = BatchNormalization(name='bn_4')(x)
-    # No usamos max_pool_3 para mantener 256 pasos (1024/4 = 256)
-    
-    x = Dropout(0.3, name='dropout_cnn')(x)
-
-    # Ajustar reshape para 1024x32
-    # output_sequence_length = 256. Altura de las features = 32 / 4 = 8
-    features_per_step = (img_height // 4) * base_filters[3] # 8 * 512 = 4096
-    x = Reshape(target_shape=(output_sequence_length, features_per_step), name='reshape')(x)
-    x = Dropout(0.3, name='dropout_pre_lstm')(x) 
-    
-    # --- Capas BiLSTM (Solución al error CudnnRNN) ---
-    # Al usar recurrent_dropout y implementation=2, forzamos la implementación 
-    # genérica de LSTM compatible con DirectML (DML) y que no requiere cuDNN.
-    x = Bidirectional(LSTM(
-        128, 
-        return_sequences=True, 
-        dropout=0.3, 
-        recurrent_dropout=0.3, # Desactiva cuDNN
-        implementation=2, # Usa la implementación genérica (no-cuDNN)
-    ), name='bilstm_1')(x)
-    
-    x = Bidirectional(LSTM(
-        64, 
-        return_sequences=True, 
-        dropout=0.3, 
-        recurrent_dropout=0.3, # Desactiva cuDNN
-        implementation=2, # Usa la implementación genérica (no-cuDNN)
-    ), name='bilstm_2')(x)
-
-    output = Dense(num_chars + 1, activation='softmax', name='output')(x)
-
-    # --- Pérdida CTC (inputs) ---
-    y_true = Input(shape=[None], dtype='int32', name='y_true')
-    input_length = Input(shape=[1], dtype='float32', name='input_length')
-    label_length = Input(shape=[1], dtype='float32', name='label_length')
-    
-    ctc_loss = tf.keras.layers.Lambda(ctc_loss_lambda_func, output_shape=(1,), name='ctc_loss')(
-        [y_true, output, input_length, label_length]
+    y_pred = base_model.output
+    loss_out = tf.keras.layers.Lambda(ctc_lambda_func, output_shape=(1,), name='ctc_loss')(
+        [y_true, y_pred, input_length, label_length]
     )
 
-    modelo_entrenamiento = Model(
-        inputs=[input_img, y_true, input_length, label_length],
-        outputs=ctc_loss
-    )
-    # Optimizador con learning rate bajo (1e-4) para estabilidad
-    modelo_entrenamiento.compile(optimizer=Adam(learning_rate=1e-4), loss={'ctc_loss': lambda y_true, y_pred: y_pred})
+    model = tf.keras.Model(inputs=[base_model.input, y_true, input_length, label_length], outputs=loss_out)
+    # compile with dummy loss (the lambda layer returns the real loss)
+    model.compile(optimizer=Adam(learning_rate=INITIAL_LR), loss={'ctc_loss': lambda y_true, y_pred: y_pred})
+    return model
 
-    modelo_inferencia = Model(inputs=input_img, outputs=output)
-    
-    return modelo_entrenamiento, modelo_inferencia
+# -----------------------------
+# DECODIFICACIÓN GREEDY Y CER
+# -----------------------------
+def decode_batch_predictions(y_pred_probs, idx_to_char):
+    input_len = np.full(y_pred_probs.shape[0], y_pred_probs.shape[1], dtype=np.int32)
+    # K.ctc_decode expects logits (not softmax) in some TF versions; but with softmax works with greedy
+    decoded, _ = K.ctc_decode(y_pred_probs, input_length=input_len, greedy=True)
+    decoded = decoded[0].numpy()
+    texts = []
+    for seq in decoded:
+        word = "".join([idx_to_char.get(int(i), "") for i in seq if int(i) != -1 and int(i) != 0])
+        texts.append(word)
+    return texts
 
-# =================================================================
-# 4. DECODIFICACIÓN Y CALLBACKS (Reutilizados y optimizados)
-# =================================================================
+def cer_between_lists(trues, preds):
+    # Levenshtein via SequenceMatcher ratio -> convert to error
+    total = 0.0
+    for t, p in zip(trues, preds):
+        r = SequenceMatcher(None, t, p).ratio()
+        total += (1.0 - r)
+    return total / max(1, len(trues))
 
-def decode_batch_predictions(y_pred_probs, index_to_char, output_sequence_length):
-    """Decodifica las predicciones del modelo usando CTC."""
-    input_len = np.full(y_pred_probs.shape[0], output_sequence_length)
-    results = K.ctc_decode(y_pred_probs, input_length=input_len, greedy=True)[0][0]
-    
-    decoded_words = []
-    # Asegurarse de que K.get_value() se use para extraer los resultados de Keras
-    for seq in K.get_value(results):
-        # Filtrar el padding (idx != -1)
-        word = "".join([index_to_char.get(idx, "") for idx in seq if idx != -1])
-        decoded_words.append(word.strip())
-    return decoded_words
-
-def calculate_levenshtein_distance(true_words, pred_words):
-    """Calcula la distancia de Levenshtein promedio (basado en SequenceMatcher ratio)."""
-    total_ratio = 0
-    for true, pred in zip(true_words, pred_words):
-        total_ratio += SequenceMatcher(None, true, pred).ratio()
-    return 1 - (total_ratio / len(true_words))
-
-class WordAccuracyCallback(Callback):
-    def __init__(self, model_inferencia, X_test_paths, y_test_padded, true_words_test, index_to_char, output_sequence_length, blank_token_index):
+# -----------------------------
+# CALLBACK personalizado para CER y ejemplos
+# -----------------------------
+class CERCallback(Callback):
+    def __init__(self, base_model, X_test, true_words_test, idx_to_char, batch_size=32, log_dir=REPORT_DIR):
         super().__init__()
-        self.model_inferencia = model_inferencia
+        self.base = base_model
+        self.X_test = X_test  # numpy array of images
         self.true_words_test = true_words_test
-        self.index_to_char = index_to_char
-        self.output_sequence_length = output_sequence_length
-        
-        # Crear un dataset de inferencia (solo con imagen) para el callback
-        # Es más fácil y rápido cargar el dataset de prueba directamente para la predicción
-        self.test_dataset_paths = X_test_paths
-        
+        self.idx_to_char = idx_to_char
+        self.batch_size = batch_size
+        self.log_dir = Path(log_dir)
+        self.log_dir.mkdir(exist_ok=True, parents=True)
+
     def on_epoch_end(self, epoch, logs=None):
-        if (epoch + 1) % 5 == 0:  # Evaluar cada 5 épocas
-            # Cargar imágenes de prueba justo antes de la predicción (eficiente)
-            X_test_imgs = []
-            for path in self.test_dataset_paths:
-                img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
-                img = cv2.resize(img, (img_width, img_height), interpolation=cv2.INTER_AREA)
-                img = img.reshape(img_height, img_width, 1).astype(np.float32)
-                X_test_imgs.append(img)
-            X_test_array = np.array(X_test_imgs)
-            
-            y_pred_probs = self.model_inferencia.predict(X_test_array, verbose=0)
-            pred_words = decode_batch_predictions(y_pred_probs, self.index_to_char, self.output_sequence_length)
-            
-            correct_predictions = sum(1 for true, pred in zip(self.true_words_test, pred_words) if true.lower().strip() == pred.lower().strip())
-            accuracy = correct_predictions / len(self.true_words_test)
-            
-            logs['val_word_accuracy'] = accuracy # Añadir métrica a los logs
-            print(f"\n--- Precisión de la palabra de validación en la época {epoch+1}: {accuracy * 100:.2f}% ---")
+        if (epoch + 1) % 5 != 0 and epoch != 0:
+            return
+        # predict all test (careful memory)
+        y_pred_probs = self.base.predict(self.X_test, batch_size=self.batch_size, verbose=0)
+        preds = decode_batch_predictions(y_pred_probs, self.idx_to_char)
+        cer = cer_between_lists(self.true_words_test, preds)
+        correct = sum(1 for t, p in zip(self.true_words_test, preds) if t.strip().lower() == p.strip().lower())
+        acc = correct / len(self.true_words_test)
+        print(f"\n[Callback] Epoch {epoch+1} -> CER: {cer:.4f}, Word Acc: {acc*100:.2f}%")
+        # Save a small sample of errors
+        errors = []
+        for i, (t, p) in enumerate(zip(self.true_words_test, preds)):
+            if t.strip().lower() != p.strip().lower():
+                errors.append((t, p, i))
+            if len(errors) >= 10:
+                break
+        if errors:
+            report_path = self.log_dir / f"errors_epoch_{epoch+1:03d}.txt"
+            with open(report_path, "w", encoding="utf-8") as f:
+                for t, p, idx in errors:
+                    f.write(f"{idx}\tTRUE: {t}\tPRED: {p}\n")
 
-def generate_error_report(true_words, pred_words, X_test_paths, ruta_errores):
-    """Genera un reporte de errores y guarda las imágenes fallidas."""
-    
-    # Cargar las imágenes solo para los errores
-    X_test_imgs = []
-    for path in X_test_paths:
-        img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
-        img = cv2.resize(img, (img_width, img_height), interpolation=cv2.INTER_AREA)
-        X_test_imgs.append(img)
-    X_test_array = np.array(X_test_imgs)
-    
-    incorrect_predictions = []
-    for i, (true_word, pred_word) in enumerate(zip(true_words, pred_words)):
-        if true_word.lower().strip() != pred_word.lower().strip(): 
-            incorrect_predictions.append((true_word, pred_word, i))
-            
-    print("\n--- Reporte de Errores ---")
-    print(f"Número de predicciones incorrectas: {len(incorrect_predictions)}")
-    
-    # Guardar solo las primeras 10 imágenes fallidas
-    for i, (true, pred, idx) in enumerate(incorrect_predictions[:10]):
-        print(f"Error {i+1}: Verdadera: '{true}', Predicción: '{pred}'")
-        
-        img_to_save = X_test_array[idx] # Imagen ya re-escalada, sin normalizar (0-255)
-        error_filename = f"error_{i:02d}_{true.replace('/', '_')}_pred_{pred.replace('/', '_')}.png"
-        cv2.imwrite(os.path.join(ruta_errores, error_filename), img_to_save)
+# -----------------------------
+# TRANSFER LEARNING (cargar pesos y remapear vocab si necesario)
+# -----------------------------
+def load_pretrained_weights(base_model, weights_path, strict=False):
+    """
+    Intenta cargar pesos en base_model. Si shapes coinciden, carga; si no,
+    permite cargar capas compatibles y reporta incompatibilidades.
+    """
+    if weights_path is None:
+        return
+    if not Path(weights_path).exists():
+        print(f"Pretrained weights not found: {weights_path}")
+        return
+    try:
+        base_model.load_weights(weights_path, by_name=True, skip_mismatch=not strict)
+        print("Pretrained weights cargados (by_name, skip_mismatch={})".format(not strict))
+    except Exception as e:
+        print("Error cargando pesos preentrenados:", e)
 
-    if len(incorrect_predictions) > 10:
-        print(f"... y {len(incorrect_predictions)-10} errores más, solo se guardaron las primeras 10 imágenes.")
-        
-# =================================================================
-# 5. FUNCIÓN PRINCIPAL DE ENTRENAMIENTO
-# =================================================================
-
+# -----------------------------
+# MAIN
+# -----------------------------
 def main():
-    
-    # 1. Cargar paths y preparar vocabulario
-    (X_train_paths, y_train_padded), \
-    (X_test_paths, y_test_padded, true_words_test), \
-    (char_to_index, index_to_char, num_chars, blank_token_index) = load_data_paths_and_vocab()
-    
-    # Calcular input_length y label_length para el conjunto de prueba (necesario para el modelo.fit)
-    input_length_test = np.full((len(X_test_paths), 1), output_sequence_length, dtype=np.float32)
-    label_length_test = np.array([len([idx for idx in seq if idx != blank_token_index]) for seq in y_test_padded], dtype=np.float32).reshape(-1, 1)
+    # 1) read labels
+    pairs = read_labels_file(LABELS_FILE)
+    if len(pairs) == 0:
+        raise RuntimeError("No hay datos en labels.txt")
+    # split 80/20
+    train_pairs, test_pairs = train_test_split(pairs, test_size=0.2, random_state=42)
+    train_pairs, val_pairs = train_test_split(train_pairs, test_size=0.15, random_state=42)  # ~ 68/17/15
 
-    print("\n--- Longitudes de Secuencia para Debugging ---")
-    print(f"Longitud de secuencia de salida del modelo: {output_sequence_length}")
-    print(f"Longitud del conjunto de entrenamiento: {len(X_train_paths)}")
-    print(f"Tamaño de lote (BATCH_SIZE): {BATCH_SIZE}")
-    print("-" * 40)
-    
-    # 2. Crear Datasets optimizados (tf.data)
-    train_dataset = create_dataset(X_train_paths, y_train_padded, blank_token_index, is_training=True)
-    val_dataset = create_dataset(X_test_paths, y_test_padded, blank_token_index, is_training=False)
+    words_all = [w for _, w in pairs]
+    char_to_idx, idx_to_char, blank_index = build_vocab_from_words(words_all, include_blank=True)
+    num_chars = len(char_to_idx) + 1  # +1 para blank
 
-    # 3. Construir Modelos
-    modelo_entrenamiento, modelo_inferencia = build_crnn_model(num_chars)
-    modelo_inferencia.summary() # Imprimir el resumen del modelo de inferencia
-    
-    # 4. Callbacks
-    early_stopping = EarlyStopping(monitor='val_loss', patience=15, restore_best_weights=True)
-    reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=8, min_lr=1e-7)
-    
-    # Usamos el callback modificado para leer del disco en cada evaluación
-    word_accuracy_callback = WordAccuracyCallback(
-        modelo_inferencia, X_test_paths, y_test_padded, 
-        true_words_test, index_to_char, output_sequence_length, blank_token_index
-    )
+    # Save vocab
+    joblib.dump({"char_to_idx": char_to_idx, "idx_to_char": idx_to_char, "blank_index": blank_index}, VOCAB_SAVE_PATH)
+    print(f"Vocab saved to {VOCAB_SAVE_PATH}. Num chars: {len(char_to_idx)}")
 
-    print("\nEntrenando Modelo V4 (Optimizado para DirectML y tf.data)...")
-    
-    # 5. Entrenamiento
-    # Los datasets de tf.data no requieren los arrays x=[X_train, y_train, ...] y y=np.zeros(len(X_train))
-    # Simplemente se pasa el objeto dataset que ya tiene la estructura (x, y)
-    history = modelo_entrenamiento.fit(
-        train_dataset,
-        validation_data=val_dataset,
-        epochs=200, 
-        callbacks=[early_stopping, reduce_lr, word_accuracy_callback],
+    # Build datasets
+    train_ds = make_tf_dataset(train_pairs, char_to_idx, blank_index, batch_size=BATCH_SIZE, augment=False, shuffle=True)
+    val_ds = make_tf_dataset(val_pairs, char_to_idx, blank_index, batch_size=BATCH_SIZE, augment=False, shuffle=False)
+
+    # Build model
+    base = build_crnn_base(input_shape=(IMG_H, IMG_W, 1), num_chars=len(char_to_idx))
+    # Optionally load pretrained weights into base
+    if PRETRAINED_WEIGHTS:
+        load_pretrained_weights(base, PRETRAINED_WEIGHTS, strict=False)
+    train_model = build_training_model(base)
+    train_model.summary()
+
+    # Prepare X_test for CER callback (we'll load and preprocess to numpy to speed up callback)
+    X_test_imgs = []
+    true_words_test = []
+    for p, w in test_pairs:
+        img = load_and_preprocess_image(p)
+        X_test_imgs.append(img)
+        true_words_test.append(w)
+    X_test_imgs = np.array(X_test_imgs, dtype=np.float32)
+
+    # Callbacks
+    callbacks = []
+    callbacks.append(ModelCheckpoint(str(CHECKPOINT_BEST), monitor='val_loss', save_best_only=True, save_weights_only=True))
+    callbacks.append(ModelCheckpoint(str(CHECKPOINT_EPOCH), period=5, monitor='val_loss', save_weights_only=True))  # save every 5 epochs
+    callbacks.append(ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=PATIENCE_LR, min_lr=1e-7, verbose=1))
+    callbacks.append(EarlyStopping(monitor='val_loss', patience=PATIENCE_ES, restore_best_weights=True, verbose=1))
+    callbacks.append(TensorBoard(log_dir=str(TB_LOGDIR)))
+    callbacks.append(CSVLogger(str(BASE_DIR / "training_log.csv")))
+    callbacks.append(CERCallback(base, X_test_imgs, true_words_test, idx_to_char, batch_size=BATCH_SIZE))
+
+    # Fit
+    print("Start training...")
+    start_time = time.time()
+    history = train_model.fit(
+        train_ds,
+        validation_data=val_ds,
+        epochs=EPOCHS,
+        callbacks=callbacks,
         verbose=1
     )
+    duration = time.time() - start_time
+    print(f"Training finished in {duration/60:.2f} minutes")
 
-    # 6. Guardar y evaluar
-    modelo_inferencia.save(os.path.join(ruta_modelos, "keras_cnn_lstm_v4_ctc.h5"))
-    joblib.dump({
-        'char_to_index': char_to_index, 
-        'index_to_char': index_to_char, 
-        'output_sequence_length': output_sequence_length,
-        'num_chars': num_chars
-        }, os.path.join(ruta_modelos, "vocabulario_v4.pkl"))
-    print("\nEntrenamiento V4 completado y modelo guardado.")
-    
-    # Evaluación Final
-    # ----------------
-    # Volvemos a cargar las imágenes de prueba para la predicción final
-    X_test_imgs = []
-    for path in X_test_paths:
-        img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
-        img = cv2.resize(img, (img_width, img_height), interpolation=cv2.INTER_AREA)
-        img = img.reshape(img_height, img_width, 1).astype(np.float32) / 255.0 # Normalización
-        X_test_imgs.append(img)
-    X_test_array = np.array(X_test_imgs)
-
-    y_pred_probs = modelo_inferencia.predict(X_test_array, verbose=0)
-    pred_words = decode_batch_predictions(y_pred_probs, index_to_char, output_sequence_length)
-    
-    correct_predictions = sum([1 for pred, true in zip(pred_words, true_words_test) if pred.lower().strip() == true.lower().strip()])
-    accuracy_word = correct_predictions / len(true_words_test)
-    levenshtein_dist = calculate_levenshtein_distance(true_words_test, pred_words)
-
-    print(f"\n--- Evaluación Final ---")
-    print(f"Precisión de coincidencia exacta a nivel de palabra: {accuracy_word * 100:.2f}%")
-    print(f"Distancia de Levenshtein (ERROR) promedio: {levenshtein_dist:.4f}")
-    
-    generate_error_report(true_words_test, pred_words, X_test_paths, ruta_errores)
+    # save base inference model and vocab
+    base.save(str(MODELS_DIR / "keras_crnn_v3_inference.h5"))
+    print("Saved inference model and vocab.")
 
 if __name__ == "__main__":
     main()
