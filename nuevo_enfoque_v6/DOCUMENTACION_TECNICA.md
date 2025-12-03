@@ -1,5 +1,4 @@
-#  Documentación Técnica Detallada - Modelo OCR Aether
-
+#  Documentación Técnica Detallada - Modelo OCR 
 ## Tabla de Contenidos
 
 1. [Introducción](#1-introducción)
@@ -31,7 +30,7 @@
 4. **Robusta**: Maneja variaciones en espaciado, fuente, tamaño
 5. **Eficiente**: Más rápida que métodos basados en detección de caracteres
 
-### 1.3 Casos de Uso del Modelo Aether
+### 1.3 Casos de Uso del Modelo 
 
 -  Reconocimiento de palabras aisladas (3-20 caracteres)
 -  Texto en español e inglés con acentos
@@ -945,7 +944,7 @@ for epoch in range(100):
 
 ---
 
-**Autor**: Aether  
+**Autor**: Niuska Gonzalez 
 **Fecha**: Noviembre 2025  
-**Versión**: 1.0
+**Versión**: 5.6
 

@@ -1,4 +1,4 @@
-#  Guía de Uso Práctica - Modelo OCR Aether
+#  Guía de Uso Práctica - Modelo OCR
 
 ## Índice
 
@@ -835,8 +835,8 @@ predicciones = predecir_batch(modelo, imagenes, idx2char, batch_size=32)
 
 ### 7.3 Contacto
 
-- Email: tu_email@ejemplo.com
-- GitHub: @usuario
+- Email: niuska.gonzalez5462@alumnos.udg.mx
+- GitHub: @Niuska0212
 
 ---
 

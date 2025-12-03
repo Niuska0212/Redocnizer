@@ -1,5 +1,5 @@
 ```
-# Visualización de la Arquitectura - Modelo OCR Aether
+# Visualización de la Arquitectura - Modelo OCR
 
 ## Diagrama de Flujo Completo
 
@@ -450,6 +450,6 @@ Memoria GPU: ~3 GB durante entrenamiento
 
 ---
 
-**Autor**: Aether  
+**Autor**: Niuska Isabel Gonzalez Rangel
 **Fecha**: Noviembre 2025  
 **Versión**: 1.0
