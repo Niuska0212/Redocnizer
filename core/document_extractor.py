@@ -10,9 +10,9 @@ import pytesseract
 from tensorflow.keras import backend as K 
 from difflib import SequenceMatcher # Necesario para calcular la similitud (Levenshtein)
 from PIL import Image, ImageDraw, ImageFont
-from segmentacion_dinamica import get_dynamic_rois, clean_data_by_field, clean_border_chars, validate_field_format, clean_name_specific
-from CRNN_inference import load_inference_model 
-from preprocessing import prepare_roi_for_ocr ,invert_image_color , rotate_image
+from .segmentacion_dinamica import get_dynamic_rois, clean_data_by_field, clean_border_chars, validate_field_format, clean_name_specific
+from .CRNN_inference import load_inference_model
+from .preprocessing import prepare_roi_for_ocr, invert_image_color, rotate_image
 
 
 # >>> CONFIGURACIÓN IMPORTANTE DE TESSERACT <<<

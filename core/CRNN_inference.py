@@ -9,6 +9,7 @@ from tensorflow.keras.layers import RandomRotation, RandomZoom, RandomTranslatio
 import joblib
 import os
 from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, BatchNormalization, Reshape, Dense, Bidirectional, LSTM, Dropout
+import h5py
 
 # --- CONSTANTES DE CONFIGURACIÓN DEL MODELO ---
 OUTPUT_SEQUENCE_LENGTH = 32 
@@ -151,5 +152,43 @@ def load_inference_model():
         except Exception as e_transfer:
             print(f"Error al intentar la transferencia de pesos: {e_transfer}")
             print(f"Ruta del modelo intentada: {MODELO_PATH}")
-            print("¡Fallo crítico! Asegúrate de que los nombres de las capas en 'build_pure_inference_model' coincidan con 'entrenamientoV3.py'.")
-            return None, None, None
+            # Intento alternativo: construir el modelo limpio y usar load_weights(by_name=True)
+            try:
+                modelo_inferencia = build_pure_inference_model(weights_source_model=None)
+                print("Intentando cargar pesos mediante load_weights(by_name=True)...")
+                modelo_inferencia.load_weights(MODELO_PATH, by_name=True)
+                print("Carga de pesos por nombre completada.")
+                return modelo_inferencia, index_to_char, OUTPUT_SEQUENCE_LENGTH
+            except Exception as e_loadname:
+                print(f"Fallo load_weights by_name: {e_loadname}")
+                # Intento manual con h5py: mapear pesos por nombre de capa
+                try:
+                    print("Intentando carga manual de pesos con h5py...")
+                    with h5py.File(MODELO_PATH, 'r') as f:
+                        weights_group = f['model_weights'] if 'model_weights' in f else f
+
+                        modelo_inf = build_pure_inference_model(weights_source_model=None)
+                        for layer in modelo_inf.layers:
+                            name = layer.name
+                            if name in weights_group:
+                                try:
+                                    g = weights_group[name]
+                                    weight_vals = []
+                                    # Recorremos los datasets en el grupo de la capa
+                                    for k in g:
+                                        item = g[k]
+                                        if isinstance(item, h5py.Dataset):
+                                            weight_vals.append(item[()])
+                                    if weight_vals:
+                                        try:
+                                            layer.set_weights(weight_vals)
+                                        except Exception:
+                                            pass
+                                except Exception:
+                                    pass
+                        print("Carga manual (h5py) intentada. Es posible que falten pesos no transferibles.")
+                        return modelo_inf, index_to_char, OUTPUT_SEQUENCE_LENGTH
+                except Exception as e_h5:
+                    print(f"Error en carga manual h5py: {e_h5}")
+                    print("¡Fallo crítico! Asegúrate de que los nombres de las capas en 'build_pure_inference_model' coincidan con 'entrenamientoV3.py'.")
+                    return None, None, None

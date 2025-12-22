@@ -83,3 +83,25 @@ class ContractController:
             "data": data,
             "final_path": final_path
         }
+
+    def process_uploaded_files(self, file_paths: list, calendar: str) -> list:
+        """
+        Procesa múltiples archivos (imagenes o PDFs). Retorna lista de resultados por archivo.
+        Cada resultado: {"source": ruta_original, "data": datos, "final_path": ruta_guardado} o {"source":..., "error": mensaje}
+        """
+        results = []
+        for fp in file_paths:
+            try:
+                res = self.process_uploaded_file(file_path=fp, calendar=calendar)
+                results.append({
+                    "source": fp,
+                    "data": res.get("data"),
+                    "final_path": res.get("final_path")
+                })
+            except Exception as e:
+                results.append({
+                    "source": fp,
+                    "error": str(e)
+                })
+
+        return results
