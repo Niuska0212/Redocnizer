@@ -7,7 +7,7 @@ import tensorflow as tf
 # Importamos las constantes de tamaño que definiste para tu modelo CRNN
 # Esto asegura que el preprocesamiento coincida con el entrenamiento.
 try:
-    from CRNN_inference import IMG_HEIGHT, IMG_WIDTH
+    from .CRNN_inference import IMG_HEIGHT, IMG_WIDTH
 except ImportError:
     # Si lo ejecutas solo, definimos los valores por defecto
     IMG_HEIGHT = 32

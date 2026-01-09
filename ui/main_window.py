@@ -16,6 +16,8 @@ from PySide6.QtGui import QPixmap, QFont, QColor, QBrush
 
 from controllers.contract_controller import ContractController
 from services.pdf_service import pdf_to_images
+from ui.app_menu import create_app_menu
+from ui.calendar_db import CalendarDB
 
 
 class DataManager(QObject):
@@ -68,15 +70,31 @@ class DataManager(QObject):
             self.data_updated.emit()
     
     def save_data(self):
-        """Guarda los datos al archivo Excel"""
+        """Guarda los datos al archivo Excel con solo columnas esenciales"""
         try:
             # Crear directorio si no existe
             os.makedirs(os.path.dirname(self.data_file), exist_ok=True)
-            
-            # Guardar con formato Excel
+            # Columnas esenciales: id + OCR fields + ruta_final
+            preferred_columns = [
+                'id', 'ruta_final', 
+                'PATERNO', 'MATERNO', 'NOMBRE_S', 'NUM', 'CODIGO', 'RFC', 'IMSS', 'CURP',
+                'TELEFONO', 'CRN', 'DESDE', 'HASTA', 'DEPENDENCIA_1', 'DEPENDENCIA_2', 'DEPENDENCIA_3'
+            ]
+
+            # Añadir columnas faltantes con valores vacíos
+            for col in preferred_columns:
+                if col not in self.data.columns:
+                    self.data[col] = ""
+
+            # Reordenar columnas: primero las preferidas, luego las restantes
+            ordered = [c for c in preferred_columns if c in self.data.columns]
+            remaining = [c for c in self.data.columns if c not in ordered]
+            final_columns = ordered + remaining
+
+            # Guardar con formato Excel usando el orden final de columnas
             with pd.ExcelWriter(self.data_file, engine='openpyxl') as writer:
-                self.data.to_excel(writer, index=False, sheet_name='Contratos')
-            
+                self.data[final_columns].to_excel(writer, index=False, sheet_name='Contratos')
+
             print(f"Datos guardados en: {self.data_file}")
         except Exception as e:
             print(f"Error guardando datos: {e}")
@@ -84,6 +102,44 @@ class DataManager(QObject):
     def get_dataframe(self):
         """Retorna el DataFrame actual"""
         return self.data.copy()
+
+    def load_from_csv(self, csv_path: str):
+        """Carga datos desde un CSV (por ejemplo el CSV de un calendario)."""
+        try:
+            if os.path.exists(csv_path):
+                df = pd.read_csv(csv_path, encoding='utf-8')
+                # Normalizar columna Fecha_Procesamiento si existe
+                if 'Fecha_Procesamiento' in df.columns:
+                    df['Fecha_Procesamiento'] = pd.to_datetime(df['Fecha_Procesamiento'], errors='coerce')
+
+                # Asegurar columnas mínimas (mismo esquema que en save_data)
+                preferred_columns = [
+                    'Archivo', 'PATERNO', 'MATERNO', 'NOMBRE_S', 'NUM', 'CODIGO', 'RFC', 'IMSS', 'CURP',
+                    'TELEFONO', 'CRN', 'DESDE', 'HASTA', 'DEPENDENCIA_1', 'DEPENDENCIA_2', 'DEPENDENCIA_3',
+                    'id', 'nombre', 'contrato', 'fecha', 'calendario', 'archivo', 'ruta_final', 'estado',
+                    'Fecha_Procesamiento'
+                ]
+                for col in preferred_columns:
+                    if col not in df.columns:
+                        df[col] = ""
+
+                # Reordenar columnas respetando las existentes
+                ordered = [c for c in preferred_columns if c in df.columns]
+                remaining = [c for c in df.columns if c not in ordered]
+                df = df[ordered + remaining]
+
+                self.data = df
+                self.data_updated.emit()
+                return True
+            return False
+        except Exception as e:
+            print(f"Error cargando CSV: {e}")
+            return False
+
+    def load_from_calendar_dir(self, calendar_dir: str):
+        """Carga el CSV 'contratos.csv' desde un directorio de calendario."""
+        csv_path = os.path.join(calendar_dir, 'contratos.csv')
+        return self.load_from_csv(csv_path)
     
     def export_to_csv(self, filepath):
         """Exporta a CSV"""
@@ -441,53 +497,76 @@ class MainWindow(QMainWindow):
         # UI PRINCIPAL
         # -----------------------------------------
         self._build_ui()
+        # Crear y adjuntar la barra de menú (archivo/editar)
+        try:
+            create_app_menu(self)
+        except Exception as e:
+            print(f"No se pudo crear la barra de menú: {e}")
         
-        # Estilo de la aplicación
+        # Estilo de la aplicación (tema minimalista - azules / morados)
+        # Se asegura contraste de texto oscuro sobre fondos claros para legibilidad
         self.setStyleSheet("""
-            QMainWindow {
-                background-color: #f8f9fa;
-            }
+            /* Colores base */
+            QMainWindow { background-color: #f6f8fb; color: #0b2545; }
+
+            /* Barra de menú */
+            QMenuBar { background: transparent; color: #0b2545; }
+            QMenuBar::item { background: transparent; padding: 6px 12px; }
+            QMenu { background: #ffffff; color: #0b2545; }
+
+            /* Botones: minimalistas con acento azul/índigo */
             QPushButton {
-                background-color: #1976d2;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #1976d2, stop:1 #6a1b9a);
                 color: white;
                 border: none;
-                padding: 8px 16px;
-                border-radius: 4px;
-                font-weight: bold;
+                padding: 8px 14px;
+                border-radius: 6px;
+                font-weight: 600;
             }
-            QPushButton:hover {
-                background-color: #1565c0;
-            }
-            QPushButton:disabled {
-                background-color: #bdbdbd;
-            }
+            QPushButton:hover { opacity: 0.95; }
+            QPushButton:disabled { background: #cfd8e3; color: #7a8aa3; }
+
+            /* Group boxes */
             QGroupBox {
-                font-weight: bold;
-                border: 2px solid #e0e0e0;
-                border-radius: 5px;
+                font-weight: 700;
+                border: 1px solid rgba(25,118,210,0.12);
+                border-radius: 8px;
                 margin-top: 10px;
-                padding-top: 10px;
+                padding: 12px;
+                color: #0b2545;
+                background: transparent;
             }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px 0 5px;
+            QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px; }
+
+            /* Inputs y selects: fondo blanco, texto oscuro */
+            QLineEdit, QComboBox, QTextEdit {
+                padding: 8px;
+                border: 1px solid #e3e7ee;
+                border-radius: 6px;
+                background-color: #ffffff;
+                color: #0b2545;
             }
-            QLineEdit, QComboBox {
-                padding: 6px;
-                border: 1px solid #ccc;
-                border-radius: 4px;
-                background-color: white;
-            }
-            QProgressBar {
-                border: 1px solid #ccc;
-                border-radius: 4px;
-                text-align: center;
-            }
-            QProgressBar::chunk {
-                background-color: #4caf50;
-                border-radius: 4px;
-            }
+            QLineEdit:disabled, QComboBox:disabled { background: #f2f5fa; color: #7a8aa3; }
+
+            /* Labels y tablas: texto oscuro */
+            QLabel { color: #0b2545; }
+            QTableWidget, QTableView { background: #ffffff; color: #0b2545; gridline-color: #eef2f8; }
+            QTableWidget::item { color: #0b2545; }
+            QHeaderView::section { background: #f3f6fb; color: #0b2545; border: none; padding: 8px; }
+
+            /* Listas */
+            QListWidget { background: #ffffff; color: #0b2545; }
+            QListWidget::item:selected { background-color: rgba(25,118,210,0.08); }
+
+            /* Preview box */
+            QLabel#preview_label { border: 2px dashed rgba(25,118,210,0.18); border-radius: 8px; background-color: #ffffff; color: #0b2545; }
+
+            /* Progress */
+            QProgressBar { border: 1px solid #e6eef8; border-radius: 6px; text-align: center; background: #ffffff; }
+            QProgressBar::chunk { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #1976d2, stop:1 #6a1b9a); border-radius: 6px; }
+
+            /* Texto de ayuda/pequeño */
+            QLabel[style="small"] { color: #7a8aa3; font-size: 12px; }
         """)
 
     # =========================================================
@@ -539,18 +618,41 @@ class MainWindow(QMainWindow):
         # Calendario
         calendar_layout = QHBoxLayout()
         self.calendar_combo = QComboBox()
-        self.calendar_combo.addItems([
-            "2024A", "2024B",
-            "2025A", "2025B",
-            "2026A", "2026B",
-            "2027A", "2027B",
-            "2028A", "2028B",
-            "2029A", "2029B",
-        ])
-        self.calendar_combo.setCurrentText("2024A")
+        # Cargar calendarios desde la BD
+        self.cal_db = CalendarDB()
+        cals = self.cal_db.get_all_calendars()
+        if cals:
+            for cal in cals:
+                self.calendar_combo.addItem(cal.nombre, cal)
+            self.calendar_combo.setCurrentIndex(0)
+        else:
+            # Si no hay, cargar opciones default (legacy)
+            self.calendar_combo.addItems([
+                "2024A", "2024B",
+                "2025A", "2025B",
+                "2026A", "2026B",
+                "2027A", "2027B",
+                "2028A", "2028B",
+                "2029A", "2029B",
+            ])
+            self.calendar_combo.setCurrentText("2024A")
+        
+        # Conectar cambio de calendario
+        self.calendar_combo.currentIndexChanged.connect(self._on_calendar_changed)
         
         calendar_layout.addWidget(QLabel("Calendario:"))
         calendar_layout.addWidget(self.calendar_combo)
+        # Botones rápidos para abrir CSV y carpeta del calendario
+        self.btn_open_calendar_csv = QPushButton("Abrir CSV del calendario")
+        self.btn_open_calendar_csv.setMaximumWidth(180)
+        self.btn_open_calendar_csv.clicked.connect(self.open_calendar_csv)
+
+        self.btn_open_calendar_folder = QPushButton("Abrir carpeta del calendario")
+        self.btn_open_calendar_folder.setMaximumWidth(180)
+        self.btn_open_calendar_folder.clicked.connect(self.open_calendar_folder)
+
+        calendar_layout.addWidget(self.btn_open_calendar_csv)
+        calendar_layout.addWidget(self.btn_open_calendar_folder)
         calendar_layout.addStretch()
         config_layout.addLayout(calendar_layout)
         
@@ -565,13 +667,17 @@ class MainWindow(QMainWindow):
         preview_panel.setContentsMargins(0, 0, 10, 0)
         
         self.preview_label = QLabel()
+        self.preview_label.setObjectName("preview_label")
         self.preview_label.setFixedSize(250, 350)
+        # estilo específico para la vista previa: fondo blanco y texto oscuro
         self.preview_label.setStyleSheet("""
             QLabel {
-                border: 2px dashed #ccc;
+                border: 2px dashed rgba(25,118,210,0.18);
                 border-radius: 8px;
-                background-color: white;
+                background-color: #ffffff;
+                color: #0b2545;
                 qproperty-alignment: AlignCenter;
+                font-weight: 600;
             }
         """)
         self.preview_label.setText("Vista previa\ndel documento")
@@ -839,6 +945,54 @@ class MainWindow(QMainWindow):
             count = len(self.selected_files)
             self.btn_process.setText(f"🚀 Procesar {count} Contrato(s)")
 
+    def load_calendar_data(self, calendar: str = None):
+        """Carga el CSV del calendario seleccionado en el DataManager y refresca la pestaña de datos."""
+        if not self.controller:
+            QMessageBox.warning(self, "Sin directorio raíz", "Primero seleccione el directorio raíz.")
+            return
+
+        if calendar is None:
+            calendar = self.calendar_combo.currentText()
+
+        calendar_dir = self.controller.file_service.get_calendar_dir(calendar)
+        loaded = self.data_manager.load_from_calendar_dir(calendar_dir)
+        if loaded:
+            QMessageBox.information(self, "CSV cargado", f"CSV del calendario '{calendar}' cargado en la vista de datos.")
+            if self.tabs.currentIndex() == 1:
+                self.data_tab.load_data()
+        else:
+            QMessageBox.information(self, "Sin CSV", f"No se encontró CSV para el calendario '{calendar}'.")
+
+    def open_calendar_folder(self):
+        """Abre la carpeta del calendario en el explorador de archivos."""
+        if not self.controller:
+            QMessageBox.warning(self, "Sin directorio raíz", "Primero seleccione el directorio raíz.")
+            return
+        calendar = self.calendar_combo.currentText()
+        calendar_dir = self.controller.file_service.get_calendar_dir(calendar)
+        try:
+            os.startfile(calendar_dir)
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"No se pudo abrir la carpeta: {e}")
+
+    def open_calendar_csv(self):
+        """Abre el CSV del calendario con la aplicación por defecto y lo carga en la vista."""
+        if not self.controller:
+            QMessageBox.warning(self, "Sin directorio raíz", "Primero seleccione el directorio raíz.")
+            return
+        calendar = self.calendar_combo.currentText()
+        calendar_dir = self.controller.file_service.get_calendar_dir(calendar)
+        csv_path = os.path.join(calendar_dir, 'contratos.csv')
+        if os.path.exists(csv_path):
+            try:
+                os.startfile(csv_path)
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"No se pudo abrir el CSV: {e}")
+            # También cargar en la pestaña de datos
+            self.load_calendar_data(calendar)
+        else:
+            QMessageBox.information(self, "Sin CSV", f"No existe '{csv_path}'")
+
     # =========================================================
     # PROCESAMIENTO
     # =========================================================
@@ -926,8 +1080,13 @@ class MainWindow(QMainWindow):
             self.progress_bar.setVisible(False)
             
             # Actualizar pestaña de datos si está visible
-            if self.tabs.currentIndex() == 1:
-                self.data_tab.load_data()
+            # Cargar CSV del calendario procesado y mostrarlo
+            try:
+                self.load_calendar_data(calendar)
+            except Exception:
+                # Fallback: refrescar la vista actual del DataTab
+                if self.tabs.currentIndex() == 1:
+                    self.data_tab.load_data()
             
         except Exception as e:
             QMessageBox.critical(
@@ -972,3 +1131,16 @@ class MainWindow(QMainWindow):
         # Actualizar widgets (necesitarías agregar referencias a los labels)
         # Para simplificar, aquí solo se muestra cómo calcular las estadísticas
         print(f"Estadísticas: Total={total}, Hoy={today_count}, Errores={errors}")
+    
+    def _on_calendar_changed(self):
+        """Cuando se cambia el calendario seleccionado."""
+        current_data = self.calendar_combo.currentData()
+        if current_data and hasattr(current_data, 'nombre'):
+            # Es un objeto Calendar de la BD
+            cal = current_data
+            print(f"Calendario seleccionado: {cal.nombre}")
+            print(f"  Período: {cal.fecha_inicio} a {cal.fecha_fin}")
+            print(f"  Tipo: {cal.tipo}")
+        else:
+            # Es un string legacy
+            print(f"Calendario seleccionado: {self.calendar_combo.currentText()}")

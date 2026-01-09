@@ -92,11 +92,20 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
         'TELEFONO': ['TELÉFONO', 'TELEFONO', 'TEL'],
         'CRN': ['CRN'],
         'HRS_TOTALES': ['HRS. TOTALES', 'HRS TOTALES', 'HORAS TOTALES', 'HRS. TOTALES CURSO'],
-        'DESDE': ['DESDE'],
-        'HASTA': ['HASTA'],
+        'DESDE': ['DESDE', 'DESDE:'],
+        'HASTA': ['HASTA', 'HASTA:'],
     }
 
     dynamic_rois = {}
+
+    # ============ BÚSQUEDA DE DESDE/HASTA AL FINAL (DESPUÉS DE TODO) ============
+    # Si DESDE/HASTA no se encuentran por etiqueta, buscar por patrón de fecha
+    def search_date_pattern():
+        """Buscar fechas en formato DD/MM/YYYY, DD-MM-YYYY, etc."""
+        import re
+        date_pattern = r'\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4}'
+        date_matches = data_df[data_df['text'].str.contains(date_pattern, regex=True, na=False)]
+        return date_matches
 
     # 1. Lógica para extraer el nombre completo
     header_matches = data_df[data_df['text'].isin(name_keywords)]
@@ -121,6 +130,7 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
             key_row = matches.iloc[0]
             x_key = key_row['left']
             h_key = key_row['height']
+            # Buscar primero valores justo DEBAJO de la etiqueta
             y_search_start = key_row['top'] + h_key + 5
             x_start = 130
             value_candidates = data_df[
@@ -128,12 +138,16 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
                 (data_df['left'] >= x_start - 5) &
                 (data_df['left'] <= x_start + 100)
             ].sort_values(by='top')
+
             if not value_candidates.empty:
                 y_start = int(value_candidates.iloc[0]['top']) - 5
             else:
-                y_start = 710
+                # Si no se encontró debajo, usar posición relativa a la etiqueta
+                y_start = int(key_row['top'] + h_key + 5)
+
             h_dep = int(CELL_HEIGHT_DEP)
             w_dep = int(CELL_WIDTH_DEP)
+            # ROIs verticales por defecto (líneas debajo de la etiqueta)
             dynamic_rois['DEPENDENCIA_1'] = [y_start, x_start, h_dep, w_dep]
             dynamic_rois['DEPENDENCIA_2'] = [y_start + h_dep, x_start, h_dep, w_dep]
             dynamic_rois['DEPENDENCIA_3'] = [y_start + 2 * h_dep, x_start, h_dep, w_dep]
@@ -211,67 +225,97 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
     # 5. Lógica para campos DEBAJO (CÓDIGO, TELÉFONO, CRN, etc.)
     for field_name, keywords in simple_fields_below.items():
         if field_name not in dynamic_rois:
-            for keyword in keywords:
-                matches = data_df[data_df['text'].str.contains('|'.join(keywords), case=False, regex=True)]
-                if not matches.empty:
-                    key_row = matches.iloc[0]
-                    y_search_start = key_row['top'] + key_row['height'] + 5
+            # Construir patrón regex escapando caracteres especiales
+            regex_pattern = '|'.join([re.escape(kw) for kw in keywords])
+            matches = data_df[data_df['text'].str.contains(regex_pattern, case=False, regex=True)]
+            
+            if not matches.empty:
+                key_row = matches.iloc[0]
+                print(f"  [DEBUG] Campo {field_name}: etiqueta detectada '{key_row['text']}' en ({int(key_row['left'])}, {int(key_row['top'])})")
+                
+                y_search_start = key_row['top'] + key_row['height'] + 5
 
-                    value_candidates = data_df[
-                        (data_df['top'] >= y_search_start) &
-                        (data_df['top'] <= y_search_start + 80) &
-                        (data_df['left'] >= key_row['left'] - 50) &
-                        (data_df['left'] <= key_row['left'] + 400)
-                    ].sort_values(by='top').head(1)
+                value_candidates = data_df[
+                    (data_df['top'] >= y_search_start) &
+                    (data_df['top'] <= y_search_start + 80) &
+                    (data_df['left'] >= key_row['left'] - 50) &
+                    (data_df['left'] <= key_row['left'] + 400)
+                ].sort_values(by='top').head(1)
 
-                    # Valores por defecto
-                    x_start = key_row['left']
-                    y_start = y_search_start
-                    h_roi = 54
-                    w_roi = 200
+                # Valores por defecto
+                x_start = key_row['left']
+                y_start = y_search_start
+                h_roi = 54
+                w_roi = 200
 
-                    if not value_candidates.empty:
-                        y_start = value_candidates.iloc[0]['top'] - 10
-                        x_start = value_candidates.iloc[0]['left'] - 10
+                if not value_candidates.empty:
+                    y_start = value_candidates.iloc[0]['top'] - 10
+                    x_start = value_candidates.iloc[0]['left'] - 10
+                    print(f"    >> Valor encontrado debajo: ({int(x_start)}, {int(y_start)})")
 
-                    # Ajustes específicos
-                    if field_name == 'CODIGO':
-                        w_roi = 150
-                        x_start = 700 if value_candidates.empty else value_candidates.iloc[0]['left'] - 10
+                # Ajustes específicos
+                if field_name == 'CODIGO':
+                    w_roi = 150
+                    x_start = 700 if value_candidates.empty else value_candidates.iloc[0]['left'] - 10
+                    
+                    # 🚨 Fallback extra si no lo encuentra directamente
+                    if value_candidates.empty:
+                        # Buscar si tenemos el ROI de NOMBRE o NUM para apoyarnos
+                        if 'NOMBRE_COMPLETO_RAW' in dynamic_rois:
+                            nombre_y, nombre_x, nombre_h, nombre_w = dynamic_rois['NOMBRE_COMPLETO_RAW']
+                            y_start = nombre_y
+                            x_start = nombre_x + nombre_w + 130  # 130px a la derecha de nombre
                         
-                        # 🚨 Fallback extra si no lo encuentra directamente
-                        if value_candidates.empty:
-                            # Buscar si tenemos el ROI de NOMBRE o NUM para apoyarnos
-                            if 'NOMBRE_COMPLETO_RAW' in dynamic_rois:
-                                nombre_y, nombre_x, nombre_h, nombre_w = dynamic_rois['NOMBRE_COMPLETO_RAW']
-                                y_start = nombre_y
-                                x_start = nombre_x + nombre_w + 130  # 130px a la derecha de nombre
-                            
-                            elif 'NUM' in dynamic_rois:
-                                num_y, num_x, num_h, num_w = dynamic_rois['NUM']
-                                y_start = num_y + 5   # misma altura aprox
-                                x_start = num_x + 30  # 30px a la derecha de num
-                    
-                    elif field_name == 'TELEFONO':
-                        w_roi = 200
-                        x_start = 700 if value_candidates.empty else value_candidates.iloc[0]['left'] - 10
-                    
-                    elif field_name == 'CRN':
-                        w_roi = 170
-                        h_roi = 35
-                        x_start = 150
-                    elif field_name == 'HRS_TOTALES':
-                        w_roi = 120
-                        x_start = 330
-                    elif field_name == 'DESDE':
-                        w_roi = 240
-                        x_start = 550
-                    elif field_name == 'HASTA':
-                        w_roi = 240
-                        x_start = 800
+                        elif 'NUM' in dynamic_rois:
+                            num_y, num_x, num_h, num_w = dynamic_rois['NUM']
+                            y_start = num_y + 5   # misma altura aprox
+                            x_start = num_x + 30  # 30px a la derecha de num
+                
+                elif field_name == 'TELEFONO':
+                    w_roi = 200
+                    x_start = 700 if value_candidates.empty else value_candidates.iloc[0]['left'] - 10
+                
+                elif field_name == 'CRN':
+                    w_roi = 170
+                    h_roi = 35
+                    x_start = 150
+                elif field_name == 'HRS_TOTALES':
+                    w_roi = 120
+                    x_start = 330
+                elif field_name == 'DESDE':
+                    w_roi = 240
+                    x_start = 550
+                elif field_name == 'HASTA':
+                    w_roi = 240
+                    x_start = 800
 
-                    dynamic_rois[field_name] = [y_start, x_start, h_roi, w_roi]
-                    break
+                dynamic_rois[field_name] = [y_start, x_start, h_roi, w_roi]
+                print(f"    >> ROI final para {field_name}: y={int(y_start)}, x={int(x_start)}, h={h_roi}, w={w_roi}")
+                
+    # ============ BÚSQUEDA ALTERNATIVA: Si DESDE/HASTA NO se encontraron, buscar por patrón de fecha ============
+    if 'DESDE' not in dynamic_rois or 'HASTA' not in dynamic_rois:
+        date_pattern = r'\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4}'
+        date_matches = data_df[data_df['text'].str.contains(date_pattern, regex=True, na=False)]
+        
+        if not date_matches.empty:
+            print(f"  [DEBUG] Detectadas {len(date_matches)} fechas potenciales (patrón DD/MM/YYYY):")
+            for idx, row in date_matches.iterrows():
+                print(f"    - Fecha en ({int(row['left'])}, {int(row['top'])}): '{row['text']}'")
+            
+            # Asignar las dos primeras fechas encontradas a DESDE y HASTA
+            if 'DESDE' not in dynamic_rois and len(date_matches) >= 1:
+                first_date_row = date_matches.iloc[0]
+                y_date = int(first_date_row['top']) - 5
+                x_date = int(first_date_row['left']) - 10
+                dynamic_rois['DESDE'] = [y_date, x_date, 45, 150]
+                print(f"  [DEBUG] DESDE asignado automáticamente por patrón de fecha")
+            
+            if 'HASTA' not in dynamic_rois and len(date_matches) >= 2:
+                second_date_row = date_matches.iloc[1]
+                y_date = int(second_date_row['top']) - 5
+                x_date = int(second_date_row['left']) - 10
+                dynamic_rois['HASTA'] = [y_date, x_date, 45, 150]
+                print(f"  [DEBUG] HASTA asignado automáticamente por patrón de fecha")
                 
     return dynamic_rois
 
@@ -290,7 +334,25 @@ def clean_border_chars(text: str) -> str:
     # text = re, sub(r'^=,', '', text)  # Elimina '=' al inicio
 
     text = re.sub(r'\s+', ' ', text)  # Reemplaza múltiples espacios por uno solo
+    # Aplicar allowlist: conservar letras, dígitos, coma, punto, espacio y guión
+    text = keep_allowed_chars(text, ',.- ')
     return text.strip()
+
+
+def keep_allowed_chars(text: str, extra_allowed: str = ',.- ') -> str:
+    """Conserva únicamente caracteres A-Z a-z 0-9 y los símbolos permitidos.
+
+    extra_allowed: string con caracteres adicionales permitidos (por defecto ",.- ")
+    """
+    if not text:
+        return ""
+    # Usar \w para incluir letras Unicode (acentos), dígitos y guión bajo.
+    # Luego eliminar guiones bajos si aparecen.
+    pattern = rf"[^\w{re.escape(extra_allowed)}]"
+    cleaned = re.sub(pattern, '', str(text), flags=re.UNICODE)
+    # Quitar guiones bajos introducidos por \w
+    cleaned = cleaned.replace('_', '')
+    return cleaned
 
 
 
@@ -358,6 +420,8 @@ def clean_data_by_field(field_name: str, text: str) -> str:
         
         # Limpiar espacios múltiples
         text = re.sub(r'\s+', ' ', text).strip()
+        # Aplicar allowlist final para normalizar caracteres permitidos
+        text = keep_allowed_chars(text, ',.- ')
 
     return text.strip()
 
@@ -366,12 +430,8 @@ def validate_field_format(field_name: str, text: str) -> str:
     """Valida y corrige el formato de campos específicos."""
     if not text:
         return text
-    
-    # LIMPIEZA GENERAL PARA TODOS LOS CAMPOS - ELIMINAR CARACTERES PROBLEMÁTICOS
-    problematic_chars = ['=', ':', '!', '|', '\\', '?', ',', ';', '"', "'", '`', '~', '^', '<', '>', '*', '+', '%', '$', '#', '@', '(', ')', '{', '}', '[', ']', '_', '¢', '€', '¥']
-    for char in problematic_chars:
-        text = text.replace(char, '')
-        
+    # LIMPIEZA GENERAL: conservar solo caracteres permitidos (A-Z a-z 0-9 y ', . -' y espacio)
+    text = keep_allowed_chars(text, ',.- ')
     text = text.upper().strip()
     
     if field_name == 'RFC':
@@ -383,9 +443,30 @@ def validate_field_format(field_name: str, text: str) -> str:
             text = text[:13]
             
     elif field_name == 'CURP':
-        text = re.sub(r'[^A-Z0-9]', '', text)
-        if len(text) >= 16:
-            text = text[:18]
+        # Eliminar espacios y caracteres especiales
+        text = re.sub(r'[^A-Z0-9]', '', text.upper())
+        
+        # CURP ideal: 18 caracteres (4 letras + 6 números + 6 caracteres + 2 números)
+        # Pero ser más tolerante: aceptar 15+ si el patrón inicial es válido
+        if len(text) >= 15:
+            # Validar patrón: debe empezar con 4 letras + 6 números
+            pattern_strict = r'^[A-Z]{4}\d{6}[A-Z0-9]{6}\d{2}$'
+            if re.match(pattern_strict, text) and len(text) == 18:
+                # Patrón perfecto, mantener
+                pass
+            else:
+                # Patrón flexible: si empieza bien, mantener aunque no sea exactamente 18
+                pattern_flexible = r'^[A-Z]{4}\d{6}'
+                if re.match(pattern_flexible, text):
+                    # Mantener los primeros 18 caracteres si tiene más
+                    text = text[:18]
+                else:
+                    # No coincide patrón, descartar
+                    text = ""
+        elif len(text) > 0:
+            # Si tiene menos de 15 caracteres, descartar
+            text = ""
+        # Si está vacío, dejar vacío
             
     # CÓDIGO MEJORADO PARA IMSS (Línea ~279)
     elif field_name == 'IMSS':
@@ -405,10 +486,16 @@ def validate_field_format(field_name: str, text: str) -> str:
             text = text[:10]
     
     elif field_name == 'NUM':
-        # asegurar que num sea numerico y tenga maximo 7 caracteres
+        # NUM debe ser EXACTAMENTE 7 dígitos (obligatorio, nunca incompleto, nunca con relleno)
         text = re.sub(r'[^0-9]', '', text)
-        if len(text) >= 7:
+        # Si tiene exactamente 7, mantener
+        if len(text) == 7:
+            pass  # Válido
+        elif len(text) > 7:
+            # Si tiene más de 7, tomar los primeros 7
             text = text[:7]
+        # Si tiene 1-6 dígitos, dejar como está (será penalizado en contador de reintentos)
+        # Si está vacío, dejar vacío
 
     elif field_name == 'RNC':
         # asegurar que rnc sea numerico y tenga maximo 10 caracteres

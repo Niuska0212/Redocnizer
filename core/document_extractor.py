@@ -3,7 +3,7 @@ import random
 import cv2
 import os
 import shutil
-import pandas as pd
+import pandas as pd 
 import re
 import numpy as np
 import pytesseract 
@@ -316,7 +316,18 @@ def extract_data_from_image(image_path, modelo_inferencia, index_to_char, output
 
         # --- LÓGICA DE REINTENTO: Contar campos no vacíos ---
         relevant_fields = {k: v for k, v in extracted_data.items() if k not in ['NOMBRE_COMPLETO_RAW', 'PATERNO', 'MATERNO', 'NOMBRE_S', 'Archivo']}
-        successful_fields_count = len([v for v in relevant_fields.values() if v and len(str(v).strip()) > 1])
+        
+        # Contador especial: NUM incompleto (< 7 dígitos) NO cuenta como exitoso
+        successful_fields_count = 0
+        for field_key, field_val in relevant_fields.items():
+            if field_val and len(str(field_val).strip()) > 1:
+                # Si es NUM, validar que tenga exactamente 7 dígitos
+                if field_key == 'NUM':
+                    num_digits = re.sub(r'[^0-9]', '', str(field_val))
+                    if len(num_digits) == 7:
+                        successful_fields_count += 1
+                else:
+                    successful_fields_count += 1
 
         print(f"  Intento {attempt + 1}: {successful_fields_count} campos extraídos.")
         
@@ -326,11 +337,19 @@ def extract_data_from_image(image_path, modelo_inferencia, index_to_char, output
             
     # Si el bucle termina sin éxito, comparamos los resultados para ver cuál fue el mejor
     if extracted_data_list:
-        # Contar campos exitosos para cada intento
+        # Contar campos exitosos para cada intento (NUM debe tener exactamente 7 dígitos)
         scores = []
         for data in extracted_data_list:
             relevant_fields = {k: v for k, v in data.items() if k not in ['NOMBRE_COMPLETO_RAW', 'PATERNO', 'MATERNO', 'NOMBRE_S', 'Archivo']}
-            score = len([v for v in relevant_fields.values() if v and len(str(v).strip()) > 1])
+            score = 0
+            for field_key, field_val in relevant_fields.items():
+                if field_val and len(str(field_val).strip()) > 1:
+                    if field_key == 'NUM':
+                        num_digits = re.sub(r'[^0-9]', '', str(field_val))
+                        if len(num_digits) == 7:
+                            score += 1
+                    else:
+                        score += 1
             scores.append(score)
         
         # Retorna el resultado con el puntaje más alto

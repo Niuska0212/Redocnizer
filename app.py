@@ -1,7 +1,7 @@
 # app.py
 
 import sys
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication  #pip install PySide6
 from ui.main_window import MainWindow
 
 if __name__ == "__main__":
