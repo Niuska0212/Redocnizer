@@ -525,6 +525,33 @@ class MainWindow(QMainWindow):
             }
             QPushButton:hover { opacity: 0.95; }
             QPushButton:disabled { background: #cfd8e3; color: #7a8aa3; }
+                           
+            QTabWidget::pane {
+                border: 1px solid #e3e7ee;
+                border-radius: 8px;
+                background: #e6e6e6;
+                margin-top: 6px;
+            }
+
+            QTabBar::tab {
+                background: #eef2f8;
+                color: #0b2545;
+                padding: 8px 14px;
+                border-top-left-radius: 6px;
+                border-top-right-radius: 6px;
+                margin-right: 4px;
+                border: 1px solid #e3e7ee;
+                font-weight: 600;
+            }
+
+            QTabBar::tab:selected {
+                background: #ffffff;
+                border-bottom: 1px solid #ffffff;
+            }
+
+            QTabBar::tab:hover {
+                background: #e6ecf5;
+            }               
 
             /* Group boxes */
             QGroupBox {
