@@ -85,6 +85,23 @@ class MainWindow(QMainWindow):
                 margin-top: 6px;
             }
 
+        
+            QMessageBox {
+                background: #e6e6e6;
+                margin-top: 6px;
+            }
+                           
+            QRadioButton {
+                color: black;
+                background: none;
+                border: none;
+            }
+
+            QDialog {
+                background: #e6e6e6;
+                margin-top: 6px;
+            }
+                           
             QTabBar::tab {
                 background: #eef2f8;
                 color: #0b2545;
