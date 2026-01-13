@@ -14,45 +14,58 @@ except ImportError:
     IMG_WIDTH = 256
     print("Advertencia: No se pudo importar IMG_HEIGHT/IMG_WIDTH. Usando valores por defecto (32x256).")
 
+def enhance_image_contrast(img: np.ndarray) -> np.ndarray:
+    """Mejora la nitidez y el contraste de imagenes oscuras usando CLAHE."""
+    #1. Aseguirar que esta en escalas de grises
+    if len(img.shape) == 3:
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    #2. Acplicar CLAHE
+    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+    img_enhanced = clahe.apply(img)
+    
+    # 3 Opcional un filtro de enfoque (sharpening para definir mejor los bordes de las letras)
+    kernel = np.array([[-1, -1, -1], [-1, 9, -1], [-1, -1, -1]])
+    img_sharpened = cv2.filter2D(img_enhanced, -1, kernel)
+    
+    return img_sharpened
+
 def prepare_roi_for_ocr(roi_image: np.ndarray) -> np.ndarray:
     """
-    Prepara una imagen recortada (ROI) para ser consumida por el modelo CRNN.
-
-    Pasos:
-    1. Redimensionar a IMG_WIDTH x IMG_HEIGHT.
-    2. Aplicar Filtro Gaussiano (para reducir ruido, como en tu entrenamiento).
-    3. Normalizar los píxeles (0 a 1).
-    4. Remodelar a (1, H, W, 1) para la entrada de Keras/TensorFlow.
-
-    Args:
-        roi_image: Imagen recortada (ROI) en escala de grises (numpy array).
-
-    Returns:
-        Un tensor 4D listo para la entrada del modelo Keras.
+    Prepara una imagen recortada (ROI) mejorando nitidez y contraste 
+    para el modelo CRNN.
     """
+    # 1. Asegurarse de que es escala de grises
     if roi_image.ndim == 3:
-        # Asegurarse de que es escala de grises
         roi_image = cv2.cvtColor(roi_image, cv2.COLOR_BGR2GRAY)
 
     if roi_image.size == 0:
-        # Manejo de error si el recorte fue nulo
         return np.zeros((1, IMG_HEIGHT, IMG_WIDTH, 1), dtype=np.float32)
 
-    # 1. Redimensionar al tamaño de entrada del CRNN (32x256)
+    # --- NUEVO: MEJORA DE CONTRASTE Y NITIDEZ ---
+    # CLAHE ayuda muchísimo cuando la imagen está oscura
+    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+    roi_enhanced = clahe.apply(roi_image)
+
+    # Opcional: Filtro de enfoque (Sharpening) para que las letras se vean más "duras"
+    kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
+    roi_enhanced = cv2.filter2D(roi_enhanced, -1, kernel)
+    # --------------------------------------------
+
+    # 1. Redimensionar al tamaño del CRNN (32x256)
+    # Usamos la imagen mejorada (roi_enhanced)
     img_resized = cv2.resize(
-        roi_image, 
+        roi_enhanced, 
         (IMG_WIDTH, IMG_HEIGHT), 
-        interpolation=cv2.INTER_AREA
+        interpolation=cv2.INTER_CUBIC # INTER_CUBIC es mejor para agrandar letras
     )
 
-    # 2. Aplicar Filtro Gaussiano (suavizado y reducción de ruido)
-    # Usamos el mismo kernel (3, 3) que especificaste en tu código original
+    # 2. Aplicar Filtro Gaussiano ligero
     img_blurred = cv2.GaussianBlur(img_resized, (3, 3), 0)
 
-    # 3. Normalizar los píxeles a un rango de 0.0 a 1.0
+    # 3. Normalizar (0 a 1)
     X_input = img_blurred.astype(np.float32) / 255.0
 
-    # 4. Remodelar a (Batch_size=1, Height, Width, Channels=1)
+    # 4. Remodelar para Keras (1, 32, 256, 1)
     X_input = X_input.reshape(1, IMG_HEIGHT, IMG_WIDTH, 1)
 
     return X_input
