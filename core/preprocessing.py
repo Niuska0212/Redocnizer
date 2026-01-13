@@ -29,47 +29,47 @@ def enhance_image_contrast(img: np.ndarray) -> np.ndarray:
     
     return img_sharpened
 
-def prepare_roi_for_ocr(roi_image: np.ndarray) -> np.ndarray:
+def increase_brightness_and_contrast(img: np.ndarray) -> np.ndarray:
     """
-    Prepara una imagen recortada (ROI) mejorando nitidez y contraste 
-    para el modelo CRNN.
+    Aclara imágenes muy oscuras y estira el contraste al máximo.
     """
-    # 1. Asegurarse de que es escala de grises
-    if roi_image.ndim == 3:
-        roi_image = cv2.cvtColor(roi_image, cv2.COLOR_BGR2GRAY)
+    if len(img.shape) == 3:
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
+    # 1. Normalización Min-Max: Estira los píxeles para que el más claro sea 255 y el más oscuro 0
+    img_norm = cv2.normalize(img, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX)
+
+    # 2. Corrección Gamma (gamma < 1 aclara las zonas oscuras)
+    # 0.5 a 0.8 es un buen rango para imágenes oscuras
+    gamma = 0.7 
+    invGamma = 1.0 / gamma
+    table = np.array([((i / 255.0) ** invGamma) * 255 for i in np.arange(0, 256)]).astype("uint8")
+    img_bright = cv2.LUT(img_norm, table)
+
+    # 3. CLAHE para rematar el contraste de las letras
+    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+    final_img = clahe.apply(img_bright)
+
+    return final_img
+
+def prepare_roi_for_ocr(roi_image: np.ndarray) -> np.ndarray:
     if roi_image.size == 0:
         return np.zeros((1, IMG_HEIGHT, IMG_WIDTH, 1), dtype=np.float32)
 
-    # --- NUEVO: MEJORA DE CONTRASTE Y NITIDEZ ---
-    # CLAHE ayuda muchísimo cuando la imagen está oscura
-    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
-    roi_enhanced = clahe.apply(roi_image)
+    # --- USAR LA NUEVA FUNCIÓN DE BRILLO ---
+    roi_improved = increase_brightness_and_contrast(roi_image)
 
-    # Opcional: Filtro de enfoque (Sharpening) para que las letras se vean más "duras"
-    kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
-    roi_enhanced = cv2.filter2D(roi_enhanced, -1, kernel)
-    # --------------------------------------------
+    # Redimensionar
+    img_resized = cv2.resize(roi_improved, (IMG_WIDTH, IMG_HEIGHT), interpolation=cv2.INTER_CUBIC)
 
-    # 1. Redimensionar al tamaño del CRNN (32x256)
-    # Usamos la imagen mejorada (roi_enhanced)
-    img_resized = cv2.resize(
-        roi_enhanced, 
-        (IMG_WIDTH, IMG_HEIGHT), 
-        interpolation=cv2.INTER_CUBIC # INTER_CUBIC es mejor para agrandar letras
-    )
-
-    # 2. Aplicar Filtro Gaussiano ligero
+    # Filtro Gaussiano suave para limpiar el ruido del brillo
     img_blurred = cv2.GaussianBlur(img_resized, (3, 3), 0)
 
-    # 3. Normalizar (0 a 1)
+    # Normalización para el modelo (0 a 1)
     X_input = img_blurred.astype(np.float32) / 255.0
-
-    # 4. Remodelar para Keras (1, 32, 256, 1)
     X_input = X_input.reshape(1, IMG_HEIGHT, IMG_WIDTH, 1)
 
     return X_input
-
 
 def invert_image_color(img_full: np.ndarray) -> np.ndarray:
     """Invierte los colores de una imagen en escala de grises."""

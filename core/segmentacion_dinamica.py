@@ -21,7 +21,31 @@ EMPTY_DATA_PLACEHOLDER = "NO_INFO_DOC"
 # =========================================================================
 
 def get_dynamic_rois(img_full: np.ndarray) -> dict:
+
     H, W = img_full.shape[:2]
+    
+    # ==========================================================
+    # NUEVO: ACLARAR IMAGEN SI ES MUY OSCURA (Antes de procesar)
+    # ==========================================================
+    # 1. Convertir temporalmente a gris para medir el brillo
+    img_gray_test = cv2.cvtColor(img_full, cv2.COLOR_BGR2GRAY) if len(img_full.shape) == 3 else img_full
+    
+    avg_brightness = np.mean(img_gray_test)
+    
+    if avg_brightness < 120:  # Si el promedio es menor a 120 (un gris medio-oscuro)
+        print(f"[INFO] Imagen oscura detectada (Brillo: {avg_brightness:.2f}). Aclarando para Tesseract...")
+        
+        # A) Normalización: Estira los colores para que el más claro sea blanco y el más oscuro negro
+        img_full = cv2.normalize(img_full, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX)
+        
+        # B) CLAHE: Resalta el contraste de las letras (opcional pero muy recomendado)
+        clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+        if len(img_full.shape) == 3:
+            # Si es color, aplicamos a la versión gris que usaremos para Tesseract
+            img_full = clahe.apply(cv2.cvtColor(img_full, cv2.COLOR_BGR2GRAY))
+        else:
+            img_full = clahe.apply(img_full)
+    # ==========================================================
 
     std_dev = np.std(img_full)
     THRESHOLD_STD = 43
@@ -80,17 +104,17 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
     CURP_X = IMSS_X + IMSS_WIDTH + 10 # 340 + 230 + 10 = 580
 
     name_keywords = ['PATERNO', 'MATERNO', 'NOMBRE(S)', 'APELLIDO PATERNO', 'APELLIDO MATERNO', 'APELLIDOS']
-    dep_keywords = ['DEPENDENCIA', 'DEPENDENCIAS']
+    dep_keywords = ['DEPENDENCIA', 'DEPENDENCIAS',]
     
     simple_fields_right = {
-        'NUM': ['NÚM', 'NUM', 'NUM:', 'NÚM:']
+        'NUM': ['NÚM', 'NUM', 'NUM:', 'NÚM:', 'NUM.', 'NÚM.']
     }
     
     # CÓDIGO y TELÉFONO están DEBAJO de sus etiquetas
     simple_fields_below = {
         'CODIGO': ['CÓDIGO', 'CODIGO'],
         'TELEFONO': ['TELÉFONO', 'TELEFONO', 'TEL'],
-        'CRN': ['CRN'],
+        'CRN': ['CRN', 'C.R.N.', 'C R N'],
         'HRS_TOTALES': ['HRS. TOTALES', 'HRS TOTALES', 'HORAS TOTALES', 'HRS. TOTALES CURSO'],
         'DESDE': ['DESDE', 'DESDE:'],
         'HASTA': ['HASTA', 'HASTA:'],
@@ -101,9 +125,9 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
     # ============ BÚSQUEDA DE DESDE/HASTA AL FINAL (DESPUÉS DE TODO) ============
     # Si DESDE/HASTA no se encuentran por etiqueta, buscar por patrón de fecha
     def search_date_pattern():
-        """Buscar fechas en formato DD/MM/YYYY, DD-MM-YYYY, etc."""
         import re
-        date_pattern = r'\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4}'
+        """Buscar fechas en formato DD/MM/YYYY, DD-MM-YYYY, etc."""
+        date_pattern = r'(\d{1,2})[\/\-\.\s](\d{1,2})[\/\-\.\s](\d{2,4})'
         date_matches = data_df[data_df['text'].str.contains(date_pattern, regex=True, na=False)]
         return date_matches
 
@@ -502,13 +526,12 @@ def validate_field_format(field_name: str, text: str) -> str:
         text = re.sub(r'[^0-9]', '', text)
         if len(text) < 2:
             return ""
-
         if len(text) > 6:
             text = text[:6]
 
     elif field_name == 'DESDE' or field_name == 'HASTA':
         text = re.sub(r'[^0-9\/\-\.]', '', text) 
-        text = text.replace('.', '/') 
+        text = text.replace('.', '/').replace('-', '/')
         # Asegurar formato de fecha DD/MM/YYYY o DD-MM-YYYY
         match = re.match(r'(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})', text)
         if match:
@@ -519,7 +542,7 @@ def validate_field_format(field_name: str, text: str) -> str:
                 year = '20' + year  # Asumir siglo 21 para años de 2 dígitos
             text = f"{day}/{month}/{year}"
         
-        return text if len(text) > 4 else ""
+        return text if len(text) > 5 else ""
 
             
     return text
