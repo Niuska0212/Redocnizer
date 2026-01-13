@@ -659,13 +659,8 @@ class MainWindow(QMainWindow):
                     # Extraer datos para guardar
                     record_data = {
                         'id': f"CT_{datetime.now().strftime('%Y%m%d%H%M%S')}_{i}",
-                        'nombre': result.get('nombre', ''),
-                        'contrato': result.get('contrato', ''),
-                        'fecha': result.get('fecha', ''),
                         'calendario': calendar,
-                        'archivo': os.path.basename(file_path),
                         'ruta_final': result.get('final_path', ''),
-                        'estado': 'COMPLETADO',
                     }
                     
                     # Agregar al manager de datos
@@ -682,13 +677,8 @@ class MainWindow(QMainWindow):
                     # Guardar registro de error
                     error_record = {
                         'id': f"ERR_{datetime.now().strftime('%Y%m%d%H%M%S')}_{i}",
-                        'nombre': '',
-                        'contrato': '',
-                        'fecha': '',
                         'calendario': calendar,
-                        'archivo': os.path.basename(file_path),
                         'ruta_final': '',
-                        'estado': f'ERROR: {str(e)}',
                     }
                     self.data_manager.add_record(error_record)
                 
