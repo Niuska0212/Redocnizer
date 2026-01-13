@@ -65,10 +65,8 @@ class DataManager(QObject):
             os.makedirs(os.path.dirname(self.data_file), exist_ok=True)
             # Columnas esenciales en el orden solicitado por el usuario
             preferred_columns = [
-                'id','Archivo', 'PATERNO', 'MATERNO', 'NOMBRE_S', 'NUM', 'CODIGO', 'RFC', 'IMSS', 'CURP',
-                'TELEFONO', 'CRN', 'DESDE', 'HASTA', 'DEPENDENCIA_1', 'DEPENDENCIA_2', 'DEPENDENCIA_3',
-                'calendario', 'archivo_final', 'ruta_final', 'estado',
-                'Fecha_Procesamiento'
+                'PATERNO', 'MATERNO', 'NOMBRE_S', 'NUM', 'CODIGO', 'RFC', 'IMSS', 'CURP',
+                'TELEFONO', 'CRN', 'DESDE', 'HASTA', 'DEPENDENCIA_1', 'DEPENDENCIA_2', 'DEPENDENCIA_3'
             ]
 
             # Añadir columnas faltantes con valores vacíos y mapear columnas
@@ -125,10 +123,8 @@ class DataManager(QObject):
 
                 # Asegurar columnas mínimas (mismo esquema que en save_data)
                 preferred_columns = [
-                    'id','Archivo', 'PATERNO', 'MATERNO', 'NOMBRE_S', 'NUM', 'CODIGO', 'RFC', 'IMSS', 'CURP',
-                    'TELEFONO', 'CRN', 'DESDE', 'HASTA', 'DEPENDENCIA_1', 'DEPENDENCIA_2', 'DEPENDENCIA_3',
-                    'calendario', 'archivo_final', 'ruta_final', 'estado',
-                    'Fecha_Procesamiento'
+                    'PATERNO', 'MATERNO', 'NOMBRE_S', 'NUM', 'CODIGO', 'RFC', 'IMSS', 'CURP',
+                    'TELEFONO', 'CRN', 'DESDE', 'HASTA', 'DEPENDENCIA_1', 'DEPENDENCIA_2', 'DEPENDENCIA_3'
                 ]
 
                 for col in preferred_columns:

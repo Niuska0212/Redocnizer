@@ -656,31 +656,14 @@ class MainWindow(QMainWindow):
                         calendar=calendar
                     )
                     
-                    # Extraer datos para guardar
-                    record_data = {
-                        'id': f"CT_{datetime.now().strftime('%Y%m%d%H%M%S')}_{i}",
-                        'calendario': calendar,
-                        'ruta_final': result.get('final_path', ''),
-                    }
-                    
-                    # Agregar al manager de datos
-                    self.data_manager.add_record(record_data)
-                    
-                    # Mostrar en lista de resultados
-                    item_text = f"✅ {os.path.basename(file_path)} -> {record_data['ruta_final']}"
+                    # Mostrar en lista de resultados (no guardamos más registros automáticamente)
+                    final_path = result.get('final_path', '')
+                    item_text = f"✅ {os.path.basename(file_path)} -> {final_path}"
                     successful += 1
                     
                 except Exception as e:
                     item_text = f"❌ {os.path.basename(file_path)} -> Error: {str(e)}"
                     failed += 1
-                    
-                    # Guardar registro de error
-                    error_record = {
-                        'id': f"ERR_{datetime.now().strftime('%Y%m%d%H%M%S')}_{i}",
-                        'calendario': calendar,
-                        'ruta_final': '',
-                    }
-                    self.data_manager.add_record(error_record)
                 
                 self.results_list.addItem(QListWidgetItem(item_text))
                 self.progress_bar.setValue(i + 1)
