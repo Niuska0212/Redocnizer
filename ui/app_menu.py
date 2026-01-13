@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import QFileDialog, QMessageBox
+from PySide6.QtWidgets import QFileDialog, QMessageBox, QDialog
 from PySide6.QtGui import QAction
 import os
 from ui.calendar_config_dialog import CalendarConfigDialog
@@ -96,7 +96,7 @@ def create_app_menu(window):
 
     def on_config_calendar():
         dialog = CalendarConfigDialog(window)
-        if dialog.exec() == dialog.Accepted:
+        if dialog.exec() == QDialog.Accepted:
             calendar = dialog.get_selected_calendar()
             if calendar:
                 # Actualizar combo de calendarios en la ventana

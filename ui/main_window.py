@@ -18,459 +18,11 @@ from controllers.contract_controller import ContractController
 from services.pdf_service import pdf_to_images
 from ui.app_menu import create_app_menu
 from ui.calendar_db import CalendarDB
+from ui.data_manager import DataManager
+from ui.data_tab import DataTab
 
 
-class DataManager(QObject):
-    """Manejador de datos para el sistema"""
-    data_updated = Signal()
-    
-    def __init__(self):
-        super().__init__()
-        self.data = pd.DataFrame()
-        self.data_file = os.path.join(os.getcwd(), "contratos_data.xlsx")
-        self._load_data()
-    
-    def _load_data(self):
-        """Carga datos existentes del archivo Excel"""
-        if os.path.exists(self.data_file):
-            try:
-                self.data = pd.read_excel(self.data_file)
-                self.data['Fecha_Procesamiento'] = pd.to_datetime(self.data['Fecha_Procesamiento'], errors='coerce')
-            except Exception as e:
-                print(f"Error cargando datos: {e}")
-                self.data = pd.DataFrame()
-        else:
-            self.data = pd.DataFrame()
-    
-    def add_record(self, record_data):
-        """Agrega un nuevo registro"""
-        record_data['Fecha_Procesamiento'] = datetime.now()
-        
-        if self.data.empty:
-            self.data = pd.DataFrame([record_data])
-        else:
-            new_df = pd.DataFrame([record_data])
-            self.data = pd.concat([self.data, new_df], ignore_index=True)
-        
-        self.save_data()
-        self.data_updated.emit()
-    
-    def update_record(self, row_index, column_name, value):
-        """Actualiza un registro específico"""
-        if not self.data.empty and row_index < len(self.data):
-            self.data.at[row_index, column_name] = value
-            self.save_data()
-            self.data_updated.emit()
-    
-    def delete_record(self, row_index):
-        """Elimina un registro"""
-        if not self.data.empty and row_index < len(self.data):
-            self.data = self.data.drop(row_index).reset_index(drop=True)
-            self.save_data()
-            self.data_updated.emit()
-    
-    def save_data(self):
-        """Guarda los datos al archivo Excel con solo columnas esenciales"""
-        try:
-            # Crear directorio si no existe
-            os.makedirs(os.path.dirname(self.data_file), exist_ok=True)
-            # Columnas esenciales: id + OCR fields + ruta_final
-            preferred_columns = [
-                'id', 'ruta_final', 
-                'PATERNO', 'MATERNO', 'NOMBRE_S', 'NUM', 'CODIGO', 'RFC', 'IMSS', 'CURP',
-                'TELEFONO', 'CRN', 'DESDE', 'HASTA', 'DEPENDENCIA_1', 'DEPENDENCIA_2', 'DEPENDENCIA_3'
-            ]
 
-            # Añadir columnas faltantes con valores vacíos
-            for col in preferred_columns:
-                if col not in self.data.columns:
-                    self.data[col] = ""
-
-            # Reordenar columnas: primero las preferidas, luego las restantes
-            ordered = [c for c in preferred_columns if c in self.data.columns]
-            remaining = [c for c in self.data.columns if c not in ordered]
-            final_columns = ordered + remaining
-
-            # Guardar con formato Excel usando el orden final de columnas
-            with pd.ExcelWriter(self.data_file, engine='openpyxl') as writer:
-                self.data[final_columns].to_excel(writer, index=False, sheet_name='Contratos')
-
-            print(f"Datos guardados en: {self.data_file}")
-        except Exception as e:
-            print(f"Error guardando datos: {e}")
-    
-    def get_dataframe(self):
-        """Retorna el DataFrame actual"""
-        return self.data.copy()
-
-    def load_from_csv(self, csv_path: str):
-        """Carga datos desde un CSV (por ejemplo el CSV de un calendario)."""
-        try:
-            if os.path.exists(csv_path):
-                df = pd.read_csv(csv_path, encoding='utf-8')
-                # Normalizar columna Fecha_Procesamiento si existe
-                if 'Fecha_Procesamiento' in df.columns:
-                    df['Fecha_Procesamiento'] = pd.to_datetime(df['Fecha_Procesamiento'], errors='coerce')
-
-                # Asegurar columnas mínimas (mismo esquema que en save_data)
-                preferred_columns = [
-                    'Archivo', 'PATERNO', 'MATERNO', 'NOMBRE_S', 'NUM', 'CODIGO', 'RFC', 'IMSS', 'CURP',
-                    'TELEFONO', 'CRN', 'DESDE', 'HASTA', 'DEPENDENCIA_1', 'DEPENDENCIA_2', 'DEPENDENCIA_3',
-                    'id', 'nombre', 'contrato', 'fecha', 'calendario', 'archivo', 'ruta_final', 'estado',
-                    'Fecha_Procesamiento'
-                ]
-                for col in preferred_columns:
-                    if col not in df.columns:
-                        df[col] = ""
-
-                # Reordenar columnas respetando las existentes
-                ordered = [c for c in preferred_columns if c in df.columns]
-                remaining = [c for c in df.columns if c not in ordered]
-                df = df[ordered + remaining]
-
-                self.data = df
-                self.data_updated.emit()
-                return True
-            return False
-        except Exception as e:
-            print(f"Error cargando CSV: {e}")
-            return False
-
-    def load_from_calendar_dir(self, calendar_dir: str):
-        """Carga el CSV 'contratos.csv' desde un directorio de calendario."""
-        csv_path = os.path.join(calendar_dir, 'contratos.csv')
-        return self.load_from_csv(csv_path)
-    
-    def export_to_csv(self, filepath):
-        """Exporta a CSV"""
-        try:
-            self.data.to_csv(filepath, index=False, encoding='utf-8')
-            return True
-        except Exception as e:
-            print(f"Error exportando CSV: {e}")
-            return False
-    
-    def export_to_excel(self, filepath):
-        """Exporta a Excel"""
-        try:
-            self.data.to_excel(filepath, index=False)
-            return True
-        except Exception as e:
-            print(f"Error exportando Excel: {e}")
-            return False
-
-
-class DataTab(QWidget):
-    """Pestaña para visualizar y editar datos"""
-    
-    def __init__(self, data_manager):
-        super().__init__()
-        self.data_manager = data_manager
-        self.current_edit_row = -1
-        self.setup_ui()
-        
-        # Conectar señal de actualización
-        self.data_manager.data_updated.connect(self.load_data)
-        
-        # Cargar datos iniciales
-        QTimer.singleShot(100, self.load_data)
-    
-    def setup_ui(self):
-        """Configura la interfaz de la pestaña de datos"""
-        layout = QVBoxLayout()
-        
-        # -------- Controles superiores --------
-        controls_layout = QHBoxLayout()
-        
-        # Botón para recargar
-        self.btn_reload = QPushButton("🔄 Recargar")
-        self.btn_reload.clicked.connect(self.load_data)
-        self.btn_reload.setMaximumWidth(100)
-        
-        # Botón para exportar
-        self.btn_export = QPushButton("📥 Exportar Datos")
-        self.btn_export.clicked.connect(self.export_data)
-        self.btn_export.setMaximumWidth(150)
-        
-        # Etiqueta de información
-        self.info_label = QLabel("0 registros")
-        self.info_label.setStyleSheet("color: #666; font-style: italic;")
-        
-        controls_layout.addWidget(self.btn_reload)
-        controls_layout.addWidget(self.btn_export)
-        controls_layout.addStretch()
-        controls_layout.addWidget(self.info_label)
-        
-        # -------- Tabla de datos --------
-        self.table = QTableWidget()
-        self.table.setAlternatingRowColors(True)
-        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.table.setSelectionMode(QAbstractItemView.SingleSelection)
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.table.verticalHeader().setVisible(False)
-        self.table.setStyleSheet("""
-            QTableWidget {
-                background-color: white;
-                gridline-color: #e0e0e0;
-            }
-            QTableWidget::item {
-                padding: 5px;
-                border-bottom: 1px solid #f0f0f0;
-            }
-            QTableWidget::item:selected {
-                background-color: #e3f2fd;
-            }
-            QHeaderView::section {
-                background-color: #f5f5f5;
-                padding: 8px;
-                border: none;
-                border-right: 1px solid #e0e0e0;
-                border-bottom: 2px solid #1976d2;
-                font-weight: bold;
-            }
-        """)
-        
-        # Conectar doble clic para editar
-        self.table.cellDoubleClicked.connect(self.start_edit_cell)
-        
-        # -------- Panel de edición --------
-        edit_group = QGroupBox("Editar Registro")
-        edit_group.setMaximumHeight(200)
-        edit_layout = QGridLayout()
-        
-        self.edit_fields = {}
-        fields_config = [
-            ("ID", "id", QLineEdit),
-            ("Nombre", "nombre", QLineEdit),
-            ("Contrato", "contrato", QLineEdit),
-            ("Fecha", "fecha", QLineEdit),
-            ("Calendario", "calendario", QLineEdit),
-            ("Archivo", "archivo", QLineEdit),
-        ]
-        
-        for i, (label, field_name, field_type) in enumerate(fields_config):
-            row = i // 3
-            col = (i % 3) * 2
-            
-            # Etiqueta
-            lbl = QLabel(label + ":")
-            lbl.setMinimumWidth(80)
-            
-            # Campo de entrada
-            if field_type == QLineEdit:
-                field = QLineEdit()
-                field.setReadOnly(True)
-            else:
-                field = field_type()
-            
-            field.setMinimumWidth(150)
-            
-            edit_layout.addWidget(lbl, row, col)
-            edit_layout.addWidget(field, row, col + 1)
-            
-            self.edit_fields[field_name] = field
-        
-        # Botones de edición
-        btn_layout = QHBoxLayout()
-        
-        self.btn_save_edit = QPushButton("💾 Guardar Cambios")
-        self.btn_save_edit.clicked.connect(self.save_edits)
-        self.btn_save_edit.setEnabled(False)
-        
-        self.btn_cancel_edit = QPushButton("❌ Cancelar")
-        self.btn_cancel_edit.clicked.connect(self.cancel_edit)
-        self.btn_cancel_edit.setEnabled(False)
-        
-        self.btn_delete = QPushButton("🗑️ Eliminar Registro")
-        self.btn_delete.clicked.connect(self.delete_record)
-        self.btn_delete.setEnabled(False)
-        
-        btn_layout.addWidget(self.btn_save_edit)
-        btn_layout.addWidget(self.btn_cancel_edit)
-        btn_layout.addWidget(self.btn_delete)
-        btn_layout.addStretch()
-        
-        edit_layout.addLayout(btn_layout, len(fields_config)//3 + 1, 0, 1, 6)
-        edit_group.setLayout(edit_layout)
-        
-        # -------- Ensamblar layout --------
-        layout.addLayout(controls_layout)
-        layout.addWidget(self.table)
-        layout.addWidget(edit_group)
-        
-        self.setLayout(layout)
-    
-    def load_data(self):
-        """Carga los datos en la tabla"""
-        df = self.data_manager.get_dataframe()
-        
-        if df.empty:
-            self.table.setRowCount(0)
-            self.table.setColumnCount(0)
-            self.info_label.setText("0 registros - No hay datos")
-            return
-        
-        # Configurar tabla
-        self.table.setRowCount(len(df))
-        self.table.setColumnCount(len(df.columns))
-        self.table.setHorizontalHeaderLabels(df.columns)
-        
-        # Llenar tabla
-        for i, row in df.iterrows():
-            for j, value in enumerate(row):
-                item = QTableWidgetItem(str(value) if not pd.isna(value) else "")
-                
-                # Colores alternados
-                if i % 2 == 0:
-                    item.setBackground(QBrush(QColor(250, 250, 250)))
-                
-                # Formato especial para fechas
-                if 'fecha' in df.columns[j].lower() and not pd.isna(value):
-                    try:
-                        item.setText(str(value)[:10])
-                    except:
-                        pass
-                
-                self.table.setItem(i, j, item)
-        
-        # Ajustar tamaño de columnas
-        self.table.resizeColumnsToContents()
-        
-        # Actualizar info
-        self.info_label.setText(f"{len(df)} registros - {len(df.columns)} columnas")
-        
-        # Deshabilitar edición
-        self.cancel_edit()
-    
-    def start_edit_cell(self, row, column):
-        """Inicia la edición de una celda"""
-        self.current_edit_row = row
-        self.table.editItem(self.table.item(row, column))
-    
-    def save_edits(self):
-        """Guarda los cambios realizados en el formulario de edición"""
-        if self.current_edit_row < 0:
-            return
-        
-        df = self.data_manager.get_dataframe()
-        if self.current_edit_row >= len(df):
-            return
-        
-        # Obtener valores de los campos
-        updates = {}
-        for field_name, field_widget in self.edit_fields.items():
-            if field_name in df.columns:
-                updates[field_name] = field_widget.text()
-        
-        # Actualizar cada campo
-        for field_name, value in updates.items():
-            self.data_manager.update_record(self.current_edit_row, field_name, value)
-        
-        # Recargar datos
-        self.load_data()
-        QMessageBox.information(self, "Guardado", "Cambios guardados correctamente")
-    
-    def cancel_edit(self):
-        """Cancela la edición actual"""
-        self.current_edit_row = -1
-        
-        # Limpiar campos de edición
-        for field_widget in self.edit_fields.values():
-            field_widget.clear()
-            if isinstance(field_widget, QLineEdit):
-                field_widget.setReadOnly(True)
-        
-        # Deshabilitar botones
-        self.btn_save_edit.setEnabled(False)
-        self.btn_cancel_edit.setEnabled(False)
-        self.btn_delete.setEnabled(False)
-        
-        # Deseleccionar fila
-        self.table.clearSelection()
-    
-    def delete_record(self):
-        """Elimina el registro seleccionado"""
-        if self.current_edit_row < 0:
-            return
-        
-        reply = QMessageBox.question(
-            self, 
-            "Confirmar eliminación",
-            "¿Está seguro de eliminar este registro?",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
-        )
-        
-        if reply == QMessageBox.Yes:
-            self.data_manager.delete_record(self.current_edit_row)
-            self.cancel_edit()
-    
-    def export_data(self):
-        """Exporta los datos a archivo"""
-        if self.data_manager.data.empty:
-            QMessageBox.warning(self, "Sin datos", "No hay datos para exportar")
-            return
-        
-        file_filter = "Excel Files (*.xlsx);;CSV Files (*.csv);;All Files (*)"
-        file_path, selected_filter = QFileDialog.getSaveFileName(
-            self,
-            "Exportar Datos",
-            f"contratos_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
-            file_filter
-        )
-        
-        if not file_path:
-            return
-        
-        success = False
-        if selected_filter.startswith("Excel"):
-            success = self.data_manager.export_to_excel(file_path)
-        elif selected_filter.startswith("CSV"):
-            success = self.data_manager.export_to_csv(file_path)
-        
-        if success:
-            QMessageBox.information(
-                self, 
-                "Exportación exitosa",
-                f"Datos exportados a:\n{file_path}"
-            )
-        else:
-            QMessageBox.critical(
-                self, 
-                "Error", 
-                "No se pudo exportar los datos"
-            )
-    
-    def table_selection_changed(self):
-        """Cuando se selecciona una fila en la tabla"""
-        selected = self.table.selectedItems()
-        if not selected:
-            self.cancel_edit()
-            return
-        
-        row = selected[0].row()
-        df = self.data_manager.get_dataframe()
-        
-        if row < len(df):
-            self.current_edit_row = row
-            row_data = df.iloc[row]
-            
-            # Llenar campos de edición
-            for field_name, field_widget in self.edit_fields.items():
-                if field_name in df.columns:
-                    value = row_data[field_name]
-                    if pd.isna(value):
-                        field_widget.setText("")
-                    else:
-                        field_widget.setText(str(value))
-                    
-                    if isinstance(field_widget, QLineEdit):
-                        field_widget.setReadOnly(False)
-            
-            # Habilitar botones
-            self.btn_save_edit.setEnabled(True)
-            self.btn_cancel_edit.setEnabled(True)
-            self.btn_delete.setEnabled(True)
 
 
 class MainWindow(QMainWindow):
@@ -645,6 +197,12 @@ class MainWindow(QMainWindow):
         # Calendario
         calendar_layout = QHBoxLayout()
         self.calendar_combo = QComboBox()
+        # Forzar estilo del popup del combo: fondo blanco y texto oscuro
+        # Esto asegura legibilidad independientemente del tema del sistema
+        self.calendar_combo.setStyleSheet(
+            "QComboBox QAbstractItemView { background-color: #ffffff; color: #0b2545; "
+            "selection-background-color: #e3f2fd; selection-color: #0b2545; }"
+        )
         # Cargar calendarios desde la BD
         self.cal_db = CalendarDB()
         cals = self.cal_db.get_all_calendars()
@@ -729,9 +287,16 @@ class MainWindow(QMainWindow):
         self.btn_clear_files.clicked.connect(self.clear_files)
         self.btn_clear_files.setMinimumHeight(40)
         self.btn_clear_files.setEnabled(False)
+
+        # Botón para eliminar el archivo seleccionado individualmente
+        self.btn_remove_file = QPushButton("➖ Eliminar seleccionado")
+        self.btn_remove_file.clicked.connect(self.remove_selected_file)
+        self.btn_remove_file.setMinimumHeight(40)
+        self.btn_remove_file.setEnabled(False)
         
         btn_layout.addWidget(self.btn_select_file)
         btn_layout.addWidget(self.btn_clear_files)
+        btn_layout.addWidget(self.btn_remove_file)
         
         # Lista de archivos
         self.files_list = QListWidget()
@@ -751,6 +316,8 @@ class MainWindow(QMainWindow):
             }
         """)
         self.files_list.itemClicked.connect(self.on_file_selected)
+        # Conectar cambio de selección para habilitar/deshabilitar botón eliminar
+        self.files_list.itemSelectionChanged.connect(self._on_files_list_selection_changed)
         
         controls_panel.addWidget(self.file_info_label)
         controls_panel.addLayout(btn_layout)
@@ -931,6 +498,45 @@ class MainWindow(QMainWindow):
         """Cuando se selecciona un archivo en la lista"""
         file_path = item.data(Qt.UserRole)
         self.show_preview(file_path)
+
+    def _on_files_list_selection_changed(self):
+        """Habilita o deshabilita el botón de eliminar según la selección"""
+        selected = self.files_list.selectedItems()
+        self.btn_remove_file.setEnabled(bool(selected))
+        # Mantener el botón limpiar habilitado si hay archivos
+        self.btn_clear_files.setEnabled(len(self.selected_files) > 0)
+        # Actualizar estado del botón de procesar
+        self._update_process_state()
+
+    def remove_selected_file(self):
+        """Elimina el archivo actualmente seleccionado de la lista de archivos"""
+        item = self.files_list.currentItem()
+        if not item:
+            return
+
+        file_path = item.data(Qt.UserRole)
+
+        try:
+            if file_path in self.selected_files:
+                self.selected_files.remove(file_path)
+        except Exception:
+            pass
+
+        # Actualizar la lista y la vista previa
+        self.update_files_list()
+        if self.selected_files:
+            # Mostrar vista previa del primero restante
+            self.show_preview(self.selected_files[0])
+        else:
+            # Restaurar texto por defecto
+            try:
+                self.preview_label.setPixmap(QPixmap())
+            except Exception:
+                pass
+            self.preview_label.setText("Vista previa\ndel documento")
+
+        # Actualizar estado de procesamiento
+        self._update_process_state()
 
     def show_preview(self, file_path):
         """Muestra la vista previa del archivo"""
