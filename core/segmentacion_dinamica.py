@@ -507,6 +507,8 @@ def validate_field_format(field_name: str, text: str) -> str:
             text = text[:6]
 
     elif field_name == 'DESDE' or field_name == 'HASTA':
+        text = re.sub(r'[^0-9\/\-\.]', '', text) 
+        text = text.replace('.', '/') 
         # Asegurar formato de fecha DD/MM/YYYY o DD-MM-YYYY
         match = re.match(r'(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})', text)
         if match:
@@ -516,8 +518,8 @@ def validate_field_format(field_name: str, text: str) -> str:
             if len(year) == 2:
                 year = '20' + year  # Asumir siglo 21 para años de 2 dígitos
             text = f"{day}/{month}/{year}"
-        else:
-            text = ""
+        
+        return text if len(text) > 4 else ""
 
             
     return text
