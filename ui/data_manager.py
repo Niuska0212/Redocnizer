@@ -1,3 +1,7 @@
+# !/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# ui/data_manager.py
+"""Módulo para manejar operaciones de datos (carga, guardado, actualización)."""
 import os
 import pandas as pd
 from datetime import datetime

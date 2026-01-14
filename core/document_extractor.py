@@ -10,7 +10,7 @@ import pytesseract
 from tensorflow.keras import backend as K 
 from difflib import SequenceMatcher # Necesario para calcular la similitud (Levenshtein)
 from PIL import Image, ImageDraw, ImageFont
-from .segmentacion_dinamica import get_dynamic_rois, clean_data_by_field, clean_border_chars, validate_field_format, clean_name_specific
+from .segmentacion_dinamica import get_dynamic_rois, clean_data_by_field, clean_border_chars, validate_field_format, clean_name_specific, procesar_bloque_dependencias
 from .CRNN_inference import load_inference_model
 from .preprocessing import prepare_roi_for_ocr, invert_image_color, rotate_image
 
@@ -289,20 +289,35 @@ def extract_data_from_image(image_path, modelo_inferencia, index_to_char, output
 
         # --- POSTPROCESAMIENTO Y VALIDACIÓN ---
         extracted_data = {'Archivo': os.path.basename(image_path)}
+        
+        # 1. Preparar bloque de dependencias para reordenamiento semántico
+        solo_deps_raw = {
+            "DEPENDENCIA_1": all_extracted_data.get("DEPENDENCIA_1", ""),
+            "DEPENDENCIA_2": all_extracted_data.get("DEPENDENCIA_2", ""),
+            "DEPENDENCIA_3": all_extracted_data.get("DEPENDENCIA_3", "")
+        }
+        
+        deps_corregidas = procesar_bloque_dependencias(solo_deps_raw)
+        
+        # 2. Procesar todos los campos
         for key, value in all_extracted_data.items():
-            if key == 'NOMBRE_COMPLETO_RAW':
-                value = clean_name_specific(value)
-            
-            cleaned_value = clean_data_by_field(key, clean_border_chars(value))
-            final_validate_value = validate_field_format(key, cleaned_value)
+            if key.startswith('DEPENDENCIA'):
+                # Usamos el valor ya reordenado y limpio
+                final_validate_value = deps_corregidas.get(key, "")
+            else:
+                # Procesamiento normal para los demás campos
+                if key == 'NOMBRE_COMPLETO_RAW':
+                    value = clean_name_specific(value)
+                
+                cleaned_value = clean_data_by_field(key, clean_border_chars(value))
+                final_validate_value = validate_field_format(key, cleaned_value)
 
+            # Asignación a la estructura final
             if key == 'NOMBRE_COMPLETO_RAW':
                 name_parts = split_full_name(final_validate_value)
                 for name_key in name_parts:
                     name_parts[name_key] = clean_name_specific(name_parts[name_key])
                 extracted_data.update(name_parts)
-            elif key.startswith('DEPENDENCIA'):
-                extracted_data[key] = final_validate_value
             else:
                 extracted_data[key] = final_validate_value
 

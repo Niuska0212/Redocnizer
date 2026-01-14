@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout, QLineEdit, QProgressBar, QListWidget, 
     QListWidgetItem, QApplication, QTabWidget, QTableWidget,
     QTableWidgetItem, QHeaderView, QAbstractItemView, QStyleFactory,
-    QTextEdit, QGridLayout, QGroupBox, QSpinBox, QCheckBox, QSplitter
+    QTextEdit, QGroupBox, QSpinBox, QCheckBox, QSplitter
 )
 from PySide6.QtCore import Qt, QTimer, Signal, QObject
 from PySide6.QtGui import QPixmap, QFont, QColor, QBrush
@@ -77,7 +77,7 @@ class MainWindow(QMainWindow):
             }
             QPushButton:hover { opacity: 0.95; }
             QPushButton:disabled { background: #cfd8e3; color: #7a8aa3; }
-                           
+            
             QTabWidget::pane {
                 border: 1px solid #e3e7ee;
                 border-radius: 8px;
@@ -90,7 +90,7 @@ class MainWindow(QMainWindow):
                 background: #e6e6e6;
                 margin-top: 6px;
             }
-                           
+            
             QRadioButton {
                 color: black;
                 background: none;
@@ -101,7 +101,7 @@ class MainWindow(QMainWindow):
                 background: #e6e6e6;
                 margin-top: 6px;
             }
-                           
+            
             QTabBar::tab {
                 background: #eef2f8;
                 color: #0b2545;
@@ -180,10 +180,6 @@ class MainWindow(QMainWindow):
         # Pestaña 2: Datos
         self.data_tab = DataTab(self.data_manager)
         self.tabs.addTab(self.data_tab, "📊 Ver/Editar Datos")
-        
-        # Pestaña 3: Estadísticas
-        self.stats_tab = self._build_stats_tab()
-        self.tabs.addTab(self.stats_tab, "📈 Estadísticas")
         
         # Conectar cambio de pestaña para actualizar datos
         self.tabs.currentChanged.connect(self.on_tab_changed)
@@ -376,69 +372,10 @@ class MainWindow(QMainWindow):
         tab.setLayout(main_layout)
         return tab
     
-    def _build_stats_tab(self):
-        """Construye la pestaña de estadísticas"""
-        tab = QWidget()
-        layout = QVBoxLayout()
-        
-        # Título
-        title_label = QLabel("📊 Estadísticas del Sistema")
-        title_label.setStyleSheet("font-size: 18px; font-weight: bold; color: #1976d2;")
-        title_label.setAlignment(Qt.AlignCenter)
-        
-        # Widget de estadísticas
-        stats_widget = QWidget()
-        stats_layout = QGridLayout()
-        
-        # Definir estadísticas
-        stats_info = [
-            ("Total Contratos", "0", "#4caf50"),
-            ("Procesados Hoy", "0", "#2196f3"),
-            ("Con Errores", "0", "#f44336"),
-            ("Por Calendario", "Cargando...", "#ff9800"),
-            ("Último Proceso", "Nunca", "#9c27b0"),
-            ("Tasa de Éxito", "0%", "#00bcd4"),
-        ]
-        
-        for i, (title, value, color) in enumerate(stats_info):
-            group = QGroupBox(title)
-            group_layout = QVBoxLayout()
-            
-            value_label = QLabel(value)
-            value_label.setStyleSheet(f"""
-                font-size: 24px;
-                font-weight: bold;
-                color: {color};
-                qproperty-alignment: AlignCenter;
-            """)
-            
-            group_layout.addWidget(value_label)
-            group.setLayout(group_layout)
-            
-            row = i // 3
-            col = i % 3
-            stats_layout.addWidget(group, row, col)
-        
-        stats_widget.setLayout(stats_layout)
-        
-        # Botón para actualizar estadísticas
-        btn_refresh_stats = QPushButton("🔄 Actualizar Estadísticas")
-        btn_refresh_stats.clicked.connect(self.update_stats)
-        
-        layout.addWidget(title_label)
-        layout.addWidget(stats_widget)
-        layout.addWidget(btn_refresh_stats, alignment=Qt.AlignCenter)
-        layout.addStretch()
-        
-        tab.setLayout(layout)
-        return tab
-    
     def on_tab_changed(self, index):
         """Cuando cambia la pestaña activa"""
         if index == 1:  # Pestaña de datos
             self.data_tab.load_data()
-        elif index == 2:  # Pestaña de estadísticas
-            self.update_stats()
 
     # =========================================================
     # ACCIONES
@@ -720,40 +657,7 @@ class MainWindow(QMainWindow):
             self.progress_bar.setVisible(False)
 
     def update_stats(self):
-        """Actualiza las estadísticas en la pestaña correspondiente"""
-        df = self.data_manager.get_dataframe()
-        
-        if df.empty:
-            return
-        
-        # Calcular estadísticas
-        total = len(df)
-        today = datetime.now().date()
-        today_count = len(df[pd.to_datetime(df['Fecha_Procesamiento']).dt.date == today])
-        errors = len(df[df['estado'].astype(str).str.contains('ERROR', case=False)])
-        
-        # Tasa de éxito
-        success_rate = ((total - errors) / total * 100) if total > 0 else 0
-        
-        # Último procesamiento
-        if 'Fecha_Procesamiento' in df.columns:
-            last_date = pd.to_datetime(df['Fecha_Procesamiento']).max()
-            last_str = last_date.strftime('%Y-%m-%d %H:%M')
-        else:
-            last_str = "N/A"
-        
-        # Por calendario
-        if 'calendario' in df.columns:
-            calendar_stats = df['calendario'].value_counts().to_dict()
-            calendar_str = ", ".join([f"{k}: {v}" for k, v in calendar_stats.items()][:3])
-            if len(calendar_stats) > 3:
-                calendar_str += "..."
-        else:
-            calendar_str = "N/A"
-        
-        # Actualizar widgets (necesitarías agregar referencias a los labels)
-        # Para simplificar, aquí solo se muestra cómo calcular las estadísticas
-        print(f"Estadísticas: Total={total}, Hoy={today_count}, Errores={errors}")
+        return
     
     def _on_calendar_changed(self):
         """Cuando se cambia el calendario seleccionado."""

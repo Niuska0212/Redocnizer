@@ -183,12 +183,30 @@ class DataTab(QWidget):
         # Llenar tabla
         for i, row in df.iterrows():
             for j, value in enumerate(row):
-                text = str(value) if not pd.isna(value) else ""
-                # Formato especial para fechas
+                # Valor nulo
+                if pd.isna(value):
+                    text = ""
+                else:
+                    # Intentar formatear números que vienen como '1.0' a '1'
+                    try:
+                        # Si es ya un int, usarlo tal cual
+                        if isinstance(value, int):
+                            text = str(value)
+                        else:
+                            f = float(value)
+                            if f.is_integer():
+                                text = str(int(f))
+                            else:
+                                text = str(f)
+                    except Exception:
+                        # No es convertible a float: dejar representación original
+                        text = str(value)
+
+                # Formato especial para fechas (mantener prioridad sobre formateo numérico)
                 if 'fecha' in df.columns[j].lower() and not pd.isna(value):
                     try:
                         text = str(value)[:10]
-                    except:
+                    except Exception:
                         pass
 
                 item = QTableWidgetItem(text)

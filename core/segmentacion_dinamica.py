@@ -16,6 +16,30 @@ from PIL import Image, ImageDraw, ImageFont
 PHONE_EMPTY_TOKENS = ["-", "—", "0", "00", "000", "N/A", "NA"] 
 EMPTY_DATA_PLACEHOLDER = "NO_INFO_DOC"
 
+
+"constantes de DIccionario por niveles de departamentos"
+CATALOGO_DEPENDENCIAS = {
+    "DEPENDENCIA_1": [
+        "C. U. DE CS. EXACTAS E INGENIERIAS"
+    ],
+    "DEPENDENCIA_2": [
+        "DIV. DE CS. BÁSICAS",
+        "DIV. DE INGENIERÍAS",
+        "DIV. DE TECNOLOGIAS PARA LA INTEGRACION CIBER-HUMANA"
+    ],
+    "DEPENDENCIA_3": [
+        "DEPTO. DE INGENIERÍA CIVIL Y TOPOGRAFÍA", "DEPTO. DE FÍSICA",
+        "DEPTO. DE CIENCIAS COMPUTACIONALES", "DEPTO. DE INNOVACIÓN BASADA EN LA INFORMACIÓN Y EL CONOCIMIENTO",
+        "DEPTO. DE BIOINGENIERÍA TRASLACIONAL", "DEPTO. DE MATEMÁTICAS",
+        "DEPTO. DE QUÍMICA", "DEPTO. DE FARMACOBIOLOGÍA",
+        "DEPTO. DE ELECTRÓNICA", "DEPTO. DE FOTÓNICA",
+        "DEPTO. DE MÉTODOS CUANTITATIVOS", "DEPTO. DE INGENIERÍA INDUSTRIAL",
+        "DEPTO. DE INGENIERÍA MECÁNICA ELÉCTRICA", "DEPTO. DE INGENIERÍA QUÍMICA",
+        "DEPTO. DE MADERA, CELULOSA Y PAPEL", "DEPTO. DE PROYECTOS DE COMUNICACIÓN DE LA INGENIERÍA",
+        "DEPTO. DE INGENIERÍA DE PROCESOS Y ENERGÍA", "DEPTO. DE CIENCIA DE LOS MATERIALES"
+    ]
+}
+
 # =========================================================================
 # === SEGMENTACION DINAMICA CON TESSERACT Y PANDAS (PSM 3) ===
 # =========================================================================
@@ -112,10 +136,11 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
     
     # CÓDIGO y TELÉFONO están DEBAJO de sus etiquetas
     simple_fields_below = {
-        'CODIGO': ['CÓDIGO', 'CODIGO'],
+        'CODIGO': ['CÓDIGO', 'CODIGO', 'C0DIG0'],
         'TELEFONO': ['TELÉFONO', 'TELEFONO', 'TEL'],
         'CRN': ['CRN', 'C.R.N.', 'C R N'],
-        'HRS_TOTALES': ['HRS. TOTALES', 'HRS TOTALES', 'HORAS TOTALES', 'HRS. TOTALES CURSO'],
+        'MATERIA': ['MATERIA', 'MATERIAS'],
+        'HRS_TOTALES': ['HRS. TOTALES', 'HRS TOTALES', 'HORAS TOTALES', 'HRS. TOTALES CURSO', 'HRS TOTALES CURSO'],
         'DESDE': ['DESDE', 'DESDE:'],
         'HASTA': ['HASTA', 'HASTA:'],
     }
@@ -432,6 +457,16 @@ def clean_data_by_field(field_name: str, text: str) -> str:
             text = re.sub(r'[^0-9]', '', text)
             if len(text) > 11:
                 text = text[:11]
+                
+    elif "DEPENDENCIA" in field_name:
+        # Primero una limpieza básica de ruido
+        text = re.sub(r'^((\d\.)+\d?\s*|22\s*|\d+)\s+', '', text)
+        text = re.sub(r'^[-\s!|\/,\?=:-]+', '', text)
+        
+        # Aplicamos la corrección difusa
+        # field_name será 'DEPENDENCIA_1', 'DEPENDENCIA_2', etc.
+        text = corregir_con_catalogo(text, field_name)
+        return text.strip()
     
     # 3. Campos de texto general (Dependencias, Nombres)
     else:
@@ -499,7 +534,6 @@ def validate_field_format(field_name: str, text: str) -> str:
         text = re.sub(r'[^0-9]', '', text)
         if len(text) < 5:
             return ""
-
         if len(text) > 11:
             text = text[:11]
         
@@ -564,3 +598,99 @@ def clean_name_specific(text: str) -> str:
     text = re.sub(r'[=:!]', '', text)
     
     return text.strip()
+
+def corregir_con_catalogo(texto_ocr, nivel_dependencia, threshold=0.6):
+    """
+    Compara el texto del OCR con el catálogo y devuelve la opción más parecida.
+    """
+    if not texto_ocr or nivel_dependencia not in CATALOGO_DEPENDENCIAS:
+        return texto_ocr
+
+    opciones = CATALOGO_DEPENDENCIAS[nivel_dependencia]
+    mejor_coincidencia = texto_ocr
+    max_prob = 0
+    
+    texto_ocr = texto_ocr.upper().strip()
+
+    for opcion in opciones:
+        # Calculamos la similitud (0.0 a 1.0)
+        prob = SequenceMatcher(None, texto_ocr, opcion.upper()).ratio()
+        if prob > max_prob:
+            max_prob = prob
+            mejor_coincidencia = opcion
+
+    # Si la similitud es alta, devolvemos el valor oficial del catálogo
+    if max_prob >= threshold:
+        return mejor_coincidencia
+    
+    return texto_ocr # Si es muy diferente, dejamos lo que el OCR leyó
+
+def buscador_identidad_global(texto_ocr, threshold=0.7):
+    """
+    Busca en TODO el catálogo para identificar a qué nivel pertenece el texto
+    y devuelve (Nivel_Detectado, Texto_Oficial).
+    """
+    if not texto_ocr or len(texto_ocr) < 4:
+        return None, texto_ocr
+
+    mejor_coincidencia = texto_ocr
+    mejor_nivel = None
+    max_prob = 0
+    
+    texto_ocr_norm = texto_ocr.upper().strip()
+
+    # Buscamos en todas las llaves del catálogo
+    for nivel, opciones in CATALOGO_DEPENDENCIAS.items():
+        for opcion in opciones:
+            prob = SequenceMatcher(None, texto_ocr_norm, opcion.upper()).ratio()
+            if prob > max_prob:
+                max_prob = prob
+                mejor_coincidencia = opcion
+                mejor_nivel = nivel
+
+    # Si la coincidencia es buena, devolvemos el veredicto
+    if max_prob >= threshold:
+        return mejor_nivel, mejor_coincidencia
+    
+    # Si no se parece a nada, devolvemos None para que el sistema 
+    # sepa que es un dato "desconocido" o nuevo
+    return None, texto_ocr
+
+def procesar_bloque_dependencias(dict_textos_extraidos):
+    """
+    Recibe un dict con {'DEPENDENCIA_1': 'texto...', 'DEPENDENCIA_2': ...}
+    y los reacomoda según su identidad real.
+    """
+    resultados_finales = {
+        "DEPENDENCIA_1": "",
+        "DEPENDENCIA_2": "",
+        "DEPENDENCIA_3": ""
+    }
+    
+    textos_sucios = [
+        dict_textos_extraidos.get("DEPENDENCIA_1", ""),
+        dict_textos_extraidos.get("DEPENDENCIA_2", ""),
+        dict_textos_extraidos.get("DEPENDENCIA_3", "")
+    ]
+
+    for i, texto in enumerate(textos_sucios):
+        if not texto: continue
+        
+        # Primero una limpieza básica de basura OCR
+        texto_limpio = re.sub(r'^((\d\.)+\d?\s*|22\s*|\d+)\s+', '', texto)
+        texto_limpio = re.sub(r'^[-\s!|\/,\?=:-]+', '', texto_limpio).strip()
+
+        # Intentamos identificar qué es
+        nivel_identificado, texto_oficial = buscador_identidad_global(texto_limpio)
+
+        if nivel_identificado:
+            # Si lo identificamos, lo ponemos en su lugar correcto (1, 2 o 3)
+            resultados_finales[nivel_identificado] = texto_oficial
+        else:
+            # REGLA DE ESCAPE: Si no está en el diccionario, 
+            # lo dejamos donde Tesseract lo encontró originalmente
+            key_original = f"DEPENDENCIA_{i+1}"
+            if not resultados_finales[key_original]: # Solo si está vacío
+                resultados_finales[key_original] = texto_limpio
+
+    return resultados_finales
