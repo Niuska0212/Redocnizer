@@ -20,6 +20,7 @@ from ui.app_menu import create_app_menu
 from ui.calendar_db import CalendarDB
 from ui.data_manager import DataManager
 from ui.data_tab import DataTab
+from ui.drive_sync_tab import DriveSyncTab
 
 
 
@@ -180,6 +181,10 @@ class MainWindow(QMainWindow):
         # Pestaña 2: Datos
         self.data_tab = DataTab(self.data_manager)
         self.tabs.addTab(self.data_tab, "📊 Ver/Editar Datos")
+        
+        # Pestaña 3: Google Drive (Módulo 3)
+        self.drive_sync_tab = DriveSyncTab(self)
+        self.tabs.addTab(self.drive_sync_tab, "☁️ Sincronización Nube")
         
         # Conectar cambio de pestaña para actualizar datos
         self.tabs.currentChanged.connect(self.on_tab_changed)

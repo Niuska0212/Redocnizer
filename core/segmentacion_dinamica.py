@@ -305,6 +305,7 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
                 # Ajustes específicos
                 if field_name == 'CODIGO':
                     w_roi = 150
+                    h_roi = 40
                     x_start = 700 if value_candidates.empty else value_candidates.iloc[0]['left'] - 10
                     
                     # 🚨 Fallback extra si no lo encuentra directamente
@@ -323,14 +324,32 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
                 elif field_name == 'TELEFONO':
                     w_roi = 200
                     x_start = 700 if value_candidates.empty else value_candidates.iloc[0]['left'] - 10
+                    
+                elif field_name == 'MATERIA':
+                    w_roi = 630
+                    h_roi = 35
                 
                 elif field_name == 'CRN':
                     w_roi = 170
                     h_roi = 35
                     x_start = 150
+                    if value_candidates.empty:
+                        # Busca cerca de DESDE/HASTA si existen 
+                        if 'DESDE' in dynamic_rois:
+                            desde_y, desde_x, desde_h, desde_w = dynamic_rois['DESDE']
+                            y_start = desde_y
+                            x_start = desde_x - 300  # 300px a la izquierda de DESDE
+                    
                 elif field_name == 'HRS_TOTALES':
-                    w_roi = 120
+                    w_roi = 150
+                    h_roi = 35
                     x_start = 330
+                    if value_candidates.empty:
+                        #busca cerca de Desde/Hasta si existen
+                        if 'DESDE' in dynamic_rois:
+                            desde_y, desde_x, desde_h, desde_w = dynamic_rois['DESDE']
+                            y_start = desde_y
+                            x_start = desde_x - 250  # 150px a la izquierda de DESDE
                 elif field_name == 'DESDE':
                     w_roi = 240
                     x_start = 550
