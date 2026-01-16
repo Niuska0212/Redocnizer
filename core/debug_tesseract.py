@@ -47,7 +47,7 @@ print(f"\n{'='*80}")
 print("BÚSQUEDA DE CAMPOS DE INTERÉS:")
 print(f"{'='*80}\n")
 
-for keyword in ['DESDE', 'HASTA', 'NOMBRE', 'RFC', 'CURP', 'IMSS']:
+for keyword in ['DESDE', 'HASTA', 'NOMBRE', 'RFC', 'CURP', 'IMSS', 'CÓDIGO', 'TELÉFONO', 'CRN', 'NOMBRE DE LA MATERIA / CURSO', 'HRS. TOTALES CURSO', 'DEPTO. DE MATEMATICAS']:
     matches = data_df[data_df['text'].str.contains(keyword, case=False, na=False)]
     if not matches.empty:
         print(f"\n✓ '{keyword}' encontrado:")

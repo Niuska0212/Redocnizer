@@ -134,9 +134,10 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
         'NUM': ['NÚM', 'NUM', 'NUM:', 'NÚM:', 'NUM.', 'NÚM.']
     }
     
-    # CÓDIGO y TELÉFONO están DEBAJO de sus etiquetas
+
     simple_fields_below = {
-        'CODIGO': ['CÓDIGO', 'CODIGO', 'C0DIG0'],
+        'CODIGO': ['CÓDIGO', 'CODIGO'],
+        'CURP': ['CURP','cuRP'],
         'TELEFONO': ['TELÉFONO', 'TELEFONO', 'TEL'],
         'CRN': ['CRN', 'C.R.N.', 'C R N'],
         'MATERIA': ['MATERIA', 'MATERIAS'],
@@ -607,6 +608,12 @@ def clean_name_specific(text: str) -> str:
         return ""
     #para poner que no haya A solitaria antes del apellido
     text = re.sub(r'^\bA\bZ\b', '', text)  # Elimina 'A' solitaria
+    #elimina SZ al inicio 
+    text = re.sub(r'^ZS', '', text)  # Elimina 'SZ' al inicio
+    #elimina AE en el apellido materno
+    text = re.sub(r'AE$', '', text)  # Elimina 'AE' al final
+    #Elimina y separa nombres pegados por un punto o guion o coma ejemplo RAMIREZ.EDUARDO
+    text = re.sub(r'([A-Z])[\.,\-]([A-Z])', r'\1 \2', text)  # Separa nombres pegados por '.', ',', '-'
     # Eliminar casos específicos problemáticos
     text = re.sub(r'^=,', '', text)  # Caso: "=,MARISCAL"
     text = re.sub(r':\s*$', '', text)  # Caso: "JOSE CARLOS:"

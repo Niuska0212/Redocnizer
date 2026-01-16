@@ -3,8 +3,8 @@ import pandas as pd
 from datetime import datetime
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTableWidget,
-    QTableWidgetItem, QGroupBox, QGridLayout, QLineEdit, QHeaderView,
-    QAbstractItemView, QListWidget, QListWidgetItem, QFileDialog, QMessageBox
+    QTableWidgetItem, QHeaderView, QLineEdit, QFileDialog, QMessageBox,
+    QAbstractItemView
 )
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QPixmap, QColor, QBrush
@@ -13,12 +13,13 @@ from services.pdf_service import pdf_to_images
 
 
 class DataTab(QWidget):
-    """Pestaña para visualizar y editar datos (extraída de main_window.py)."""
+    """Pestaña para visualizar y editar datos con búsqueda, ordenamiento y edición directa."""
 
     def __init__(self, data_manager):
         super().__init__()
         self.data_manager = data_manager
-        self.current_edit_row = -1
+        self.original_df = None  # Guardar datos originales para búsqueda
+        self.filtered_df = None  # Datos filtrados por búsqueda
         self.setup_ui()
 
         # Conectar señal de actualización
@@ -34,101 +35,59 @@ class DataTab(QWidget):
         # -------- Controles superiores --------
         controls_layout = QHBoxLayout()
 
+        # Campo de búsqueda
+        search_label = QLabel("🔍 Buscar:")
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("Buscar en nombres, códigos, teléfono, etc...")
+        self.search_input.setMaximumWidth(300)
+        self.search_input.textChanged.connect(self.apply_filter)
+
         # Botón para recargar
         self.btn_reload = QPushButton("🔄 Recargar")
         self.btn_reload.clicked.connect(self.load_data)
         self.btn_reload.setMaximumWidth(100)
 
+        # Botón Guardar
+        self.btn_save_all = QPushButton("💾 Guardar Cambios")
+        self.btn_save_all.clicked.connect(self.save_all_to_manager)
+        self.btn_save_all.setStyleSheet("background: #2e7d32; color: white;")
+        self.btn_save_all.setEnabled(False)
+
         # Botón para exportar
-        self.btn_export = QPushButton("📥 Exportar Datos")
+        self.btn_export = QPushButton("📥 Exportar")
         self.btn_export.clicked.connect(self.export_data)
-        self.btn_export.setMaximumWidth(150)
+        self.btn_export.setMaximumWidth(100)
 
         # Etiqueta de información
         self.info_label = QLabel("0 registros")
         self.info_label.setStyleSheet("color: #666; font-style: italic;")
 
+        controls_layout.addWidget(search_label)
+        controls_layout.addWidget(self.search_input)
         controls_layout.addWidget(self.btn_reload)
         controls_layout.addWidget(self.btn_export)
+        controls_layout.addWidget(self.btn_save_all)
         controls_layout.addStretch()
         controls_layout.addWidget(self.info_label)
 
         # -------- Tabla de datos --------
         self.table = QTableWidget()
         self.table.setAlternatingRowColors(True)
-        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)  # Seleccionar filas completas
         self.table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.table.setEditTriggers(QAbstractItemView.DoubleClicked)  # Solo doble clic para editar
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.table.verticalHeader().setVisible(False)
 
-        # Conectar doble clic para editar
-        self.table.cellDoubleClicked.connect(self.start_edit_cell)
-        self.table.itemSelectionChanged.connect(self.table_selection_changed)
+        # Permitir ordenamiento al hacer clic en encabezados
+        self.table.horizontalHeader().setSectionsClickable(True)
+        self.table.horizontalHeader().sectionClicked.connect(self.sort_by_column)
 
-        # -------- Panel de edición --------
-        edit_group = QGroupBox("Editar Registro")
-        edit_group.setMaximumHeight(200)
-        edit_layout = QGridLayout()
+        # Conectar cambios en celdas y selección
+        self.table.itemChanged.connect(self._on_item_changed)
+        self.table.itemSelectionChanged.connect(self._on_row_selected)
 
-        self.edit_fields = {}
-        fields_config = [
-            ("ID", "id", QLineEdit),
-            ("Nombre", "nombre", QLineEdit),
-            ("Contrato", "contrato", QLineEdit),
-            ("Fecha", "fecha", QLineEdit),
-            ("Calendario", "calendario", QLineEdit),
-            ("Archivo", "archivo", QLineEdit),
-        ]
-
-        for i, (label, field_name, field_type) in enumerate(fields_config):
-            row = i // 3
-            col = (i % 3) * 2
-
-            # Etiqueta
-            lbl = QLabel(label + ":")
-            lbl.setMinimumWidth(80)
-
-            # Campo de entrada
-            if field_type == QLineEdit:
-                field = QLineEdit()
-                field.setReadOnly(True)
-            else:
-                field = field_type()
-
-            field.setMinimumWidth(150)
-
-            edit_layout.addWidget(lbl, row, col)
-            edit_layout.addWidget(field, row, col + 1)
-
-            self.edit_fields[field_name] = field
-
-        # Botones de edición
-        btn_layout = QHBoxLayout()
-
-        self.btn_save_edit = QPushButton("💾 Guardar Cambios")
-        self.btn_save_edit.clicked.connect(self.save_edits)
-        self.btn_save_edit.setEnabled(False)
-
-        self.btn_cancel_edit = QPushButton("❌ Cancelar")
-        self.btn_cancel_edit.clicked.connect(self.cancel_edit)
-        self.btn_cancel_edit.setEnabled(False)
-
-        self.btn_delete = QPushButton("🗑️ Eliminar Registro")
-        self.btn_delete.clicked.connect(self.delete_record)
-        self.btn_delete.setEnabled(False)
-
-        btn_layout.addWidget(self.btn_save_edit)
-        btn_layout.addWidget(self.btn_cancel_edit)
-        btn_layout.addWidget(self.btn_delete)
-        btn_layout.addStretch()
-
-        edit_layout.addLayout(btn_layout, len(fields_config)//3 + 1, 0, 1, 6)
-        edit_group.setLayout(edit_layout)
-
-        # -------- Ensamblar layout --------
-        layout.addLayout(controls_layout)
-
-        # Mostrar la tabla junto con la vista previa a la derecha
+        # -------- Vista previa --------
         table_preview_layout = QHBoxLayout()
         table_preview_layout.addWidget(self.table, 3)
 
@@ -136,15 +95,16 @@ class DataTab(QWidget):
         self.preview_img_label.setObjectName("preview_label_data")
         self.preview_img_label.setFixedSize(250, 350)
         self.preview_img_label.setStyleSheet("""
-            QLabel { border: 2px dashed rgba(25,118,210,0.18); border-radius: 8px; background-color: #ffffff; color: #0b2545; qproperty-alignment: AlignCenter; font-weight: 600; }
+            QLabel { border: 2px dashed rgba(25,118,210,0.18); border-radius: 8px; 
+                    background-color: #ffffff; color: #0b2545; qproperty-alignment: AlignCenter; 
+                    font-weight: 600; }
         """)
         self.preview_img_label.setText("Sin visualización")
-
         table_preview_layout.addWidget(self.preview_img_label, 0)
+
+        # -------- Ensamblar layout --------
+        layout.addLayout(controls_layout)
         layout.addLayout(table_preview_layout)
-
-        layout.addWidget(edit_group)
-
         self.setLayout(layout)
 
     def load_data(self):
@@ -155,7 +115,13 @@ class DataTab(QWidget):
             self.table.setRowCount(0)
             self.table.setColumnCount(0)
             self.info_label.setText("0 registros - No hay datos")
+            self.original_df = pd.DataFrame()
+            self.filtered_df = pd.DataFrame()
             return
+
+        # Guardar datos originales
+        self.original_df = df.copy()
+        self.filtered_df = df.copy()
 
         # Reordenar columnas para visualización según preferencia del usuario
         preferred_display_order = [
@@ -171,11 +137,17 @@ class DataTab(QWidget):
             if pref.lower() in col_map:
                 ordered_cols.append(col_map[pref.lower()])
 
-        # Añadir el resto de columnas que no están en ordered_cols, preservando orden original
+        # Añadir el resto de columnas que no están en ordered_cols
         remaining = [c for c in df.columns if c not in ordered_cols]
-        df = df[ordered_cols + remaining]
+        self.original_df = self.original_df[ordered_cols + remaining]
+        self.filtered_df = self.original_df.copy()
 
-        # Configurar tabla
+        # Mostrar datos
+        self._populate_table(self.filtered_df)
+        self.search_input.clear()
+
+    def _populate_table(self, df):
+        """Llena la tabla con los datos del dataframe"""
         self.table.setRowCount(len(df))
         self.table.setColumnCount(len(df.columns))
         self.table.setHorizontalHeaderLabels(df.columns)
@@ -183,38 +155,14 @@ class DataTab(QWidget):
         # Llenar tabla
         for i, row in df.iterrows():
             for j, value in enumerate(row):
-                # Valor nulo
-                if pd.isna(value):
-                    text = ""
-                else:
-                    # Intentar formatear números que vienen como '1.0' a '1'
-                    try:
-                        # Si es ya un int, usarlo tal cual
-                        if isinstance(value, int):
-                            text = str(value)
-                        else:
-                            f = float(value)
-                            if f.is_integer():
-                                text = str(int(f))
-                            else:
-                                text = str(f)
-                    except Exception:
-                        # No es convertible a float: dejar representación original
-                        text = str(value)
-
-                # Formato especial para fechas (mantener prioridad sobre formateo numérico)
-                if 'fecha' in df.columns[j].lower() and not pd.isna(value):
-                    try:
-                        text = str(value)[:10]
-                    except Exception:
-                        pass
-
+                # Formatear valor
+                text = self._format_value(value, df.columns[j])
                 item = QTableWidgetItem(text)
 
-                # Fondo claro y contraste de texto garantizado
+                # Estilos
                 bg_even = QColor(251, 251, 251)
                 bg_odd = QColor(255, 255, 255)
-                fg = QColor(11, 37, 69)  # #0b2545
+                fg = QColor(11, 37, 69)
 
                 item.setForeground(QBrush(fg))
                 if i % 2 == 0:
@@ -230,83 +178,162 @@ class DataTab(QWidget):
         # Actualizar info
         self.info_label.setText(f"{len(df)} registros - {len(df.columns)} columnas")
 
-        # Deshabilitar edición
-        self.cancel_edit()
-
-    def start_edit_cell(self, row, column):
-        """Inicia la edición de una celda"""
-        self.current_edit_row = row
-        self.table.editItem(self.table.item(row, column))
-
-    def save_edits(self):
-        """Guarda los cambios realizados en el formulario de edición"""
-        if self.current_edit_row < 0:
-            return
-
-        df = self.data_manager.get_dataframe()
-        if self.current_edit_row >= len(df):
-            return
-
-        # Obtener valores de los campos
-        updates = {}
-        for field_name, field_widget in self.edit_fields.items():
-            if field_name in df.columns:
-                updates[field_name] = field_widget.text()
-
-        # Actualizar cada campo
-        for field_name, value in updates.items():
-            self.data_manager.update_record(self.current_edit_row, field_name, value)
-
-        # Recargar datos
-        self.load_data()
-        QMessageBox.information(self, "Guardado", "Cambios guardados correctamente")
-
-    def cancel_edit(self):
-        """Cancela la edición actual"""
-        self.current_edit_row = -1
-
-        # Limpiar campos de edición
-        for field_widget in self.edit_fields.values():
-            field_widget.clear()
-            if isinstance(field_widget, QLineEdit):
-                field_widget.setReadOnly(True)
-
-        # Deshabilitar botones
-        self.btn_save_edit.setEnabled(False)
-        self.btn_cancel_edit.setEnabled(False)
-        self.btn_delete.setEnabled(False)
-
-        # Deseleccionar fila
-        self.table.clearSelection()
-
         # Limpiar vista previa
-        try:
-            if hasattr(self, 'preview_img_label'):
-                self.preview_img_label.setText("Sin visualización")
-                self.preview_img_label.setPixmap(QPixmap())
-        except Exception:
-            pass
+        self.preview_img_label.setText("Sin visualización")
+        self.preview_img_label.setPixmap(QPixmap())
 
-    def delete_record(self):
-        """Elimina el registro seleccionado"""
-        if self.current_edit_row < 0:
+    def _format_value(self, value, column_name):
+        """Formatea un valor para mostrar en la tabla"""
+        if pd.isna(value):
+            return ""
+
+        # Formato especial para fechas
+        if 'fecha' in column_name.lower():
+            try:
+                return str(value)[:10]
+            except Exception:
+                return str(value)
+
+        # Intentar formatear números que vienen como '1.0' a '1'
+        try:
+            if isinstance(value, int):
+                return str(value)
+            else:
+                f = float(value)
+                if f.is_integer():
+                    return str(int(f))
+                else:
+                    return str(f)
+        except Exception:
+            return str(value)
+
+    def apply_filter(self):
+        """Aplica el filtro de búsqueda a los datos"""
+        if self.original_df is None or self.original_df.empty:
             return
 
-        reply = QMessageBox.question(
-            self,
-            "Confirmar eliminación",
-            "¿Está seguro de eliminar este registro?",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
-        )
+        search_text = self.search_input.text().lower().strip()
 
-        if reply == QMessageBox.Yes:
-            self.data_manager.delete_record(self.current_edit_row)
-            self.cancel_edit()
+        if not search_text:
+            # Sin búsqueda, mostrar todos los datos
+            self.filtered_df = self.original_df.copy()
+        else:
+            # Buscar en todas las columnas
+            mask = pd.Series([False] * len(self.original_df))
+            for column in self.original_df.columns:
+                column_mask = self.original_df[column].astype(str).str.lower().str.contains(search_text, na=False)
+                mask = mask | column_mask
+            self.filtered_df = self.original_df[mask].reset_index(drop=True)
+
+        # Mostrar datos filtrados
+        self._populate_table(self.filtered_df)
+
+    def sort_by_column(self, column_index):
+        """Ordena la tabla por la columna seleccionada"""
+        if self.filtered_df is None or self.filtered_df.empty:
+            return
+
+        column_name = self.filtered_df.columns[column_index]
+
+        # Alternar entre ascendente y descendente
+        if not hasattr(self, 'last_sorted_column') or self.last_sorted_column != column_index:
+            self.last_sorted_column = column_index
+            self.sort_ascending = True
+        else:
+            self.sort_ascending = not self.sort_ascending
+
+        # Ordenar
+        self.filtered_df = self.filtered_df.sort_values(
+            by=column_name,
+            ascending=self.sort_ascending,
+            na_position='last'
+        ).reset_index(drop=True)
+
+        # Mostrar datos ordenados
+        self._populate_table(self.filtered_df)
+
+    def _on_item_changed(self, item):
+        """Detecta cambios en las celdas y guarda en el data_manager"""
+        if self.filtered_df is None or self.filtered_df.empty:
+            return
+
+        row = item.row()
+        col = item.column()
+
+        if row < len(self.filtered_df) and col < len(self.filtered_df.columns):
+            column_name = self.filtered_df.columns[col]
+            new_value = item.text()
+
+            # Actualizar en datos filtrados
+            self.filtered_df.iloc[row, col] = new_value
+
+            # Actualizar en datos originales (encontrar el índice correspondiente)
+            try:
+                original_index = self.original_df[
+                    (self.original_df.iloc[:, col].astype(str) == self.filtered_df.iloc[row, col].astype(str))
+                ].index[0]
+                self.original_df.iloc[original_index, col] = new_value
+
+                # Actualizar en data_manager
+                self.data_manager.update_record(original_index, column_name, new_value)
+
+                # Habilitar botón guardar
+                self.btn_save_all.setEnabled(True)
+
+            except Exception:
+                pass
+
+    def _on_row_selected(self):
+        """Cuando se selecciona una fila, mostrar la visualización"""
+        selected = self.table.selectedItems()
+        if selected:
+            # Obtener la fila del primer ítem seleccionado
+            row = selected[0].row()
+            # Mostrar la visualización
+            self.show_preview_for_row(row)
+        else:
+            # Si no hay selección, limpiar visualización
+            self.preview_img_label.setText("Sin visualización")
+            self.preview_img_label.setPixmap(QPixmap())
+
+    def show_preview_for_row(self, row):
+        """Muestra la visualización para una fila"""
+        if self.filtered_df is None or row >= len(self.filtered_df):
+            return
+
+        try:
+            row_data = self.filtered_df.iloc[row]
+            archivo_col = next((c for c in self.filtered_df.columns if c.lower() == 'archivo'), None)
+
+            if archivo_col is not None:
+                archivo = row_data[archivo_col]
+                if pd.isna(archivo) or not str(archivo).strip():
+                    self.preview_img_label.setText("Sin visualización")
+                    self.preview_img_label.setPixmap(QPixmap())
+                else:
+                    preview_name = f"Vizualizacion_{os.path.basename(str(archivo))}"
+                    preview_path = os.path.join(os.getcwd(), 'previews', preview_name)
+                    if os.path.exists(preview_path):
+                        pix = QPixmap(preview_path)
+                        if not pix.isNull():
+                            pix = pix.scaled(
+                                self.preview_img_label.width(),
+                                self.preview_img_label.height(),
+                                Qt.KeepAspectRatio,
+                                Qt.SmoothTransformation
+                            )
+                            self.preview_img_label.setPixmap(pix)
+                            self.preview_img_label.setText("")
+                        else:
+                            self.preview_img_label.setText("Sin visualización")
+                    else:
+                        self.preview_img_label.setText("Sin visualización")
+        except Exception:
+            self.preview_img_label.setText("Sin visualización")
 
     def export_data(self):
         """Exporta los datos a archivo"""
-        if self.data_manager.data.empty:
+        if self.original_df is None or self.original_df.empty:
             QMessageBox.warning(self, "Sin datos", "No hay datos para exportar")
             return
 
@@ -323,7 +350,7 @@ class DataTab(QWidget):
         if not file_path:
             return
 
-        # Asegurar que el archivo termine en .csv (guardamos CSV siempre)
+        # Asegurar que el archivo termine en .csv
         if file_path and not file_path.lower().endswith('.csv'):
             file_path = file_path + '.csv'
 
@@ -342,62 +369,12 @@ class DataTab(QWidget):
                 "No se pudo exportar los datos"
             )
 
-    def table_selection_changed(self):
-        """Cuando se selecciona una fila en la tabla"""
-        selected = self.table.selectedItems()
-        if not selected:
-            self.cancel_edit()
-            return
-
-        row = selected[0].row()
-        df = self.data_manager.get_dataframe()
-
-        if row < len(df):
-            self.current_edit_row = row
-            row_data = df.iloc[row]
-
-            # Llenar campos de edición
-            for field_name, field_widget in self.edit_fields.items():
-                if field_name in df.columns:
-                    value = row_data[field_name]
-                    if pd.isna(value):
-                        field_widget.setText("")
-                    else:
-                        field_widget.setText(str(value))
-
-                    if isinstance(field_widget, QLineEdit):
-                        field_widget.setReadOnly(False)
-
-            # Habilitar botones
-            self.btn_save_edit.setEnabled(True)
-            self.btn_cancel_edit.setEnabled(True)
-            self.btn_delete.setEnabled(True)
-
-            # Cargar visualización generada por document_extractor (Vizualizacion_<Archivo>)
-            try:
-                archivo_col = next((c for c in df.columns if c.lower() == 'archivo'), None)
-                if archivo_col is not None:
-                    archivo = row_data[archivo_col]
-                    if pd.isna(archivo) or not str(archivo).strip():
-                        self.preview_img_label.setText("Sin visualización")
-                        self.preview_img_label.setPixmap(QPixmap())
-                    else:
-                        preview_name = f"Vizualizacion_{os.path.basename(str(archivo))}"
-                        preview_path = os.path.join(os.getcwd(), 'previews', preview_name)
-                        if os.path.exists(preview_path):
-                            pix = QPixmap(preview_path)
-                            if not pix.isNull():
-                                pix = pix.scaled(self.preview_img_label.width(), self.preview_img_label.height(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                                self.preview_img_label.setPixmap(pix)
-                                self.preview_img_label.setText("")
-                            else:
-                                self.preview_img_label.setText("Sin visualización")
-                                self.preview_img_label.setPixmap(QPixmap())
-                        else:
-                            self.preview_img_label.setText("Sin visualización")
-                            self.preview_img_label.setPixmap(QPixmap())
-                else:
-                    self.preview_img_label.setText("Sin visualización")
-                    self.preview_img_label.setPixmap(QPixmap())
-            except Exception:
-                pass
+    def save_all_to_manager(self):
+        """Guarda todos los cambios realizados"""
+        # Los cambios ya se guardan automáticamente en _on_item_changed
+        QMessageBox.information(
+            self,
+            "Guardado",
+            "Todos los cambios han sido guardados correctamente"
+        )
+        self.btn_save_all.setEnabled(False)

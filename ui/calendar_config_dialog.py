@@ -1,4 +1,5 @@
 """Diálogo para configurar calendarios (nuevo/existente)."""
+# ui/calendar_config_dialog.py
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel, QLineEdit,
     QComboBox, QDateEdit, QPushButton, QMessageBox, QRadioButton, QButtonGroup

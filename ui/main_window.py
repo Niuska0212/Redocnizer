@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QTextEdit, QGroupBox, QSpinBox, QCheckBox, QSplitter
 )
 from PySide6.QtCore import Qt, QTimer, Signal, QObject
-from PySide6.QtGui import QPixmap, QFont, QColor, QBrush
+from PySide6.QtGui import QPixmap, QFont, QColor, QBrush, QIcon
 
 from controllers.contract_controller import ContractController
 from services.pdf_service import pdf_to_images
@@ -30,9 +30,24 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        self.setWindowTitle("Sistema de OCR de Contratos - Procesamiento y Gestión")
+        self.setWindowTitle("REDOCNIZER - Gestión de Contratos CUCEI")
         self.resize(1000, 700)
-
+        
+        # --------------------------------------
+        #LOGO EN LA VENTANA de la aplicacion
+        # --------------------------------------
+        # 1. cargar la imagen del logo
+        logo_path = os.path.join(os.path.dirname(__file__), 'assets', 'logo_redocnizer.png')
+        
+        # 2. verifica que el archivo exista
+        if os.path.isfile(logo_path):
+            pixmap = QIcon(logo_path)
+            
+            # 3. Establecer el icono de la ventana
+            self.setWindowIcon(pixmap)
+        else:
+            print(f"Advertencia: No se encontró el logo en {logo_path}")
+        
         # -----------------------------------------
         # ESTADO DE LA APLICACIÓN
         # -----------------------------------------
@@ -164,6 +179,35 @@ class MainWindow(QMainWindow):
 
             /* Texto de ayuda/pequeño */
             QLabel[style="small"] { color: #7a8aa3; font-size: 12px; }
+            
+            /* Forzar que el Combo Box y sus listas sean siempre blancos */
+            QComboBox {
+                background-color: white !important;
+                color: #0b2545;
+                border: 1px solid #d1d9e6;
+                border-radius: 6px;
+                padding: 5px;
+                selection-background-color: #eef2f8;
+            }
+
+            /* El fondo de la lista desplegable */
+            QComboBox QAbstractItemView {
+                background-color: white;
+                color: #0b2545;
+                selection-background-color: #1976d2;
+                selection-color: white;
+                border: 1px solid #d1d9e6;
+                outline: 0px;
+            }
+
+            /* Campos de entrada (incluyendo la nueva barra de búsqueda) */
+            QLineEdit {
+                background-color: white;
+                color: #0b2545;
+                border: 1px solid #d1d9e6;
+                border-radius: 6px;
+                padding: 8px;
+            }
         """)
 
     # =========================================================
@@ -195,6 +239,19 @@ class MainWindow(QMainWindow):
         """Construye la pestaña de procesamiento"""
         tab = QWidget()
         main_layout = QVBoxLayout()
+        
+        # -------- Grupo: Gestión y Búsqueda --------
+        config_group = QGroupBox("Gestión y Búsqueda")
+        config_layout = QVBoxLayout()
+        
+        # Barra de búsqueda integrada
+        search_layout = QHBoxLayout()
+        self.search_bar = QLineEdit()
+        self.search_bar.setPlaceholderText("🔍 Buscar contratos por nombre, ID o fecha...")
+        # Conectar con la lógica de filtrado
+        self.search_bar.textChanged.connect(self._on_search_query_changed)
+        search_layout.addWidget(self.search_bar)
+        config_layout.addLayout(search_layout)
         
         # -------- Grupo: Configuración --------
         config_group = QGroupBox("Configuración")
@@ -590,6 +647,8 @@ class MainWindow(QMainWindow):
     # =========================================================
 
     def process_contract(self):
+        # Procesa los archivos seleccionados y muestra progreso
+        #la barra de progreso y resultados se encuentran en self.progress_bar y self.results_list
         try:
             calendar = self.calendar_combo.currentText()
             files = list(self.selected_files)
@@ -676,3 +735,22 @@ class MainWindow(QMainWindow):
         else:
             # Es un string legacy
             print(f"Calendario seleccionado: {self.calendar_combo.currentText()}")
+            
+    def _on_search_query_changed(self, text):
+        """Lógica para filtrar los datos del DataTab desde la barra de búsqueda"""
+        if hasattr(self, 'data_tab'):
+            # Actualizar el campo de búsqueda en la pestaña de datos
+            self.data_tab.search_input.setText(text)
+            # Esto activará automáticamente apply_filter
+            
+    def closeEvent(self, event):
+        """Se ejecuta al cerrar la ventana principal"""
+        # Los cambios se guardan automáticamente en DataTab al editar
+        event.accept()
+
+    def on_tab_changed(self, index):
+        """Cuando cambia la pestaña, si se sale de la de datos, preguntar si guardar"""
+        # Si el usuario estaba en la pestaña de datos (index 1) y se va a otra
+        # Podrías implementar una lógica similar aquí si quieres que guarde al cambiar de pestaña
+        if index == 1: 
+            self.data_tab.load_data()
