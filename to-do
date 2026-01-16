@@ -1,6 +1,6 @@
 To-Do list
 1.- Cambiar colores de ventanas emergentes ✓
-2.- Cambiar outline del numero de la barra de carga
+2.- Cambiar outline del numero de la barra de carga ✓ (solo le pude poner algo mas bonito y visible para ambos casos, no se puede poenr sombra ni hacer dinamicmaente)
 3.- Base de datos y su conexión
 4.- Función para aceptar contratos en formato pdf
 5.- Lista de dependencias ✓
@@ -8,11 +8,13 @@ To-Do list
 7.- Quitar apartado (tab) de estadísticas ✓
 8.- Arreglar la importación o detección de las fechas "Desde" y "Hasta"
 9.- Guardar dirección del ultimo directorio raíz
-10.- Cambia el color del nombre de archivo seleccionado al procesar (esta en blanco)
-11.- Quitar el cuadro de edición de datos
+10.- Cambia el color del nombre de archivo seleccionado al procesar (esta en blanco) ✓
+11.- Quitar el cuadro de edición de datos ✓
 12.- Agregar los datos hras totatels. 
 13.- Agregar la lista de la 3ra. dependencia (Departamentos)
 14.- agregar columna nombre de materia
 
 
-15. Creacion de logo y cambio de titulo en la aplicion
+15.- Creacion de logo y cambio de titulo en la aplicion ✓
+16.- Arreglar el guardado de cambios del excel en la aplicion
+17.- poner la mineria de datos, y arreglar la reorganizacion de los archivos

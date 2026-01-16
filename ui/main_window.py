@@ -381,13 +381,19 @@ class MainWindow(QMainWindow):
                 background-color: white;
                 border: 1px solid #ddd;
                 border-radius: 4px;
+                color: #0b2545;  /* Color del texto por defecto */
             }
             QListWidget::item {
                 padding: 5px;
                 border-bottom: 1px solid #f0f0f0;
+                color: #0b2545;  /* Color del texto del ítem */
             }
             QListWidget::item:selected {
                 background-color: #e3f2fd;
+                color: #0b2545;  /* Mantener texto negro cuando está seleccionado */
+            }
+            QListWidget::item:hover {
+                background-color: #f0f8ff;
             }
         """)
         self.files_list.itemClicked.connect(self.on_file_selected)
@@ -411,6 +417,22 @@ class MainWindow(QMainWindow):
         self.progress_bar = QProgressBar()
         self.progress_bar.setValue(0)
         self.progress_bar.setVisible(False)
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                border: 1px solid #e6eef8;
+                border-radius: 6px;
+                text-align: center;
+                background: #ffffff;
+                color: #1a237e;  /* Azul oscuro */
+                font-weight: 700;
+                font-size: 11px;
+                padding: 1px;
+            }
+            QProgressBar::chunk {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #1976d2, stop:1 #6a1b9a);
+                border-radius: 6px;
+            }
+        """)
         
         self.results_list = QListWidget()
         self.results_list.setMaximumHeight(120)
