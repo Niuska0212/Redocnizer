@@ -4,7 +4,7 @@
 
 1. Ir a [Google Cloud Console](https://console.cloud.google.com/)
 2. Click en **"Crear Proyecto"**
-3. Nombre: `OCR-Modular-Drive`
+3. Nombre: `Redocnizer-Drive`
 4. Click **Crear**
 
 ## 2. Habilitar Google Drive API

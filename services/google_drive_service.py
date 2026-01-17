@@ -4,7 +4,7 @@ Servicio de sincronización con Google Drive.
 Permite guardar/descargar contratos y datos en la nube.
 Implementa: Módulo 3.3, 3.4, 3.5, 3.6
 """
-
+#pip install "google-auth-oauthlib>=1.1.0" "google-auth-httplib2>=0.2.0" "google-api-python-client>=2.100.0"
 import os
 import json
 import pickle
