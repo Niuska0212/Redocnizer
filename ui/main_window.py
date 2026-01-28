@@ -631,8 +631,56 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "CSV cargado", f"CSV del calendario '{calendar}' cargado en la vista de datos.")
             if self.tabs.currentIndex() == 1:
                 self.data_tab.load_data()
+            
+            # Cargar las previsualizaciones asociadas
+            self._load_preview_images_from_csv()
         else:
             QMessageBox.information(self, "Sin CSV", f"No se encontró CSV para el calendario '{calendar}'.")
+
+    def _load_preview_images_from_csv(self):
+        """Carga las imágenes de preview basadas en los datos del CSV"""
+        try:
+            # Obtener los datos actuales del data_manager
+            df = self.data_manager.get_dataframe()
+            if df.empty:
+                return
+            
+            # Buscar la columna que contenga el nombre del archivo (ej: CODIGO)
+            # Intentar encontrar nombres de archivo en las primeras columnas
+            preview_images = []
+            
+            for idx, row in df.iterrows():
+                # Buscar en diferentes columnas que podrían contener nombres de archivo
+                # Primero intentar con CODIGO o NUM
+                filename = None
+                for col in ['CODIGO', 'NUM', 'NOMBRE_S', 'PATERNO']:
+                    if col in row and pd.notna(row[col]):
+                        potential_file = str(row[col]).strip()
+                        if potential_file and potential_file.upper() != 'UNKNOWN':
+                            filename = potential_file
+                            break
+                
+                if filename:
+                    # Buscar la imagen en la carpeta de previsualizaciones
+                    # Sin extensión y con extensión .jpg
+                    base_name = os.path.splitext(filename)[0]
+                    preview_path = os.path.join(self.preview_dir, f"{base_name}.jpg")
+                    
+                    if os.path.exists(preview_path):
+                        preview_images.append(preview_path)
+            
+            # Agregar las imágenes encontradas a selected_files
+            if preview_images:
+                self.selected_files = preview_images
+                self.update_files_list()
+                
+                # Mostrar vista previa del primer archivo
+                if self.selected_files:
+                    self.show_preview(self.selected_files[0])
+                
+                self._update_process_state()
+        except Exception as e:
+            print(f"Error cargando imágenes de preview: {e}")
 
     def open_calendar_folder(self):
         """Abre la carpeta del calendario en el explorador de archivos."""

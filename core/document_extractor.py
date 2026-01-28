@@ -441,6 +441,5 @@ def main():
     else:
         print("\n❌ No se extrajeron datos.")
 
-
 if __name__ == "__main__":
     main()

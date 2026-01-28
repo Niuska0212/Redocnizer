@@ -17,9 +17,7 @@ class ContractController:
         self.preview_dir = preview_dir
 
     def process_uploaded_file(self, file_path: str, calendar: str) -> dict:
-        """
-        Procesa un contrato (PDF o imagen) y lo guarda como PDF final.
-
+        """Procesa un contrato (PDF o imagen) y lo guarda como PDF final.
         Retorna:
             {
                 "data": datos OCR,

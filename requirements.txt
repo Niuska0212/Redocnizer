@@ -18,7 +18,7 @@ Pillow>=10.0.0
 
 # PDF Processing
 pdf2image>=1.16.0
-PyPDF2>=3.15.0
+PyPDF2>=3.0.0
 
 # Google Drive API (Módulo 3 - Distribución)
 google-auth-oauthlib>=1.1.0
