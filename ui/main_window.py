@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QTableWidgetItem, QHeaderView, QAbstractItemView, QStyleFactory,
     QTextEdit, QGroupBox, QSpinBox, QCheckBox, QSplitter
 )
-from PySide6.QtCore import Qt, QTimer, Signal, QObject
+from PySide6.QtCore import Qt, QTimer, Signal, QObject, QSettings
 from PySide6.QtGui import QPixmap, QFont, QColor, QBrush, QIcon
 
 from controllers.contract_controller import ContractController
@@ -48,10 +48,13 @@ class MainWindow(QMainWindow):
         else:
             print(f"Advertencia: No se encontró el logo en {logo_path}")
         
+        # CONFIGURACION DE MEMORIA (QSettings)
+        self.settings = QSettings("Redocnizer", "RedocnizerApp")
+        
         # -----------------------------------------
         # ESTADO DE LA APLICACIÓN
         # -----------------------------------------
-        self.root_dir = ""
+        self.root_dir = "" # VALOR RAIZ POR DEFECTO
         self.preview_dir = os.path.join(os.getcwd(), "previews")
         os.makedirs(self.preview_dir, exist_ok=True)
 
@@ -60,11 +63,12 @@ class MainWindow(QMainWindow):
         
         self.controller = None
         self.selected_files = []
-
         # -----------------------------------------
         # UI PRINCIPAL
         # -----------------------------------------
         self._build_ui()
+        
+        self._load_saved_settings()
         # Crear y adjuntar la barra de menú (archivo/editar)
         try:
             create_app_menu(self)
@@ -469,7 +473,7 @@ class MainWindow(QMainWindow):
         directory = QFileDialog.getExistingDirectory(
             self,
             "Seleccionar directorio raíz",
-            "",
+            self.root_dir if self.root_dir else "", # Abrir donde se quedó la última vez
             QFileDialog.ShowDirsOnly
         )
 
@@ -478,8 +482,13 @@ class MainWindow(QMainWindow):
 
         self.root_dir = directory
         self.root_input.setText(directory)
+        
+        # --- NUEVO: GUARDAR EN MEMORIA PERMANENTE ---
+        self.settings.setValue("root_dir", directory)
+        print(f"💾 Ruta guardada en configuración: {directory}")
+        # --------------------------------------------
 
-        # Inicializar controlador
+        # Inicializar controlador (código que ya tenías)
         self.controller = ContractController(
             root_dir=self.root_dir,
             preview_dir=self.preview_dir
@@ -824,3 +833,29 @@ class MainWindow(QMainWindow):
         # Podrías implementar una lógica similar aquí si quieres que guarde al cambiar de pestaña
         if index == 1: 
             self.data_tab.load_data()
+            
+    # =========================================================
+    # CONFIGURACIÓN GUARDADA
+    # =========================================================      
+    def _load_saved_settings(self):
+        """Recupera la última ruta raíz utilizada y configura el controlador."""
+        last_root = self.settings.value("root_dir", "") # Recupera valor, default ""
+        
+        if last_root and os.path.exists(last_root):
+            print(f"📂 Configuración encontrada: {last_root}")
+            
+            # 1. Actualizar variable y caja de texto visual
+            self.root_dir = last_root
+            self.root_input.setText(last_root)
+            
+            # 2. IMPORTANTE: Inicializar el controlador (igual que si el usuario hubiera elegido manual)
+            # Si no hacemos esto, self.controller seguirá siendo None y fallará al procesar
+            self.controller = ContractController(
+                root_dir=self.root_dir,
+                preview_dir=self.preview_dir
+            )
+            
+            # 3. Actualizar estado de botones
+            self._update_process_state()
+        else:
+            print("⚠️ No hay ruta guardada o la carpeta ya no existe.")
