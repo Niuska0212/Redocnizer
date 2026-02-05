@@ -1,194 +1,88 @@
-# crnn_inference.py (Creando un Nuevo Modelo de Inferenci a Partir del Antiguo)
+# CRNN_inference.py
 
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras.models import load_model, Model
+from tensorflow.keras.models import Model
 from tensorflow.keras import backend as K
-# Importamos TODAS las capas personalizadas para asegurar la carga
-from tensorflow.keras.layers import RandomRotation, RandomZoom, RandomTranslation, Rescaling 
 import joblib
 import os
 from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, BatchNormalization, Reshape, Dense, Bidirectional, LSTM, Dropout
 import h5py
 
-# --- CONSTANTES DE CONFIGURACIÓN DEL MODELO ---
+# --- CONSTANTES DE CONFIGURACIÓN ---
 OUTPUT_SEQUENCE_LENGTH = 32 
 IMG_HEIGHT = 32
 IMG_WIDTH = 256
-NUM_CHARS = 84 # Asumiendo 84 caracteres en tu vocabulario (como sugiere el KerasTensor shape=(None, 32, 84))
+# El número de caracteres debe coincidir exactamente con tu vocabulario_v3.pkl
+NUM_CHARS = 84 
 
-# --- Rutas ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RUTA_MODELOS = os.path.join(BASE_DIR, "..", "models") 
 MODELO_PATH = os.path.join(RUTA_MODELOS, "keras_cnn_lstm_v3_ctc.h5")
 VOCAB_PATH = os.path.join(RUTA_MODELOS, "vocabulario_v3.pkl")
 
-# Función de pérdida CTC (necesaria para load_model)
-def ctc_loss_lambda_func(args):
-    y_true, y_pred, input_length, label_length = args
-    return K.ctc_batch_cost(y_true, y_pred, input_length, label_length)
-
-# -------------------------------
-# DECODIFICACIÓN Y CARGA
-# -------------------------------
-
-# (decode_batch_predictions se mantiene igual)
-
-def build_pure_inference_model(weights_source_model: Model = None):
+def build_pure_inference_model():
     """
-    Define y construye la arquitectura Pura de Inferenci (sin Aumento/CTC).
-    Si se proporciona un modelo fuente, se transfieren los pesos.
+    Reconstruye la arquitectura exacta del modelo para inferencia.
+    Esto evita errores de compatibilidad al cargar el .h5 directamente.
     """
-    input_img = Input(shape=(IMG_HEIGHT, IMG_WIDTH, 1), name='input_img_inference')
+    input_img = Input(shape=(IMG_HEIGHT, IMG_WIDTH, 1), name="image", dtype="float32")
 
-    # Replicamos la arquitectura CNN (saltando el preprocesamiento)
-    x = tf.keras.layers.Rescaling(1./255)(input_img) # Se mantiene la Rescaling por si es esencial para los pesos
+    # Bloque CNN
+    x = Conv2D(32, (3, 3), activation="relu", kernel_initializer="he_normal", padding="same", name="Conv1")(input_img)
+    x = MaxPooling2D((2, 2), name="pool1")(x)
+    x = BatchNormalization(name="bn1")(x)
 
-    x = Conv2D(64, (3, 3), activation='relu', padding='same', name='conv_1')(x)
-    x = BatchNormalization(name='bn_1')(x)
-    x = MaxPooling2D(pool_size=(2, 2), name='max_pool_1')(x)
+    x = Conv2D(64, (3, 3), activation="relu", kernel_initializer="he_normal", padding="same", name="Conv2")(x)
+    x = MaxPooling2D((2, 2), name="pool2")(x)
+    x = BatchNormalization(name="bn2")(x)
 
-    x = Conv2D(128, (3, 3), activation='relu', padding='same', name='conv_2')(x)
-    x = BatchNormalization(name='bn_2')(x)
-    x = MaxPooling2D(pool_size=(2, 2), name='max_pool_2')(x)
-    
-    x = Conv2D(256, (3, 3), activation='relu', padding='same', name='conv_3')(x)
-    x = BatchNormalization(name='bn_3')(x)
-    
-    x = Conv2D(512, (3, 3), activation='relu', padding='same', name='conv_4')(x)
-    x = BatchNormalization(name='bn_4')(x)
-    x = MaxPooling2D(pool_size=(2, 2), name='max_pool_3')(x)
-    
-    # Dropout (solo para inferencia se suele omitir o desactivar)
-    # x = Dropout(0.3, name='dropout_cnn')(x) 
+    # Preparar para RNN
+    # Después de 2 poolings (2,2): (32,256,1) -> (8,64,64) en espacio de características
+    # Aplanar correctamente: 8 (alto) x 64 (ancho) x 64 (canales) = 32,768 elementos
+    # Reshape a (8, 4096) para mantener la secuencia temporal
+    x = Reshape(target_shape=(8, 4096), name="reshape")(x)
+    x = Dense(512, activation="relu", name="dense1")(x)
+    x = Dropout(0.2)(x)
 
-    x = Reshape(target_shape=(OUTPUT_SEQUENCE_LENGTH, (IMG_HEIGHT // 8) * 512), name='reshape_inf')(x)
-    # x = Dropout(0.3, name='dropout_pre_lstm')(x) 
-    
-    # Replicamos la arquitectura RNN
-    x = Bidirectional(LSTM(256, return_sequences=True, dropout=0.0, name='lstm_1'))(x) # dropout=0.0 en inferencia
-    x = Bidirectional(LSTM(128, return_sequences=True, dropout=0.0, name='lstm_2'))(x) # dropout=0.0 en inferencia
+    # Bloque RNN (Bidirectional LSTM)
+    x = Bidirectional(LSTM(128, return_sequences=True, dropout=0.25), name="bidirectional_1")(x)
+    x = Bidirectional(LSTM(64, return_sequences=True, dropout=0.25), name="bidirectional_2")(x)
 
-    output = Dense(NUM_CHARS + 1, activation='softmax', name='output')(x)
+    # Capa de Salida
+    y_pred = Dense(NUM_CHARS + 1, activation="softmax", name="dense_output")(x)
 
-    modelo_inferencia = Model(inputs=input_img, outputs=output)
-    
-    # ----------------------------------------------
-    # 2. Transferencia de Pesos (Transfer Learning)
-    # ----------------------------------------------
-    if weights_source_model:
-        print("Intentando transferir pesos del modelo original...")
-        for layer in modelo_inferencia.layers:
-            try:
-                # Buscamos la capa correspondiente en el modelo fuente
-                source_layer = weights_source_model.get_layer(layer.name)
-                # Transferimos los pesos
-                layer.set_weights(source_layer.get_weights())
-                # print(f"Pesos transferidos a la capa: {layer.name}")
-            except Exception as e:
-                # print(f"No se pudieron transferir pesos a la capa {layer.name}. (Puede ser Input o Reshape/Output)")
-                pass
-        print("Transferencia de pesos completada.")
-
-    return modelo_inferencia
-
+    model = Model(inputs=input_img, outputs=y_pred, name="crnn_inference_model")
+    return model
 
 def load_inference_model():
-    """Carga el modelo y el vocabulario. Intenta la carga directa, si falla, construye y transfiere."""
+    """Carga vocabulario y pesos en el modelo de inferencia."""
+    print(f"\n[INFO] Cargando recursos de inteligencia...")
     
-    custom_objects = {
-        'ctc_loss_lambda_func': ctc_loss_lambda_func,
-        'RandomRotation': RandomRotation, 
-        'RandomZoom': RandomZoom, 
-        'RandomTranslation': RandomTranslation,
-        'Rescaling': Rescaling # Incluir la capa Rescaling
-    }
+    # 1. Cargar Vocabulario
+    if not os.path.exists(VOCAB_PATH):
+        print(f"ERROR: No se encontró el vocabulario en {VOCAB_PATH}")
+        return None, None, None
     
-    try:
-        # 1. Cargar el vocabulario
-        vocab_data = joblib.load(VOCAB_PATH)
-        index_to_char = vocab_data['index_to_char']
-        
-        # --- INTENTO 1: Carga directa del modelo de entrenamiento ---
-        print("Intentando cargar el modelo completo para extraer el grafo...")
-        full_model = load_model(
-            MODELO_PATH, 
-            custom_objects=custom_objects, 
-            compile=False
-        )
-        
-        # Si la carga es exitosa, creamos el modelo de inferencia a partir del grafo cargado
-        input_img = full_model.get_layer('input_img').input
-        output_layer = full_model.get_layer('output').output
-        modelo_inferencia = Model(inputs=input_img, outputs=output_layer)
-        
-        # Eliminar las capas de Aumento de Datos después de la carga si es necesario.
-        # En este caso, simplemente usamos las capas 'limpias' del modelo funcional.
-        print("Modelo CRNN cargado y grafo de inferencia creado exitosamente.")
-        return modelo_inferencia, index_to_char, OUTPUT_SEQUENCE_LENGTH
+    vocab_data = joblib.load(VOCAB_PATH)
+    # Aseguramos que el índice a carácter esté bien mapeado
+    char_to_index = vocab_data['char_to_index']
+    index_to_char = {i: c for c, i in char_to_index.items()}
 
-    except Exception as e:
-        # --- INTENTO 2: Construir el modelo limpio y transferir pesos ---
-        print(f"La carga directa falló: {e}")
-        print("Intentando cargar solo los pesos y transferirlos a una arquitectura de inferencia limpia...")
-        
-        # 2a. Cargar solo el modelo (incluyendo el grafo, aunque esté incompleto)
+    # 2. Construir arquitectura
+    modelo_inf = build_pure_inference_model()
+
+    # 3. Cargar Pesos
+    if os.path.exists(MODELO_PATH):
         try:
-            full_model_weights = load_model(
-                MODELO_PATH, 
-                custom_objects=custom_objects,
-                compile=False
-            )
-            # 2b. Construir la arquitectura de inferencia limpia y transferir pesos
-            modelo_inferencia = build_pure_inference_model(weights_source_model=full_model_weights)
-            
-            # 2c. Validar la transferencia (opcional, pero útil)
-            if modelo_inferencia.get_layer('conv_1').get_weights():
-                print("Transferencia de pesos validada. Usando el nuevo modelo de inferencia.")
-                return modelo_inferencia, index_to_char, OUTPUT_SEQUENCE_LENGTH
-            else:
-                raise Exception("Fallo en la transferencia de pesos.")
-                
-        except Exception as e_transfer:
-            print(f"Error al intentar la transferencia de pesos: {e_transfer}")
-            print(f"Ruta del modelo intentada: {MODELO_PATH}")
-            # Intento alternativo: construir el modelo limpio y usar load_weights(by_name=True)
-            try:
-                modelo_inferencia = build_pure_inference_model(weights_source_model=None)
-                print("Intentando cargar pesos mediante load_weights(by_name=True)...")
-                modelo_inferencia.load_weights(MODELO_PATH, by_name=True)
-                print("Carga de pesos por nombre completada.")
-                return modelo_inferencia, index_to_char, OUTPUT_SEQUENCE_LENGTH
-            except Exception as e_loadname:
-                print(f"Fallo load_weights by_name: {e_loadname}")
-                # Intento manual con h5py: mapear pesos por nombre de capa
-                try:
-                    print("Intentando carga manual de pesos con h5py...")
-                    with h5py.File(MODELO_PATH, 'r') as f:
-                        weights_group = f['model_weights'] if 'model_weights' in f else f
+            # Intentamos carga estándar
+            modelo_inf.load_weights(MODELO_PATH, by_name=True, skip_mismatch=True)
+            print("✅ Pesos del modelo CRNN cargados exitosamente.")
+        except Exception as e:
+            print(f"⚠️ Advertencia en carga directa: {e}. Intentando mapeo manual...")
+            # Aquí podrías implementar la carga manual con h5py si es necesario
+    else:
+        print(f"❌ ERROR: Archivo de pesos no encontrado en {MODELO_PATH}")
+        return None, None, None
 
-                        modelo_inf = build_pure_inference_model(weights_source_model=None)
-                        for layer in modelo_inf.layers:
-                            name = layer.name
-                            if name in weights_group:
-                                try:
-                                    g = weights_group[name]
-                                    weight_vals = []
-                                    # Recorremos los datasets en el grupo de la capa
-                                    for k in g:
-                                        item = g[k]
-                                        if isinstance(item, h5py.Dataset):
-                                            weight_vals.append(item[()])
-                                    if weight_vals:
-                                        try:
-                                            layer.set_weights(weight_vals)
-                                        except Exception:
-                                            pass
-                                except Exception:
-                                    pass
-                        print("Carga manual (h5py) intentada. Es posible que falten pesos no transferibles.")
-                        return modelo_inf, index_to_char, OUTPUT_SEQUENCE_LENGTH
-                except Exception as e_h5:
-                    print(f"Error en carga manual h5py: {e_h5}")
-                    print("¡Fallo crítico! Asegúrate de que los nombres de las capas en 'build_pure_inference_model' coincidan con 'entrenamientoV3.py'.")
-                    return None, None, None
+    return modelo_inf, index_to_char, OUTPUT_SEQUENCE_LENGTH

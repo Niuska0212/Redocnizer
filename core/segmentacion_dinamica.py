@@ -6,11 +6,15 @@ import shutil
 import pandas as pd
 import re
 import numpy as np
-import pytesseract 
+import easyocr
 from tensorflow.keras import backend as K 
 from difflib import SequenceMatcher # Necesario para calcular la similitud (Levenshtein)
 from PIL import Image, ImageDraw, ImageFont
 
+
+# Inicializar el lector (puedes hacerlo global o dentro de la función)
+# 'es' para español, gpu=True si tienes una tarjeta NVIDIA configurada
+reader = easyocr.Reader(['es'], gpu=False)
 
 # Constantes de estandarización
 PHONE_EMPTY_TOKENS = ["-", "—", "0", "00", "000", "N/A", "NA"] 
@@ -41,64 +45,53 @@ CATALOGO_DEPENDENCIAS = {
 }
 
 # =========================================================================
-# === SEGMENTACION DINAMICA CON TESSERACT Y PANDAS (PSM 3) ===
+# === SEGMENTACION DINAMICA CON EASYOCR Y PANDAS ===
 # =========================================================================
 
 def get_dynamic_rois(img_full: np.ndarray) -> dict:
-
+    if img_full is None: return {}
+    
     H, W = img_full.shape[:2]
     
     # ==========================================================
-    # NUEVO: ACLARAR IMAGEN SI ES MUY OSCURA (Antes de procesar)
+    # ACLARAR IMAGEN (CORREGIDO)
     # ==========================================================
-    # 1. Convertir temporalmente a gris para medir el brillo
-    img_gray_test = cv2.cvtColor(img_full, cv2.COLOR_BGR2GRAY) if len(img_full.shape) == 3 else img_full
+    # Error previo: Usabas img_gray antes de definirlo.
+    img_gray = cv2.cvtColor(img_full, cv2.COLOR_BGR2GRAY) if len(img_full.shape) == 3 else img_full
     
-    avg_brightness = np.mean(img_gray_test)
-    
-    if avg_brightness < 120:  # Si el promedio es menor a 120 (un gris medio-oscuro)
-        print(f"[INFO] Imagen oscura detectada (Brillo: {avg_brightness:.2f}). Aclarando para Tesseract...")
-        
-        # A) Normalización: Estira los colores para que el más claro sea blanco y el más oscuro negro
-        img_full = cv2.normalize(img_full, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX)
-        
-        # B) CLAHE: Resalta el contraste de las letras (opcional pero muy recomendado)
+    avg_brightness = np.mean(img_gray)
+    if avg_brightness < 120:
+        # Normalizamos y aplicamos CLAHE para que EasyOCR vea mejor las letras
+        img_gray = cv2.normalize(img_gray, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX)
         clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
-        if len(img_full.shape) == 3:
-            # Si es color, aplicamos a la versión gris que usaremos para Tesseract
-            img_full = clahe.apply(cv2.cvtColor(img_full, cv2.COLOR_BGR2GRAY))
-        else:
-            img_full = clahe.apply(img_full)
+        img_gray = clahe.apply(img_gray)
+        
+    # Usamos la imagen en escala de grises procesada (uint8)
+    # EasyOCR prefiere 3 canales, pero con uint8 gris suele bastar.
+    results = reader.readtext(img_gray.astype(np.uint8))
+    
     # ==========================================================
-
-    std_dev = np.std(img_full)
-    THRESHOLD_STD = 43
-
-    if std_dev < THRESHOLD_STD:
-        print(f"Pre-procesamiento: fondo uniforme (Otsu). STD: {std_dev:.2f}")
-        try:
-            img_full_bin = cv2.threshold(img_full, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
-        except Exception:
-            img_full_bin = img_full
-    else:
-        print(f"Pre-procesamiento: fondo complejo (Adaptative). STD: {std_dev:.2f}")
-        try:
-            img_full_bin = cv2.adaptiveThreshold(
-                img_full, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 31, 10
-            )
-        except Exception:
-            img_full_bin = img_full
-
-    img_pil = Image.fromarray(img_full_bin)
-
-    data_df = pytesseract.image_to_data(
-        img_pil,
-        output_type=pytesseract.Output.DATAFRAME,
-        config='--psm 3'
-    )
+    rows = []
+    for (bbox, text, prob) in results:
+        (tl, tr, br, bl) = bbox
+        rows.append({
+            'left': int(tl[0]),
+            'top': int(tl[1]),
+            'width': int(tr[0] - tl[0]),
+            'height': int(bl[1] - tl[1]),
+            'text': text.upper().strip(),
+            'conf': prob * 100
+        })
+    
+    data_df = pd.DataFrame(rows)
+    
+    # Si el OCR no detectó nada, evitamos que truene el DataFrame
+    if data_df.empty:
+        return {}
 
     data_df = data_df.dropna(subset=['text'])
-    data_df = data_df[data_df['conf'] > 3].copy()
+    # Bajamos un poco el filtro de confianza a 10 para no perder datos reales
+    data_df = data_df[data_df['conf'] > 10].copy() 
     data_df['text'] = data_df['text'].str.upper().str.strip()
 
     TOTAL_WIDTH_NOMBRE = 600
@@ -107,10 +100,6 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
     TOTAL_HEIGHT_DEP = 99
     CELL_WIDTH_DEP = 792
     CELL_HEIGHT_DEP = int(TOTAL_HEIGHT_DEP / 3)
-
-    X_START_VAL_COL = 250
-    W_FIXED_VAL_COL = 350
-    H_FIXED_VAL_CELL = 57
 
     # POSICIONES FIJAS PARA FALLBACK
     NUM_FALLBACK_X = 930
@@ -125,11 +114,11 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
     # POSICIONES FIJAS ABSOLUTAS (más a la izquierda)
     RFC_X = 100
     IMSS_X = RFC_X + RFC_WIDTH + 20   # 100 + 230 + 10 = 340
-    CURP_X = IMSS_X + IMSS_WIDTH + 10 # 340 + 230 + 10 = 580
+    CURP_X = IMSS_X + IMSS_WIDTH + 10 # 340 + 230 + 10 = 580 
+    
 
     name_keywords = ['PATERNO', 'MATERNO', 'NOMBRE(S)', 'APELLIDO PATERNO', 'APELLIDO MATERNO', 'APELLIDOS']
     dep_keywords = ['DEPENDENCIA', 'DEPENDENCIAS',]
-    
     simple_fields_right = {
         'NUM': ['NÚM', 'NUM', 'NUM:', 'NÚM:', 'NUM.', 'NÚM.']
     }
@@ -140,8 +129,8 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
         'CURP': ['CURP','cuRP'],
         'TELEFONO': ['TELÉFONO', 'TELEFONO', 'TEL'],
         'CRN': ['CRN', 'C.R.N.', 'C R N'],
-        'MATERIA': ['MATERIA', 'MATERIAS'],
-        'HRS_TOTALES': ['HRS. TOTALES', 'HRS TOTALES', 'HORAS TOTALES', 'HRS. TOTALES CURSO', 'HRS TOTALES CURSO'],
+        'MATERIA': ['MATERIA', 'MATERIAS', 'NOMBRE DE LA MATERIA / CURSO', 'NOMBRE DE LA MATERIA'],
+        'HRS_TOTALES': ['HRS. TOTALES', 'HRS TOTALES', 'HORAS TOTALES', 'HRS. TOTALES CURSO', 'HRS TOTALES CURSO', 'HRS.'],
         'DESDE': ['DESDE', 'DESDE:'],
         'HASTA': ['HASTA', 'HASTA:'],
     }
@@ -164,7 +153,7 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
         y_start_base = anchor_row['top'] + anchor_row['height'] + 10
         value_candidates = data_df[
             (data_df['top'] >= y_start_base) &
-            (data_df['top'] < y_start_base + 50)
+            (data_df['top'] < y_start_base )
         ].sort_values(by='top')
         if not value_candidates.empty:
             y_start = value_candidates.iloc[0]['top'] - 5
@@ -173,7 +162,6 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
         x_roi_start = 200
         dynamic_rois['NOMBRE_COMPLETO_RAW'] = [y_start, x_roi_start, CELL_HEIGHT_NOMBRE, TOTAL_WIDTH_NOMBRE]
 
-    # 2. Lógica para el bloque de DEPENDENCIA
     for keyword in dep_keywords:
         matches = data_df[data_df['text'] == keyword]
         if not matches.empty:
@@ -327,7 +315,7 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
                     x_start = 700 if value_candidates.empty else value_candidates.iloc[0]['left'] - 10
                     
                 elif field_name == 'MATERIA':
-                    w_roi = 630
+                    w_roi = 550
                     h_roi = 35
                 
                 elif field_name == 'CRN':
@@ -351,12 +339,12 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
                             desde_y, desde_x, desde_h, desde_w = dynamic_rois['DESDE']
                             y_start = desde_y
                             x_start = desde_x - 250  # 150px a la izquierda de DESDE
-                elif field_name == 'DESDE':
-                    w_roi = 240
-                    x_start = 550
-                elif field_name == 'HASTA':
-                    w_roi = 240
-                    x_start = 800
+                # DENTRO DE get_dynamic_rois, en la parte de DESDE/HASTA, déjalo así de simple:
+                elif field_name == 'DESDE' or field_name == 'HASTA':
+                    w_roi = 200 # Un poco más ancho por si la fecha es larga
+                    h_roi = 40
+                    # Aquí ya no valides el texto, solo define el área
+                    dynamic_rois[field_name] = [y_start, x_start, h_roi, w_roi]
 
                 dynamic_rois[field_name] = [y_start, x_start, h_roi, w_roi]
                 print(f"    >> ROI final para {field_name}: y={int(y_start)}, x={int(x_start)}, h={h_roi}, w={w_roi}")
@@ -584,19 +572,42 @@ def validate_field_format(field_name: str, text: str) -> str:
             text = text[:6]
 
     elif field_name == 'DESDE' or field_name == 'HASTA':
+        # 1. Limpieza total: solo números y separadores básicos
         text = re.sub(r'[^0-9\/\-\.]', '', text) 
         text = text.replace('.', '/').replace('-', '/')
-        # Asegurar formato de fecha DD/MM/YYYY o DD-MM-YYYY
-        match = re.match(r'(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})', text)
+        
+        # 2. Insertar diagonales si el OCR pegó todo (DDMMYYYY -> DD/MM/YYYY)
+        if len(text) == 8 and text.isdigit():
+            text = f"{text[:2]}/{text[2:4]}/{text[4:]}"
+        
+        # 3. Intentar extraer componentes para corregir errores de lectura (como el 46)
+        match = re.match(r'(\d{1,2})[\/](\d{1,2})[\/](\d{2,4})', text)
         if match:
             day, month, year = match.groups()
+            
+            # --- CORRECCIÓN DE DÍGITOS (El truco del 46) ---
+            # Si el día es > 31, es casi seguro que el '4' o '7' era un '1'
+            if int(day) > 31:
+                if day.startswith('4') or day.startswith('7'): 
+                    day = '1' + day[1]
+            
+            # Si el mes es > 12 (ej. leyó 42 en vez de 02)
+            if int(month) > 12:
+                if month.startswith('4'): 
+                    month = '0' + month[1]
+            
+            # Rellenar con ceros (ej. '4' -> '04')
             day = day.zfill(2)
             month = month.zfill(2)
+            
+            # Corregir año de 2 dígitos
             if len(year) == 2:
-                year = '20' + year  # Asumir siglo 21 para años de 2 dígitos
-            text = f"{day}/{month}/{year}"
+                year = '20' + year
+                
+            return f"{day}/{month}/{year}"
         
-        return text if len(text) > 5 else ""
+        # Si no tiene el formato mínimo, devolvemos lo que hay o vacío
+        return text if len(text) >= 8 else ""
 
             
     return text
@@ -607,9 +618,10 @@ def clean_name_specific(text: str) -> str:
     if not text:
         return ""
     #para poner que no haya A solitaria antes del apellido
-    text = re.sub(r'^\bA\bZ\b', '', text)  # Elimina 'A' solitaria
+    text = re.sub(r'^\bA\s+', '', text)  # Elimina 'A' solitaria
     #elimina SZ al inicio 
     text = re.sub(r'^ZS', '', text)  # Elimina 'SZ' al inicio
+    text = re.sub(r'^[AZ]\s+', '', text)  # Elimina 'A' o 'Z' solitaria al inicio
     #elimina AE en el apellido materno
     text = re.sub(r'AE$', '', text)  # Elimina 'AE' al final
     #Elimina y separa nombres pegados por un punto o guion o coma ejemplo RAMIREZ.EDUARDO
@@ -714,7 +726,7 @@ def procesar_bloque_dependencias(dict_textos_extraidos):
             resultados_finales[nivel_identificado] = texto_oficial
         else:
             # REGLA DE ESCAPE: Si no está en el diccionario, 
-            # lo dejamos donde Tesseract lo encontró originalmente
+            # lo dejamos donde el OCR lo encontró originalmente
             key_original = f"DEPENDENCIA_{i+1}"
             if not resultados_finales[key_original]: # Solo si está vacío
                 resultados_finales[key_original] = texto_limpio

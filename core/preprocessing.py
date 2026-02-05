@@ -4,69 +4,65 @@ import cv2
 import numpy as np
 import tensorflow as tf
 
-# Importamos las constantes de tamaño que definiste para tu modelo CRNN
-# Esto asegura que el preprocesamiento coincida con el entrenamiento.
 try:
     from .CRNN_inference import IMG_HEIGHT, IMG_WIDTH
 except ImportError:
-    # Si lo ejecutas solo, definimos los valores por defecto
     IMG_HEIGHT = 32
     IMG_WIDTH = 256
-    print("Advertencia: No se pudo importar IMG_HEIGHT/IMG_WIDTH. Usando valores por defecto (32x256).")
 
-def enhance_image_contrast(img: np.ndarray) -> np.ndarray:
-    """Mejora la nitidez y el contraste de imagenes oscuras usando CLAHE."""
-    #1. Aseguirar que esta en escalas de grises
+def enhance_for_easyocr(img: np.ndarray) -> np.ndarray:
+    """
+    Optimiza la imagen específicamente para EasyOCR.
+    Mantiene la escala de grises pero resalta bordes sin binarizar agresivamente.
+    """
     if len(img.shape) == 3:
         img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    #2. Acplicar CLAHE
-    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
-    img_enhanced = clahe.apply(img)
     
-    # 3 Opcional un filtro de enfoque (sharpening para definir mejor los bordes de las letras)
-    kernel = np.array([[-1, -1, -1], [-1, 9, -1], [-1, -1, -1]])
-    img_sharpened = cv2.filter2D(img_enhanced, -1, kernel)
+    # 1. Eliminar ruido de fondo manteniendo bordes
+    img_denoised = cv2.fastNlMeansDenoising(img, None, 10, 7, 21)
     
-    return img_sharpened
+    # 2. CLAHE moderado
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    img_clahe = clahe.apply(img_denoised)
+    
+    return img_clahe
 
 def increase_brightness_and_contrast(img: np.ndarray) -> np.ndarray:
     """
-    Aclara imágenes muy oscuras y estira el contraste al máximo.
+    Aclara imágenes y estira el contraste. 
+    Ajustado para no deformar el número '1' en '4'.
     """
     if len(img.shape) == 3:
         img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-    # 1. Normalización Min-Max: Estira los píxeles para que el más claro sea 255 y el más oscuro 0
-    img_norm = cv2.normalize(img, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX)
+    # 1. Normalización controlada (evita quemar los blancos)
+    img_norm = cv2.normalize(img, None, alpha=10, beta=245, norm_type=cv2.NORM_MINMAX)
 
-    # 2. Corrección Gamma (gamma < 1 aclara las zonas oscuras)
-    # 0.5 a 0.8 es un buen rango para imágenes oscuras
-    gamma = 0.7 
+    # 2. Gamma suave (0.8 es menos agresivo que 0.7)
+    gamma = 0.8 
     invGamma = 1.0 / gamma
     table = np.array([((i / 255.0) ** invGamma) * 255 for i in np.arange(0, 256)]).astype("uint8")
     img_bright = cv2.LUT(img_norm, table)
 
-    # 3. CLAHE para rematar el contraste de las letras
-    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
-    final_img = clahe.apply(img_bright)
+    # 3. Sharpening sutil (Kernel de 5 elementos en lugar de 9 para evitar ruido)
+    kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]])
+    final_img = cv2.filter2D(img_bright, -1, kernel)
 
     return final_img
 
 def prepare_roi_for_ocr(roi_image: np.ndarray) -> np.ndarray:
+    """Prepara el tensor para tu modelo CRNN actual."""
     if roi_image.size == 0:
         return np.zeros((1, IMG_HEIGHT, IMG_WIDTH, 1), dtype=np.float32)
 
-    # --- USAR LA NUEVA FUNCIÓN DE BRILLO ---
+    # Mejoramos brillo y contraste
     roi_improved = increase_brightness_and_contrast(roi_image)
 
-    # Redimensionar
-    img_resized = cv2.resize(roi_improved, (IMG_WIDTH, IMG_HEIGHT), interpolation=cv2.INTER_CUBIC)
-
-    # Filtro Gaussiano suave para limpiar el ruido del brillo
-    img_blurred = cv2.GaussianBlur(img_resized, (3, 3), 0)
+    # Redimensionar con INTER_AREA para reducir aliasing (mejor para números)
+    img_resized = cv2.resize(roi_improved, (IMG_WIDTH, IMG_HEIGHT), interpolation=cv2.INTER_AREA)
 
     # Normalización para el modelo (0 a 1)
-    X_input = img_blurred.astype(np.float32) / 255.0
+    X_input = img_resized.astype(np.float32) / 255.0
     X_input = X_input.reshape(1, IMG_HEIGHT, IMG_WIDTH, 1)
 
     return X_input

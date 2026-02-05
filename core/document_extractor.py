@@ -1,4 +1,4 @@
-# document_extractor.py (COMPLETO Y FINAL CON LÓGICA DE CORRECCIÓN HÍBRIDA)
+# document_extractor.py
 import random
 import cv2
 import os
@@ -6,18 +6,16 @@ import shutil
 import pandas as pd 
 import re
 import numpy as np
-import pytesseract 
+import easyocr
 from tensorflow.keras import backend as K 
 from difflib import SequenceMatcher # Necesario para calcular la similitud (Levenshtein)
 from PIL import Image, ImageDraw, ImageFont
 from .segmentacion_dinamica import get_dynamic_rois, clean_data_by_field, clean_border_chars, validate_field_format, clean_name_specific, procesar_bloque_dependencias
 from .CRNN_inference import load_inference_model
-from .preprocessing import prepare_roi_for_ocr, invert_image_color, rotate_image
+from .preprocessing import prepare_roi_for_ocr, invert_image_color, rotate_image, enhance_for_easyocr
 
 
-# >>> CONFIGURACIÓN IMPORTANTE DE TESSERACT <<<
-# Reemplaza esta ruta con la ruta donde instalaste tesseract.exe, ¡solo si es necesario!
-pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+reader = easyocr.Reader(['es', 'en'], gpu=False)
 
 # --- CONFIGURACIÓN DE RUTAS ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -150,23 +148,22 @@ def clean_name_contamination(name: str) -> str:
 # === FUNCIONES DE LECTURA OCR ===
 # =========================================================================
 
-def read_with_tesseract(roi_image: np.ndarray) -> str:
-    """Intenta leer el texto usando Tesseract OCR como refuerzo."""
-    # Configuración del preprocesamiento y Tesseract (PSM 7 para una sola línea)
-    _, img_thresh = cv2.threshold(roi_image, 150, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)
-    config_tess = '--psm 7'
+def read_with_easyocr(roi_image: np.ndarray) -> str:
+    """Lee el texto usando EasyOCR en lugar de Tesseract."""
     try:
-        text = pytesseract.image_to_string(img_thresh, config=config_tess)
+        # EasyOCR funciona mejor con imágenes en color o gris sin tanto threshold agresivo
+        results = reader.readtext(roi_image, detail=0) # detail=0 devuelve solo el texto
+        text = " ".join(results)
         return text.strip()
     except Exception as e:
-        # print(f"Error en Tesseract: {e}") # Opcional: Descomentar para debug
+        print(f"Error en EasyOCR: {e}")
         return ""
 
 
 
 def extract_data_from_image(image_path, modelo_inferencia, index_to_char, output_sequence_length, output_dir_preview):
     """
-    Coordina la extracción de datos usando el CRNN y Tesseract con validación híbrida.
+    Coordina la extracción de datos usando el CRNN y EasyOCR con validación híbrida.
     Implementa lógica de reintento: 0. Original -> 1. Invertida -> 2. Rotada
     """
     
@@ -235,7 +232,7 @@ def extract_data_from_image(image_path, modelo_inferencia, index_to_char, output
         # --- EXTRACCIÓN OCR POR ROI ---
         all_extracted_data = {}
         for field_name, roi_data in rois_dinamicas.items():
-            # ... (CÓDIGO DE CLAMPING, EXTRACCIÓN CRNN/TESSERACT) ...
+            # ... (CÓDIGO DE CLAMPING, EXTRACCIÓN CRNN/EASYOCR) ...
             if not isinstance(roi_data, (list, tuple)) or len(roi_data) != 4:
                 all_extracted_data[field_name] = ""
                 continue
@@ -261,9 +258,10 @@ def extract_data_from_image(image_path, modelo_inferencia, index_to_char, output
                 all_extracted_data[field_name] = ""
                 continue
             
-            # 1) lectura CRNN (proteger con try)
+            # 1) Lectura CRNN 
             ocr_result_base = ""
             try:
+                # El modelo CRNN usa su propio preprocesamiento
                 X_input = prepare_roi_for_ocr(roi_image)
                 y_pred_probs = modelo_inferencia.predict(X_input, verbose=0)
                 pred_words_crnn = decode_batch_predictions(y_pred_probs, index_to_char, output_sequence_length)
@@ -271,21 +269,29 @@ def extract_data_from_image(image_path, modelo_inferencia, index_to_char, output
             except Exception:
                 ocr_result_base = ""
 
-            # 2) lectura Tesseract (refuerzo)
+            # 2) Lectura EasyOCR (EL CAMBIO AQUÍ)
             try:
-                ocr_result_refuerzo = read_with_tesseract(roi_image).upper().strip()
+                # USAMOS la nueva función para que EasyOCR vea la imagen nítida
+                roi_for_easy = enhance_for_easyocr(roi_image) 
+                ocr_result_refuerzo = read_with_easyocr(roi_for_easy).upper().strip()
             except Exception:
                 ocr_result_refuerzo = ""
 
-            # 3) selección / corrección
+            # 3) Selección y post-procesamiento corregido
             final_result = ocr_result_base or ocr_result_refuerzo
+            
+            # Si ambos fallan o son muy distintos, EasyOCR suele tener la razón en textos largos
             if ocr_result_base and ocr_result_refuerzo:
                 similarity = SequenceMatcher(None, ocr_result_base, ocr_result_refuerzo).ratio()
-                if similarity < 0.70:
+                if similarity < 0.60: # Bajamos un poco el umbral porque EasyOCR es más preciso
                     final_result = ocr_result_refuerzo
 
+            # APLICAR LIMPIEZA Y VALIDACIÓN (Orden correcto)
             final_result = clean_border_chars(final_result)
-            all_extracted_data[field_name] = final_result
+            cleaned_value = clean_data_by_field(field_name, final_result)
+            final_validate_value = validate_field_format(field_name, cleaned_value)
+
+            all_extracted_data[field_name] = final_validate_value
 
         # --- POSTPROCESAMIENTO Y VALIDACIÓN ---
         extracted_data = {'Archivo': os.path.basename(image_path)}
@@ -429,8 +435,7 @@ def main():
         df = pd.DataFrame(all_data)
 
         # Orden Exacto de las columnas en el CSV
-        # document_extractor.py (CORREGIDO)
-        columnas_ordenadas = ['Archivo', 'PATERNO', 'MATERNO', 'NOMBRE_S', 'NUM', 'CODIGO', 'RFC', 'IMSS', 'CURP', 'TELEFONO', 'CRN', 'DESDE', 'HASTA', 'DEPENDENCIA_1', 'DEPENDENCIA_2', 'DEPENDENCIA_3']
+        columnas_ordenadas = ['Archivo', 'PATERNO', 'MATERNO', 'NOMBRE_S', 'NUM', 'CODIGO', 'RFC', 'IMSS', 'CURP', 'TELEFONO', 'CRN', 'HORAS', 'MATERIA' , 'DESDE', 'HASTA', 'DEPENDENCIA_1', 'DEPENDENCIA_2', 'DEPENDENCIA_3']
         # 2. Reorganizamos el DataFrame, asegurando las columas que puedan faltar en 'all_data'
         existing_columns = [col for col in columnas_ordenadas if col in df.columns]
         df = df[existing_columns]
