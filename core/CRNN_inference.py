@@ -1,12 +1,22 @@
 # CRNN_inference.py
 
+import os
 import numpy as np
+
+# Configurar TensorFlow ANTES de cualquier otra importación
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # Reducir logs de TensorFlow
+os.environ['CUDA_VISIBLE_DEVICES'] = '-1'  # Forzar CPU para evitar conflictos de GPU
+
 import tensorflow as tf
+tf.config.set_visible_devices([], 'GPU')  # Deshabilitar GPU explícitamente
+tf.random.set_seed(42)
+np.random.seed(42)
+
 from tensorflow.keras.models import Model
 from tensorflow.keras import backend as K
 import joblib
-import os
 from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, BatchNormalization, Reshape, Dense, Bidirectional, LSTM, Dropout
+from tensorflow.keras.initializers import HeNormal
 import h5py
 
 # --- CONSTANTES DE CONFIGURACIÓN ---
@@ -28,12 +38,12 @@ def build_pure_inference_model():
     """
     input_img = Input(shape=(IMG_HEIGHT, IMG_WIDTH, 1), name="image", dtype="float32")
 
-    # Bloque CNN
-    x = Conv2D(32, (3, 3), activation="relu", kernel_initializer="he_normal", padding="same", name="Conv1")(input_img)
+    # Bloque CNN - usando 'glorot_uniform' para evitar conflictos con random number generation en GPU
+    x = Conv2D(32, (3, 3), activation="relu", kernel_initializer="glorot_uniform", padding="same", name="Conv1")(input_img)
     x = MaxPooling2D((2, 2), name="pool1")(x)
     x = BatchNormalization(name="bn1")(x)
 
-    x = Conv2D(64, (3, 3), activation="relu", kernel_initializer="he_normal", padding="same", name="Conv2")(x)
+    x = Conv2D(64, (3, 3), activation="relu", kernel_initializer="glorot_uniform", padding="same", name="Conv2")(x)
     x = MaxPooling2D((2, 2), name="pool2")(x)
     x = BatchNormalization(name="bn2")(x)
 
@@ -42,7 +52,7 @@ def build_pure_inference_model():
     # Aplanar correctamente: 8 (alto) x 64 (ancho) x 64 (canales) = 32,768 elementos
     # Reshape a (8, 4096) para mantener la secuencia temporal
     x = Reshape(target_shape=(8, 4096), name="reshape")(x)
-    x = Dense(512, activation="relu", name="dense1")(x)
+    x = Dense(512, activation="relu", kernel_initializer="glorot_uniform", name="dense1")(x)
     x = Dropout(0.2)(x)
 
     # Bloque RNN (Bidirectional LSTM)
@@ -50,7 +60,7 @@ def build_pure_inference_model():
     x = Bidirectional(LSTM(64, return_sequences=True, dropout=0.25), name="bidirectional_2")(x)
 
     # Capa de Salida
-    y_pred = Dense(NUM_CHARS + 1, activation="softmax", name="dense_output")(x)
+    y_pred = Dense(NUM_CHARS + 1, activation="softmax", kernel_initializer="glorot_uniform", name="dense_output")(x)
 
     model = Model(inputs=input_img, outputs=y_pred, name="crnn_inference_model")
     return model

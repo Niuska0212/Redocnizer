@@ -243,13 +243,19 @@ def extract_data_from_image(image_path, modelo_inferencia, index_to_char, output
             y_end = min(img_height, int(y + h))
             x_end = min(img_width, int(x + w))
 
-            min_w, min_h = 12, 12
+            # Para campos DEPENDENCIA, asegurar tamaño mínimo más generoso
+            # Para códigos como CURP/RFC/IMSS, también más generoso
+            if 'DEPENDENCIA' in field_name or field_name in ['CURP', 'RFC', 'IMSS']:
+                min_w, min_h = 150, 25  # Más generoso para captar líneas completas o códigos
+            else:
+                min_w, min_h = 12, 12
+                
             if (x_end - x_start) < min_w:
-                extra = (min_w - (x_end - x_start)) // 2 + 2
+                extra = (min_w - (x_end - x_start)) // 2 + 5
                 x_start = max(0, x_start - extra)
                 x_end = min(img_width, x_end + extra)
             if (y_end - y_start) < min_h:
-                extra = (min_h - (y_end - y_start)) // 2 + 2
+                extra = (min_h - (y_end - y_start)) // 2 + 5
                 y_start = max(0, y_start - extra)
                 y_end = min(img_height, y_end + extra)
 
@@ -258,33 +264,44 @@ def extract_data_from_image(image_path, modelo_inferencia, index_to_char, output
                 all_extracted_data[field_name] = ""
                 continue
             
-            # 1) Lectura CRNN 
-            ocr_result_base = ""
-            try:
-                # El modelo CRNN usa su propio preprocesamiento
-                X_input = prepare_roi_for_ocr(roi_image)
-                y_pred_probs = modelo_inferencia.predict(X_input, verbose=0)
-                pred_words_crnn = decode_batch_predictions(y_pred_probs, index_to_char, output_sequence_length)
-                ocr_result_base = pred_words_crnn[0].upper().strip() if pred_words_crnn else ""
-            except Exception:
+            # Para DEPENDENCIAS y códigos como CURP/RFC/IMSS, usar solo EasyOCR
+            # (CRNN está entrenado para palabras, no para códigos alfanuméricos)
+            if 'DEPENDENCIA' in field_name or field_name in ['CURP', 'RFC', 'IMSS']:
+                try:
+                    # Mejorar la imagen antes de pasar a EasyOCR
+                    roi_for_easy = enhance_for_easyocr(roi_image)
+                    final_result = read_with_easyocr(roi_for_easy).upper().strip()
+                except Exception as e:
+                    final_result = ""
+            else:
+                # Para otros campos, usar lógica híbrida CRNN + EasyOCR
+                # 1) Lectura CRNN 
                 ocr_result_base = ""
+                try:
+                    # El modelo CRNN usa su propio preprocesamiento
+                    X_input = prepare_roi_for_ocr(roi_image)
+                    y_pred_probs = modelo_inferencia.predict(X_input, verbose=0)
+                    pred_words_crnn = decode_batch_predictions(y_pred_probs, index_to_char, output_sequence_length)
+                    ocr_result_base = pred_words_crnn[0].upper().strip() if pred_words_crnn else ""
+                except Exception:
+                    ocr_result_base = ""
 
-            # 2) Lectura EasyOCR (EL CAMBIO AQUÍ)
-            try:
-                # USAMOS la nueva función para que EasyOCR vea la imagen nítida
-                roi_for_easy = enhance_for_easyocr(roi_image) 
-                ocr_result_refuerzo = read_with_easyocr(roi_for_easy).upper().strip()
-            except Exception:
-                ocr_result_refuerzo = ""
+                # 2) Lectura EasyOCR
+                try:
+                    # USAMOS la nueva función para que EasyOCR vea la imagen nítida
+                    roi_for_easy = enhance_for_easyocr(roi_image) 
+                    ocr_result_refuerzo = read_with_easyocr(roi_for_easy).upper().strip()
+                except Exception:
+                    ocr_result_refuerzo = ""
 
-            # 3) Selección y post-procesamiento corregido
-            final_result = ocr_result_base or ocr_result_refuerzo
-            
-            # Si ambos fallan o son muy distintos, EasyOCR suele tener la razón en textos largos
-            if ocr_result_base and ocr_result_refuerzo:
-                similarity = SequenceMatcher(None, ocr_result_base, ocr_result_refuerzo).ratio()
-                if similarity < 0.60: # Bajamos un poco el umbral porque EasyOCR es más preciso
-                    final_result = ocr_result_refuerzo
+                # 3) Selección y post-procesamiento corregido
+                final_result = ocr_result_base or ocr_result_refuerzo
+                
+                # Si ambos fallan o son muy distintos, EasyOCR suele tener la razón en textos largos
+                if ocr_result_base and ocr_result_refuerzo:
+                    similarity = SequenceMatcher(None, ocr_result_base, ocr_result_refuerzo).ratio()
+                    if similarity < 0.60: # Bajamos un poco el umbral porque EasyOCR es más preciso
+                        final_result = ocr_result_refuerzo
 
             # APLICAR LIMPIEZA Y VALIDACIÓN (Orden correcto)
             final_result = clean_border_chars(final_result)
@@ -440,8 +457,8 @@ def main():
         existing_columns = [col for col in columnas_ordenadas if col in df.columns]
         df = df[existing_columns]
 
-        # 3. Guardamos el archivo CSV
-        df.to_csv(RUTA_SALIDA_CSV, index=False, encoding='utf-8')
+        # 3. Guardamos el archivo CSV con encoding UTF-8-sig para compatibilidad Excel
+        df.to_csv(RUTA_SALIDA_CSV, index=False, encoding='utf-8-sig')
         print(f"\n✅ Extracción híbrida completada. Datos guardados en: {RUTA_SALIDA_CSV}")
     else:
         print("\n❌ No se extrajeron datos.")

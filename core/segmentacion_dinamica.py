@@ -162,34 +162,78 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
         x_roi_start = 200
         dynamic_rois['NOMBRE_COMPLETO_RAW'] = [y_start, x_roi_start, CELL_HEIGHT_NOMBRE, TOTAL_WIDTH_NOMBRE]
 
+    # 2. Búsqueda mejorada de DEPENDENCIA con flexibilidad
+    dep_found = False
     for keyword in dep_keywords:
+        # Primero intentar coincidencia exacta (lo original)
         matches = data_df[data_df['text'] == keyword]
+        
+        # Si no se encuentra exacto, buscar por contenencia de substring
+        if matches.empty:
+            matches = data_df[data_df['text'].str.upper().str.contains(keyword, regex=False, na=False)]
+        
+        # Si aún no se encuentra, buscar cualquier cosa que EMPIECE con "DEP"
+        if matches.empty:
+            matches = data_df[data_df['text'].str.upper().str.contains('^DEP', regex=True, na=False)]
+        
         if not matches.empty:
             key_row = matches.iloc[0]
             x_key = key_row['left']
             h_key = key_row['height']
-            # Buscar primero valores justo DEBAJO de la etiqueta
-            y_search_start = key_row['top'] + h_key + 5
-            x_start = 130
+            
+            # Búsqueda más inteligente: valores DEBAJO de la etiqueta
+            y_search_start = key_row['top'] + h_key + 2
+            x_start = 100  # Posición X más a la izquierda para captar valores
+            
+            # Buscar cualquier texto en las líneas siguientes
             value_candidates = data_df[
                 (data_df['top'] >= y_search_start) &
-                (data_df['left'] >= x_start - 5) &
-                (data_df['left'] <= x_start + 100)
+                (data_df['top'] < y_search_start + TOTAL_HEIGHT_DEP + 20) &
+                (data_df['left'] >= x_start - 50) &
+                (data_df['left'] <= x_start + 200)
             ].sort_values(by='top')
 
             if not value_candidates.empty:
-                y_start = int(value_candidates.iloc[0]['top']) - 5
+                y_start = int(value_candidates.iloc[0]['top']) - 8
             else:
-                # Si no se encontró debajo, usar posición relativa a la etiqueta
+                # Fallback: comenzar justo bajo la etiqueta
                 y_start = int(key_row['top'] + h_key + 5)
 
             h_dep = int(CELL_HEIGHT_DEP)
             w_dep = int(CELL_WIDTH_DEP)
+            
             # ROIs verticales por defecto (líneas debajo de la etiqueta)
             dynamic_rois['DEPENDENCIA_1'] = [y_start, x_start, h_dep, w_dep]
             dynamic_rois['DEPENDENCIA_2'] = [y_start + h_dep, x_start, h_dep, w_dep]
             dynamic_rois['DEPENDENCIA_3'] = [y_start + 2 * h_dep, x_start, h_dep, w_dep]
+            dep_found = True
             break
+    
+    # Si DEPENDENCIA no se encontró, usar posiciones por defecto basadas en documento típico
+    if not dep_found:
+        # Posiciones fallback típicas para documentos estándar
+        # Buscar cualquier texto que se parezca a un departamento (contiene palabras clave)
+        dept_keywords = ['DEPTO', 'DIV', 'DIVISION', 'DEPARTAMENTO', 'C.U', 'NSTITUTO']
+        dept_matches = data_df[
+            data_df['text'].str.upper().str.contains('|'.join(dept_keywords), regex=True, na=False)
+        ]
+        
+        if not dept_matches.empty:
+            # Encontramos algo que se parece un departamento
+            first_dept = dept_matches.iloc[0]
+            y_start = int(first_dept['top']) - 15
+            x_start = 100
+        else:
+            # Usar posiciones completamente por defecto (35% desde la parte superior)
+            y_start = int(H * 0.35)
+            x_start = 100
+        
+        h_dep = int(CELL_HEIGHT_DEP)
+        w_dep = int(CELL_WIDTH_DEP)
+        
+        dynamic_rois['DEPENDENCIA_1'] = [y_start, x_start, h_dep, w_dep]
+        dynamic_rois['DEPENDENCIA_2'] = [y_start + h_dep, x_start, h_dep, w_dep]
+        dynamic_rois['DEPENDENCIA_3'] = [y_start + 2 * h_dep, x_start, h_dep, w_dep]
 
     # 3. Lógica SOLO para NUM (a la derecha)
     for field_name, keywords in simple_fields_right.items():
@@ -222,12 +266,11 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
     base_row_y = None
     
     # Primero buscar todos para establecer la fila base común
-    rfc_matches = data_df[data_df['text'].str.contains(r'R\.?F\.?C\.?\s*$', case=False, regex=True)]
-    #codigo mejorado para RFC
-    #rfc_matches = data_df[data_df['text'].str.contains(r'R\.?F\.?C\.c*RFC', case=False, regex=True)]
-    # CÓDIGO MEJORADO PARA IMSS
-    imss_matches = data_df[data_df['text'].str.contains(r'I\.?M\.?S\.?S|AFIL\.?\s*IMSS|NO\.?\s*AFIL\.?\s*IMSS', case=False, regex=True)]
-    curp_matches = data_df[data_df['text'].str.contains(r'CURP\.?\s*$', case=False, regex=True)]
+    # Hacer búsqueda más flexible sin el $ (fin de línea)
+    rfc_matches = data_df[data_df['text'].str.contains(r'R\.?F\.?C', case=False, regex=True)]
+    imss_matches = data_df[data_df['text'].str.contains(r'I\.?M\.?S\.?S|AFIL|NO\.?\s*AFIL', case=False, regex=True)]
+    # Búsqueda mejorada para CURP: no requiere fin de línea
+    curp_matches = data_df[data_df['text'].str.contains(r'CURP', case=False, regex=True)]
     
     # Establecer base_row_y con el primer campo que se encuentre
     for matches in [rfc_matches, imss_matches, curp_matches]:
@@ -245,27 +288,55 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
                 base_row_y = value_candidates.iloc[0]['top'] - 10
                 break
     
-    # Si no se encontró ningún valor, usar posición por defecto
+    # Si no se encontró ningún valor, usar posición por defecto más inteligente
     if base_row_y is None:
-        base_row_y = 400  # Posición Y por defecto
+        # Buscar la primera fila de valores alfanuméricos largos (probablemente documentos)
+        long_text = data_df[data_df['text'].str.len() > 10].sort_values(by='top')
+        if not long_text.empty:
+            base_row_y = int(long_text.iloc[0]['top']) - 10
+        else:
+            base_row_y = 400  # Posición Y por defecto si nada funciona
+    
     # Procesar RFC (si existe)
     if not rfc_matches.empty:
+        dynamic_rois['RFC'] = [base_row_y, RFC_X, 45, RFC_WIDTH]
+    else:
+        # Fallback: posición por defecto para RFC
         dynamic_rois['RFC'] = [base_row_y, RFC_X, 45, RFC_WIDTH]
 
     # Procesar IMSS (si existe) - INDEPENDIENTE DE RFC
     if not imss_matches.empty:
         dynamic_rois['IMSS'] = [base_row_y + 3, IMSS_X, 33, IMSS_WIDTH]
+    else:
+        # Fallback: posición por defecto para IMSS
+        dynamic_rois['IMSS'] = [base_row_y + 3, IMSS_X, 33, IMSS_WIDTH]
         
     # Procesar CURP (si existe) - INDEPENDIENTE DE LOS OTROS
     if not curp_matches.empty:
         dynamic_rois['CURP'] = [base_row_y, CURP_X, 45, CURP_WIDTH]
+    else:
+        # Fallback: posición por defecto para CURP
+        dynamic_rois['CURP'] = [base_row_y, CURP_X, 45, CURP_WIDTH]
 
-    # 5. Lógica para campos DEBAJO (CÓDIGO, TELÉFONO, CRN, etc.)
+    # 5. Lógica para campos DEBAJO (CÓDIGO, TELÉFONO, CRN, DESDE, HASTA, etc.)
     for field_name, keywords in simple_fields_below.items():
         if field_name not in dynamic_rois:
             # Construir patrón regex escapando caracteres especiales
             regex_pattern = '|'.join([re.escape(kw) for kw in keywords])
-            matches = data_df[data_df['text'].str.contains(regex_pattern, case=False, regex=True)]
+            
+            # Para DESDE/HASTA, hacer búsqueda más flexible
+            if field_name in ['DESDE', 'HASTA']:
+                # Primero intentar exacto
+                matches = data_df[data_df['text'].str.contains(regex_pattern, case=False, regex=True)]
+                
+                # Si no se encuentra, buscar por letra inicial (D para DESDE, H para HASTA)
+                if matches.empty:
+                    if field_name == 'DESDE':
+                        matches = data_df[data_df['text'].str.upper().str.contains(r'^D[ESDE]*', regex=True, na=False)]
+                    elif field_name == 'HASTA':
+                        matches = data_df[data_df['text'].str.upper().str.contains(r'^H[ASTA]*', regex=True, na=False)]
+            else:
+                matches = data_df[data_df['text'].str.contains(regex_pattern, case=False, regex=True)]
             
             if not matches.empty:
                 key_row = matches.iloc[0]
@@ -339,23 +410,54 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
                             desde_y, desde_x, desde_h, desde_w = dynamic_rois['DESDE']
                             y_start = desde_y
                             x_start = desde_x - 250  # 150px a la izquierda de DESDE
-                # DENTRO DE get_dynamic_rois, en la parte de DESDE/HASTA, déjalo así de simple:
+                
                 elif field_name == 'DESDE' or field_name == 'HASTA':
-                    w_roi = 200 # Un poco más ancho por si la fecha es larga
+                    w_roi = 200  # Un poco más ancho por si la fecha es larga
                     h_roi = 40
-                    # Aquí ya no valides el texto, solo define el área
-                    dynamic_rois[field_name] = [y_start, x_start, h_roi, w_roi]
 
                 dynamic_rois[field_name] = [y_start, x_start, h_roi, w_roi]
                 print(f"    >> ROI final para {field_name}: y={int(y_start)}, x={int(x_start)}, h={h_roi}, w={w_roi}")
                 
     # ============ BÚSQUEDA ALTERNATIVA: Si DESDE/HASTA NO se encontraron, buscar por patrón de fecha ============
     if 'DESDE' not in dynamic_rois or 'HASTA' not in dynamic_rois:
-        date_pattern = r'\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4}'
-        date_matches = data_df[data_df['text'].str.contains(date_pattern, regex=True, na=False)]
+        # Patrones más flexibles para detectar fechas
+        # Permite espacios, múltiples separadores, formatos variados
+        date_patterns = [
+            r'\d{1,2}\s*[/\-\.]\s*\d{1,2}\s*[/\-\.]\s*\d{2,4}',  # Flexible: 01 / 12 / 2023 o 1-1-2023
+            r'\d{4}[/\-]\d{1,2}[/\-]\d{1,2}',  # YYYY-MM-DD
+            r'\d{1,2}/\d{1,2}/\d{1,2}',  # 01/12/23
+        ]
         
-        if not date_matches.empty:
-            print(f"  [DEBUG] Detectadas {len(date_matches)} fechas potenciales (patrón DD/MM/YYYY):")
+        date_matches = None
+        for pattern in date_patterns:
+            date_matches = data_df[data_df['text'].str.contains(pattern, regex=True, na=False)]
+            if not date_matches.empty:
+                print(f"  [DEBUG] Detectadas {len(date_matches)} fechas potenciales con patrón: {pattern}")
+                break
+        
+        # Si aún no se encuentran fechas por patrón, buscar por proximidad a la etiqueta "DESDE"
+        if date_matches is None or date_matches.empty:
+            print(f"  [DEBUG] No se encontraron fechas por patrón de OCR, buscando por etiqueta flexible...")
+            # Buscar "DESDE" en cualquier formato (D, DESDE, DESDE:, etc.)
+            desde_etiqueta = data_df[data_df['text'].str.upper().str.contains(r'^D[ESDE]*|DESDE', regex=True, na=False)]
+            
+            if not desde_etiqueta.empty:
+                print(f"  [DEBUG] Etiqueta DESDE encontrada como fallback")
+                first_desde = desde_etiqueta.iloc[0]
+                y_date = int(first_desde['top']) + int(first_desde['height']) + 5
+                x_date = int(first_desde['left'])
+                
+                # Crear ROIs relativos a la etiqueta encontrada
+                if 'DESDE' not in dynamic_rois:
+                    dynamic_rois['DESDE'] = [y_date, x_date, 45, 150]
+                    print(f"  [DEBUG] DESDE asignado por etiqueta flexible")
+                
+                if 'HASTA' not in dynamic_rois:
+                    # HASTA está debajo o a la derecha de DESDE
+                    dynamic_rois['HASTA'] = [y_date + 50, x_date, 45, 150]
+                    print(f"  [DEBUG] HASTA asignado por etiqueta flexible")
+        else:
+            print(f"  [DEBUG] Detectadas {len(date_matches)} fechas potenciales:")
             for idx, row in date_matches.iterrows():
                 print(f"    - Fecha en ({int(row['left'])}, {int(row['top'])}): '{row['text']}'")
             
@@ -446,19 +548,25 @@ def clean_data_by_field(field_name: str, text: str) -> str:
         if field_name == 'RFC':
             # RFC debe tener 12-13 caracteres alfanuméricos
             if len(text) > 13:
-                text = text[:13]
-            # Eliminar dígitos extra al final si tiene más de 13
-            text = re.sub(r'^([A-Z&Ñ]{3,4}\d{6}[A-Z0-9]{3}).*', r'\1', text)
+                # Buscar el patrón RFC válido en el texto
+                rfc_match = re.search(r'[A-Z&Ñ]{3,4}\d{6}[A-Z0-9]{3}', text)
+                if rfc_match:
+                    text = rfc_match.group()
+                else:
+                    text = text[:13]
             
         elif field_name == 'CURP':
-            # CURP debe tener 18 caracteres exactos
-            if len(text) > 18:
-                text = text[:18]
-            # Patrón básico de CURP: 4 letras, 6 números, 1 letra, 1 sexo, 2 letras, 3 números
-            text = re.sub(r'^([A-Z]{4}\d{6}[A-Z]{6}\d{2}).*', r'\1', text)
+            # CURP debe tener exactamente 18 caracteres
+            # Patrón: 6 letras + 6 números + 6 letras/números
+            # Primero intentar encontrar el patrón CURP válido dentro del texto
+            curp_match = re.search(r'[A-Z]{6}\d{6}[A-Z0-9]{6}', text)
+            if curp_match:
+                text = curp_match.group()
+            elif len(text) >= 18:
+                # Si hay suficientes caracteres, tomar los últimos 18
+                text = text[-18:]
+            # Si tiene menos de 18 caracteres, mantener como está (posiblemente incompleto)
             
-        # En la función clean_data_by_field (Línea ~280)
-
         elif field_name == 'IMSS':
             # IMSS generalmente son 11 dígitos, pero puede variar
             # Mantener solo números para IMSS
@@ -513,27 +621,27 @@ def validate_field_format(field_name: str, text: str) -> str:
         # Eliminar espacios y caracteres especiales
         text = re.sub(r'[^A-Z0-9]', '', text.upper())
         
-        # CURP ideal: 18 caracteres (4 letras + 6 números + 6 caracteres + 2 números)
-        # Pero ser más tolerante: aceptar 15+ si el patrón inicial es válido
-        if len(text) >= 15:
-            # Validar patrón: debe empezar con 4 letras + 6 números
-            pattern_strict = r'^[A-Z]{4}\d{6}[A-Z0-9]{6}\d{2}$'
-            if re.match(pattern_strict, text) and len(text) == 18:
-                # Patrón perfecto, mantener
-                pass
-            else:
-                # Patrón flexible: si empieza bien, mantener aunque no sea exactamente 18
-                pattern_flexible = r'^[A-Z]{4}\d{6}'
-                if re.match(pattern_flexible, text):
-                    # Mantener los primeros 18 caracteres si tiene más
+        # CURP ideal: 18 caracteres exactos
+        # Pero ser tolerante con OCR imperfecto 
+        if len(text) >= 6:  # Al menos debe tener el inicio (6 letras)
+            # Validar patrón: debe empezar con 6 letras + 6 números
+            pattern_strict = r'^[A-Z]{6}\d{6}[A-Z0-9]*'
+            if re.match(pattern_strict, text):
+                # Patrón válido, mantener (aunque sea incompleto)
+                if len(text) > 18:
                     text = text[:18]
+                # Si es menor a 18, lo mantenemos (es incompleto pero válido parcialmente)
+            else:
+                # Buscar el patrón dentro del texto (OCR pudo haber detectado basura antes)
+                curp_match = re.search(r'[A-Z]{6}\d{6}[A-Z0-9]*', text)
+                if curp_match:
+                    text = curp_match.group()[:18]
                 else:
                     # No coincide patrón, descartar
                     text = ""
-        elif len(text) > 0:
-            # Si tiene menos de 15 caracteres, descartar
+        else:
+            # Si tiene menos de 6 caracteres, probablemente no es CURP válido
             text = ""
-        # Si está vacío, dejar vacío
             
     # CÓDIGO MEJORADO PARA IMSS (Línea ~279)
     elif field_name == 'IMSS':
@@ -663,12 +771,13 @@ def corregir_con_catalogo(texto_ocr, nivel_dependencia, threshold=0.6):
     
     return texto_ocr # Si es muy diferente, dejamos lo que el OCR leyó
 
-def buscador_identidad_global(texto_ocr, threshold=0.7):
+def buscador_identidad_global(texto_ocr, threshold=0.65):
     """
     Busca en TODO el catálogo para identificar a qué nivel pertenece el texto
     y devuelve (Nivel_Detectado, Texto_Oficial).
+    Usa un threshold más bajos (0.65) para aceptar coincidencias parciales.
     """
-    if not texto_ocr or len(texto_ocr) < 4:
+    if not texto_ocr or len(texto_ocr) < 3:
         return None, texto_ocr
 
     mejor_coincidencia = texto_ocr
@@ -698,6 +807,7 @@ def procesar_bloque_dependencias(dict_textos_extraidos):
     """
     Recibe un dict con {'DEPENDENCIA_1': 'texto...', 'DEPENDENCIA_2': ...}
     y los reacomoda según su identidad real.
+    Maneja casos donde los textos están vacíos o son muy cortos.
     """
     resultados_finales = {
         "DEPENDENCIA_1": "",
@@ -712,14 +822,19 @@ def procesar_bloque_dependencias(dict_textos_extraidos):
     ]
 
     for i, texto in enumerate(textos_sucios):
-        if not texto: continue
+        if not texto: 
+            continue
         
         # Primero una limpieza básica de basura OCR
         texto_limpio = re.sub(r'^((\d\.)+\d?\s*|22\s*|\d+)\s+', '', texto)
         texto_limpio = re.sub(r'^[-\s!|\/,\?=:-]+', '', texto_limpio).strip()
 
+        # Si el texto quedó muy corto después de limpieza, ignorar
+        if len(texto_limpio) < 3:
+            continue
+
         # Intentamos identificar qué es
-        nivel_identificado, texto_oficial = buscador_identidad_global(texto_limpio)
+        nivel_identificado, texto_oficial = buscador_identidad_global(texto_limpio, threshold=0.65)
 
         if nivel_identificado:
             # Si lo identificamos, lo ponemos en su lugar correcto (1, 2 o 3)
@@ -727,8 +842,9 @@ def procesar_bloque_dependencias(dict_textos_extraidos):
         else:
             # REGLA DE ESCAPE: Si no está en el diccionario, 
             # lo dejamos donde el OCR lo encontró originalmente
+            # pero solo si no hay nada ahí ya
             key_original = f"DEPENDENCIA_{i+1}"
-            if not resultados_finales[key_original]: # Solo si está vacío
+            if not resultados_finales[key_original]:  # Solo si está vacío
                 resultados_finales[key_original] = texto_limpio
 
     return resultados_finales

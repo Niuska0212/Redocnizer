@@ -94,8 +94,8 @@ class DataManager(QObject):
             final_columns = ordered + remaining
 
             # Guardar como CSV usando el orden final de columnas
-            # Aseguramos encoding utf-8 para compatibilidad
-            self.data[final_columns].to_csv(self.data_file, index=False, encoding='utf-8')
+            # Aseguramos encoding utf-8-sig para compatibilidad con Excel
+            self.data[final_columns].to_csv(self.data_file, index=False, encoding='utf-8-sig')
 
             print(f"Datos guardados en: {self.data_file}")
         except Exception as e:
@@ -110,7 +110,11 @@ class DataManager(QObject):
         try:
             if os.path.exists(csv_path):
                 # Leer preservando todo como strings para evitar conversión errónea
-                df = pd.read_csv(csv_path, encoding='utf-8', dtype=str)
+                # Intentar primero con utf-8-sig (con BOM), si falla usar utf-8
+                try:
+                    df = pd.read_csv(csv_path, encoding='utf-8-sig', dtype=str)
+                except:
+                    df = pd.read_csv(csv_path, encoding='utf-8', dtype=str)
 
                 # Sanitizar nombres de columnas: eliminar BOM, trim y espacios extra
                 df.columns = [str(c).replace('\ufeff', '').strip() for c in df.columns]
@@ -173,18 +177,22 @@ class DataManager(QObject):
         return self.load_from_csv(csv_path)
 
     def export_to_csv(self, filepath):
-        """Exporta a CSV"""
+        """Exporta a CSV con encoding UTF-8-sig para compatibilidad con Excel"""
         try:
-            self.data.to_csv(filepath, index=False, encoding='utf-8')
+            self.data.to_csv(filepath, index=False, encoding='utf-8-sig')
             return True
         except Exception as e:
             print(f"Error exportando CSV: {e}")
             return False
 
     def export_to_excel(self, filepath):
-        """Exporta a Excel (guarda CSV para compatibilidad)"""
+        """Exporta a Excel"""
         try:
-            self.data.to_csv(filepath, index=False, encoding='utf-8')
+            # Si es .xlsx, usar Excelwriter; si es .csv, usar to_csv
+            if filepath.lower().endswith('.xlsx'):
+                self.data.to_excel(filepath, index=False, encoding='utf-8')
+            else:
+                self.data.to_csv(filepath, index=False, encoding='utf-8-sig')
             return True
         except Exception as e:
             print(f"Error exportando Excel: {e}")

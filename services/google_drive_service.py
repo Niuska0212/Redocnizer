@@ -179,7 +179,7 @@ class GoogleDriveService:
         """
         # Guardar CSV temporalmente
         temp_path = f"temp_{filename}"
-        df.to_csv(temp_path, index=False, encoding='utf-8')
+        df.to_csv(temp_path, index=False, encoding='utf-8-sig')
         
         try:
             file_id = self.upload_contract(temp_path, filename)
