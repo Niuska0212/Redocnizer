@@ -313,54 +313,62 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
         
     # Procesar CURP (si existe) - INDEPENDIENTE DE LOS OTROS
     if not curp_matches.empty:
-        dynamic_rois['CURP'] = [base_row_y, CURP_X, 45, CURP_WIDTH]
+        key_row = curp_matches.iloc[0]
+        # En lugar de usar base_row_y, usamos la posición exacta de su etiqueta
+        y_curp = key_row['top'] + key_row['height'] + 2 
+        # Intentar encontrar el valor de CURP a la derecha o debajo de la etiqueta
+        y_search_start = key_row['top'] + key_row['height'] + 2
+        value_candidates = data_df[
+            (data_df['top'] >= y_search_start - 6) &
+            (data_df['top'] <= y_search_start + 40) &
+            (data_df['left'] >= key_row['left']) &
+            (data_df['left'] <= key_row['left'] + 600)
+        ].sort_values(by='left').head(1)
+
+        if not value_candidates.empty:
+            x_curp = int(value_candidates.iloc[0]['left']) - 5
+            y_curp = int(value_candidates.iloc[0]['top']) - 6
+        else:
+            # Si no se encuentra a la derecha, colocar ROI justo a la derecha de la etiqueta
+            x_curp = int(key_row['left'] + key_row['width'] + 5)
+
+        # Bajamos el alto de 33 a 28 para que NO toque el recuadro de abajo
+        dynamic_rois['CURP'] = [y_curp, x_curp, 28, CURP_WIDTH]
     else:
         # Fallback: posición por defecto para CURP
-        dynamic_rois['CURP'] = [base_row_y, CURP_X, 45, CURP_WIDTH]
+        dynamic_rois['CURP'] = [base_row_y, CURP_X, 33, CURP_WIDTH]
 
     # 5. Lógica para campos DEBAJO (CÓDIGO, TELÉFONO, CRN, DESDE, HASTA, etc.)
     for field_name, keywords in simple_fields_below.items():
         if field_name not in dynamic_rois:
-            # Construir patrón regex escapando caracteres especiales
             regex_pattern = '|'.join([re.escape(kw) for kw in keywords])
-            
-            # Para DESDE/HASTA, hacer búsqueda más flexible
-            if field_name in ['DESDE', 'HASTA']:
-                # Primero intentar exacto
-                matches = data_df[data_df['text'].str.contains(regex_pattern, case=False, regex=True)]
-                
-                # Si no se encuentra, buscar por letra inicial (D para DESDE, H para HASTA)
-                if matches.empty:
-                    if field_name == 'DESDE':
-                        matches = data_df[data_df['text'].str.upper().str.contains(r'^D[ESDE]*', regex=True, na=False)]
-                    elif field_name == 'HASTA':
-                        matches = data_df[data_df['text'].str.upper().str.contains(r'^H[ASTA]*', regex=True, na=False)]
-            else:
-                matches = data_df[data_df['text'].str.contains(regex_pattern, case=False, regex=True)]
+            matches = data_df[data_df['text'].str.contains(regex_pattern, case=False, regex=True)]
             
             if not matches.empty:
                 key_row = matches.iloc[0]
-                print(f"  [DEBUG] Campo {field_name}: etiqueta detectada '{key_row['text']}' en ({int(key_row['left'])}, {int(key_row['top'])})")
                 
-                y_search_start = key_row['top'] + key_row['height'] + 5
-
+                # --- AJUSTE DE PRECISIÓN ---
+                # Buscamos valores que empiecen casi en la misma X que la etiqueta
+                # y que estén inmediatamente abajo (máximo 40 pixeles de distancia)
+                y_search_start = key_row['top'] + key_row['height']
+                
                 value_candidates = data_df[
-                    (data_df['top'] >= y_search_start) &
-                    (data_df['top'] <= y_search_start + 80) &
-                    (data_df['left'] >= key_row['left'] - 50) &
-                    (data_df['left'] <= key_row['left'] + 400)
+                    (data_df['top'] >= y_search_start - 2) & 
+                    (data_df['top'] <= y_search_start + 40) &
+                    (data_df['left'] >= key_row['left'] - 15) & # Margen pequeño a la izquierda
+                    (data_df['left'] <= key_row['left'] + 60)   # Margen pequeño a la derecha
                 ].sort_values(by='top').head(1)
 
-                # Valores por defecto
+                # Valores por defecto (si no encuentra candidato claro)
                 x_start = key_row['left']
-                y_start = y_search_start
-                h_roi = 54
+                y_start = y_search_start + 2
+                h_roi = 35 # Altura estándar para una línea de texto
                 w_roi = 200
 
                 if not value_candidates.empty:
-                    y_start = value_candidates.iloc[0]['top'] - 10
-                    x_start = value_candidates.iloc[0]['left'] - 10
-                    print(f"    >> Valor encontrado debajo: ({int(x_start)}, {int(y_start)})")
+                    # Si encontramos el texto real, nos pegamos a su posición exacta
+                    y_start = value_candidates.iloc[0]['top'] - 5
+                    x_start = value_candidates.iloc[0]['left'] - 5
 
                 # Ajustes específicos
                 if field_name == 'CODIGO':
@@ -386,8 +394,11 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
                     x_start = 700 if value_candidates.empty else value_candidates.iloc[0]['left'] - 10
                     
                 elif field_name == 'MATERIA':
-                    w_roi = 550
+                    w_roi = 660
                     h_roi = 35
+                    if value_candidates.empty:
+                        y_start = key_row['top'] + key_row['height'] + 2 # Pegado a la etiqueta
+                    
                 
                 elif field_name == 'CRN':
                     w_roi = 170
@@ -573,6 +584,32 @@ def clean_data_by_field(field_name: str, text: str) -> str:
             text = re.sub(r'[^0-9]', '', text)
             if len(text) > 11:
                 text = text[:11]
+        
+        elif field_name == 'MATERIA':
+            # Si el OCR leyó "FISICA CREDITOS" o "FISICA 8", 
+            # buscamos palabras clave de la columna de al lado para cortar.
+            palabras_bloqueo = ['CREDITOS', 'CRÉDITOS', 'HORAS', 'HRS', 'CREDIT']
+            for palabra in palabras_bloqueo:
+                if palabra in text.upper():
+                    # Cortamos el texto justo antes de la palabra prohibida
+                    text = text.upper().split(palabra)[0]
+            
+            # Eliminar números aislados al final (que suelen ser los créditos)
+            text = re.sub(r'\s+\d+\s*$', '', text)
+            return text.strip()
+        elif field_name == 'HRS_TOTALES':
+            # 1. Dejar solo números y puntos
+            text = re.sub(r'[^0-9\.]', '', text)
+            # 2. Si el OCR leyó "2000" (sin punto), asumimos 2 decimales
+            if '.' not in text and len(text) >= 3:
+                text = text[:-2] + "." + text[-2:]
+            # 3. Si leyó algo como "20..00" o "20.0.0", limpiar
+            if text.count('.') > 1:
+                partes = text.split('.')
+                text = partes[0] + "." + "".join(partes[1:])[:2]
+                
+            return text
+            
                 
     elif "DEPENDENCIA" in field_name:
         # Primero una limpieza básica de ruido
@@ -618,29 +655,26 @@ def validate_field_format(field_name: str, text: str) -> str:
             text = text[:13]
             
     elif field_name == 'CURP':
-        # Eliminar espacios y caracteres especiales
+        # 1. Limpieza básica
         text = re.sub(r'[^A-Z0-9]', '', text.upper())
         
-        # CURP ideal: 18 caracteres exactos
-        # Pero ser tolerante con OCR imperfecto 
-        if len(text) >= 6:  # Al menos debe tener el inicio (6 letras)
-            # Validar patrón: debe empezar con 6 letras + 6 números
-            pattern_strict = r'^[A-Z]{6}\d{6}[A-Z0-9]*'
-            if re.match(pattern_strict, text):
-                # Patrón válido, mantener (aunque sea incompleto)
-                if len(text) > 18:
-                    text = text[:18]
-                # Si es menor a 18, lo mantenemos (es incompleto pero válido parcialmente)
-            else:
-                # Buscar el patrón dentro del texto (OCR pudo haber detectado basura antes)
-                curp_match = re.search(r'[A-Z]{6}\d{6}[A-Z0-9]*', text)
-                if curp_match:
-                    text = curp_match.group()[:18]
+        # 2. Nueva lógica: No ser tan estrictos con la posición de números/letras
+        # Buscamos una cadena que tenga la estructura general de una CURP (18 caracteres aprox)
+        if len(text) >= 10: 
+            # Intentamos buscar el patrón pero permitiendo letras donde van números 
+            # por si el OCR se equivoca (ej. O por 0, I por 1)
+            curp_match = re.search(r'[A-Z0-9]{10,18}', text)
+            
+            if curp_match:
+                candidate = curp_match.group()
+                # Si tiene al menos algo de coherencia, lo mantenemos
+                if len(candidate) > 18:
+                    text = candidate[:18]
                 else:
-                    # No coincide patrón, descartar
-                    text = ""
+                    text = candidate
+            else:
+                text = "" # Solo si de plano no hay nada alfanumérico largo
         else:
-            # Si tiene menos de 6 caracteres, probablemente no es CURP válido
             text = ""
             
     # CÓDIGO MEJORADO PARA IMSS (Línea ~279)

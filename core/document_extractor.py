@@ -313,36 +313,27 @@ def extract_data_from_image(image_path, modelo_inferencia, index_to_char, output
         # --- POSTPROCESAMIENTO Y VALIDACIÓN ---
         extracted_data = {'Archivo': os.path.basename(image_path)}
         
-        # 1. Preparar bloque de dependencias para reordenamiento semántico
+        # 1. Preparar bloque de dependencias
         solo_deps_raw = {
             "DEPENDENCIA_1": all_extracted_data.get("DEPENDENCIA_1", ""),
             "DEPENDENCIA_2": all_extracted_data.get("DEPENDENCIA_2", ""),
             "DEPENDENCIA_3": all_extracted_data.get("DEPENDENCIA_3", "")
         }
-        
         deps_corregidas = procesar_bloque_dependencias(solo_deps_raw)
         
-        # 2. Procesar todos los campos
+        # 2. Procesar todos los campos (QUITAMOS LA RE-LIMPIEZA ADICIONAL)
         for key, value in all_extracted_data.items():
             if key.startswith('DEPENDENCIA'):
-                # Usamos el valor ya reordenado y limpio
-                final_validate_value = deps_corregidas.get(key, "")
-            else:
-                # Procesamiento normal para los demás campos
-                if key == 'NOMBRE_COMPLETO_RAW':
-                    value = clean_name_specific(value)
-                
-                cleaned_value = clean_data_by_field(key, clean_border_chars(value))
-                final_validate_value = validate_field_format(key, cleaned_value)
-
-            # Asignación a la estructura final
-            if key == 'NOMBRE_COMPLETO_RAW':
-                name_parts = split_full_name(final_validate_value)
+                extracted_data[key] = deps_corregidas.get(key, "")
+            elif key == 'NOMBRE_COMPLETO_RAW':
+                # El nombre sí necesita split porque genera 3 columnas nuevas
+                name_parts = split_full_name(value)
                 for name_key in name_parts:
                     name_parts[name_key] = clean_name_specific(name_parts[name_key])
                 extracted_data.update(name_parts)
             else:
-                extracted_data[key] = final_validate_value
+                # PARA CURP, RFC, etc., simplemente pasamos el valor que ya validamos arriba
+                extracted_data[key] = value
 
         # asegurar campos obligatorios
         if 'PATERNO' not in extracted_data: extracted_data['PATERNO'] = ''
