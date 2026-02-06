@@ -49,354 +49,172 @@ CATALOGO_DEPENDENCIAS = {
 # =========================================================================
 
 def get_dynamic_rois(img_full: np.ndarray) -> dict:
+    """
+    Identifica dinámicamente las regiones de interés (ROIs) basándose en etiquetas 
+    detectadas por OCR, priorizando CODIGO, CRN, MATERIA, HRS_TOTALES y FECHAS.
+    """
     if img_full is None: return {}
     
     H, W = img_full.shape[:2]
     
-    # ==========================================================
-    # ACLARAR IMAGEN (CORREGIDO)
-    # ==========================================================
-    # Error previo: Usabas img_gray antes de definirlo.
+    # --- PREPROCESAMIENTO PARA MEJORAR LECTURA ---
     img_gray = cv2.cvtColor(img_full, cv2.COLOR_BGR2GRAY) if len(img_full.shape) == 3 else img_full
-    
     avg_brightness = np.mean(img_gray)
     if avg_brightness < 120:
-        # Normalizamos y aplicamos CLAHE para que EasyOCR vea mejor las letras
         img_gray = cv2.normalize(img_gray, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX)
         clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
         img_gray = clahe.apply(img_gray)
         
-    # Usamos la imagen en escala de grises procesada (uint8)
-    # EasyOCR prefiere 3 canales, pero con uint8 gris suele bastar.
+    # Ejecución de EasyOCR
     results = reader.readtext(img_gray.astype(np.uint8))
     
-    # ==========================================================
     rows = []
     for (bbox, text, prob) in results:
         (tl, tr, br, bl) = bbox
         rows.append({
-            'left': int(tl[0]),
+            'left': int(tl[0]), 
             'top': int(tl[1]),
-            'width': int(tr[0] - tl[0]),
+            'width': int(tr[0] - tl[0]), 
             'height': int(bl[1] - tl[1]),
-            'text': text.upper().strip(),
+            'text': text.upper().strip(), 
             'conf': prob * 100
         })
     
     data_df = pd.DataFrame(rows)
+    if data_df.empty: return {}
     
-    # Si el OCR no detectó nada, evitamos que truene el DataFrame
-    if data_df.empty:
-        return {}
-
-    data_df = data_df.dropna(subset=['text'])
-    # Bajamos un poco el filtro de confianza a 10 para no perder datos reales
-    data_df = data_df[data_df['conf'] > 10].copy() 
-    data_df['text'] = data_df['text'].str.upper().str.strip()
-
-    TOTAL_WIDTH_NOMBRE = 600
-    CELL_HEIGHT_NOMBRE = 25
-
-    TOTAL_HEIGHT_DEP = 99
-    CELL_WIDTH_DEP = 792
-    CELL_HEIGHT_DEP = int(TOTAL_HEIGHT_DEP / 3)
-
-    # POSICIONES FIJAS PARA FALLBACK
-    NUM_FALLBACK_X = 930
-    NUM_FALLBACK_Y = 230
-
-    # ANCHOS ESPECÍFICOS Y POSICIONES FIJAS PARA RFC, IMSS, CURP
-    RFC_WIDTH = 230
-    IMSS_WIDTH = 230
-    CURP_WIDTH = 350
-
-    #la altura de IMSS se encuentra 
-    # POSICIONES FIJAS ABSOLUTAS (más a la izquierda)
-    RFC_X = 100
-    IMSS_X = RFC_X + RFC_WIDTH + 20   # 100 + 230 + 10 = 340
-    CURP_X = IMSS_X + IMSS_WIDTH + 10 # 340 + 230 + 10 = 580 
-    
-
-    name_keywords = ['PATERNO', 'MATERNO', 'NOMBRE(S)', 'APELLIDO PATERNO', 'APELLIDO MATERNO', 'APELLIDOS']
-    dep_keywords = ['DEPENDENCIA', 'DEPENDENCIAS',]
-    simple_fields_right = {
-        'NUM': ['NÚM', 'NUM', 'NUM:', 'NÚM:', 'NUM.', 'NÚM.']
-    }
-    
-
-    simple_fields_below = {
-        'CODIGO': ['CÓDIGO', 'CODIGO'],
-        'CURP': ['CURP','cuRP'],
-        'TELEFONO': ['TELÉFONO', 'TELEFONO', 'TEL'],
-        'CRN': ['CRN', 'C.R.N.', 'C R N'],
-        'MATERIA': ['MATERIA', 'MATERIAS', 'NOMBRE DE LA MATERIA / CURSO', 'NOMBRE DE LA MATERIA'],
-        'HRS_TOTALES': ['HRS. TOTALES', 'HRS TOTALES', 'HORAS TOTALES', 'HRS. TOTALES CURSO', 'HRS TOTALES CURSO', 'HRS.'],
-        'DESDE': ['DESDE', 'DESDE:'],
-        'HASTA': ['HASTA', 'HASTA:'],
-    }
-
+    # Filtrado inicial de ruido
+    data_df = data_df[data_df['conf'] > 10].copy()
     dynamic_rois = {}
-    # 1. Lógica para extraer el nombre completo
+
+    # ==========================================================
+    # 1. DEFINICIÓN DE GRUPOS DE CAMPOS (PRIORIDAD)
+    # ==========================================================
+    
+    # Campos que mencionas como prioritarios (Valor SIEMPRE debajo)
+    # Reducimos el ancho y ajustamos el comportamiento de MATERIA
+    prioritarios_below = {
+        'CODIGO':       {'keys': ['CÓDIGO', 'CODIGO'], 'w': 160, 'h_limit': 45},
+        'MATERIA':      {'keys': ['MATERIA', 'MATERIAS', 'NOMBRE DE LA MATERIA'], 'w': 660, 'h_limit': 35},
+        'CRN':          {'keys': ['CRN', 'C.R.N.', 'C R N'], 'w': 160, 'h_limit': 45},
+        'HRS_TOTALES':  {'keys': ['HRS. TOTALES', 'HORAS TOTALES', 'HRS TOTALES', 'HRS.'], 'w': 160, 'h_limit': 45},
+        'DESDE':        {'keys': ['DESDE', 'DESDE:'], 'w': 200, 'h_limit': 45},
+        'HASTA':        {'keys': ['HASTA', 'HASTA:'], 'w': 200, 'h_limit': 45}
+    }
+
+    # Otros campos secundarios
+    secundarios_below = {
+        'CURP':     {'keys': ['CURP'], 'w': 350, 'h_limit': 45},
+        'TELEFONO': {'keys': ['TELÉFONO', 'TELEFONO', 'TEL'], 'w': 200, 'h_limit': 45}
+    }
+
+    # ==========================================================
+    # 2. FUNCIÓN DE BÚSQUEDA VERTICAL REFINADA
+    # ==========================================================
+    
+    def find_value_directly_below(keywords, w_roi, h_roi=35, vertical_limit=40):
+        """
+        Busca el valor físico en las filas de abajo de la etiqueta encontrada.
+        vertical_limit controla qué tan abajo buscamos el texto candidato.
+        """
+        regex_pattern = '|'.join([re.escape(kw) for kw in keywords])
+        matches = data_df[data_df['text'].str.contains(regex_pattern, case=False, regex=True)]
+        
+        if not matches.empty:
+            # Tomamos el match más probable o el primero
+            anchor = matches.iloc[0]
+            y_label_bottom = anchor['top'] + anchor['height']
+            x_label_left = anchor['left']
+            
+            # Ajuste de MATERIA: Si es materia, somos más estrictos con el margen vertical
+            # para evitar que baje a la fila de CRN/HRS
+            candidates = data_df[
+                (data_df['top'] >= y_label_bottom - 2) & 
+                (data_df['top'] <= y_label_bottom + vertical_limit) &
+                (data_df['left'] >= x_label_left - 80) &
+                (data_df['left'] <= x_label_left + 150)
+            ].sort_values(by='top')
+
+            if not candidates.empty:
+                val = candidates.iloc[0]
+                # Si el candidato detectado es muy pequeño o parece otra etiqueta, ajustamos
+                return [int(val['top'] - 2), int(val['left'] - 5), h_roi, w_roi]
+            else:
+                # Fallback: Coordenadas estimadas pegadas a la etiqueta
+                return [int(y_label_bottom + 2), int(x_label_left), h_roi, w_roi]
+        return None
+
+    # ==========================================================
+    # 3. PROCESAMIENTO DE ROIS
+    # ==========================================================
+
+    # --- A. Procesar Prioritarios ---
+    for field, config in prioritarios_below.items():
+        # Para MATERIA usamos un h_limit más corto para evitar saltar filas
+        limit = config.get('h_limit', 40)
+        roi = find_value_directly_below(config['keys'], config['w'], vertical_limit=limit)
+        if roi:
+            dynamic_rois[field] = roi
+
+    # --- B. Procesar Secundarios ---
+    for field, config in secundarios_below.items():
+        if field not in dynamic_rois:
+            roi = find_value_directly_below(config['keys'], config['w'])
+            if roi:
+                dynamic_rois[field] = roi
+
+    # --- C. RFC, IMSS ---
+    for field, keys in {'RFC': ['RFC'], 'IMSS': ['IMSS', 'AFIL']}.items():
+        roi = find_value_directly_below(keys, 230)
+        if roi:
+            dynamic_rois[field] = roi
+
+    # --- D. NOMBRE COMPLETO ---
+    name_keywords = ['PATERNO', 'MATERNO', 'NOMBRE(S)', 'APELLIDO PATERNO']
     header_matches = data_df[data_df['text'].isin(name_keywords)]
     if not header_matches.empty:
         anchor_row = header_matches.iloc[0]
-        y_start_base = anchor_row['top'] + anchor_row['height'] + 10
-        value_candidates = data_df[
-            (data_df['top'] >= y_start_base) &
-            (data_df['top'] < y_start_base )
-        ].sort_values(by='top')
-        if not value_candidates.empty:
-            y_start = value_candidates.iloc[0]['top'] - 5
-        else:
-            y_start = y_start_base
-        x_roi_start = 200
-        dynamic_rois['NOMBRE_COMPLETO_RAW'] = [y_start, x_roi_start, CELL_HEIGHT_NOMBRE, TOTAL_WIDTH_NOMBRE]
+        y_start = anchor_row['top'] + anchor_row['height'] + 5
+        dynamic_rois['NOMBRE_COMPLETO_RAW'] = [int(y_start), 200, 30, 600]
 
-    # 2. Búsqueda mejorada de DEPENDENCIA con flexibilidad
+    # --- E. DEPENDENCIAS ---
+    dep_keywords = ['DEPENDENCIA', 'DEPENDENCIAS']
     dep_found = False
-    for keyword in dep_keywords:
-        # Primero intentar coincidencia exacta (lo original)
-        matches = data_df[data_df['text'] == keyword]
-        
-        # Si no se encuentra exacto, buscar por contenencia de substring
-        if matches.empty:
-            matches = data_df[data_df['text'].str.upper().str.contains(keyword, regex=False, na=False)]
-        
-        # Si aún no se encuentra, buscar cualquier cosa que EMPIECE con "DEP"
-        if matches.empty:
-            matches = data_df[data_df['text'].str.upper().str.contains('^DEP', regex=True, na=False)]
-        
+    for kw in dep_keywords:
+        matches = data_df[data_df['text'].str.contains(kw, case=False, na=False)]
         if not matches.empty:
             key_row = matches.iloc[0]
-            x_key = key_row['left']
-            h_key = key_row['height']
-            
-            # Búsqueda más inteligente: valores DEBAJO de la etiqueta
-            y_search_start = key_row['top'] + h_key + 2
-            x_start = 100  # Posición X más a la izquierda para captar valores
-            
-            # Buscar cualquier texto en las líneas siguientes
-            value_candidates = data_df[
-                (data_df['top'] >= y_search_start) &
-                (data_df['top'] < y_search_start + TOTAL_HEIGHT_DEP + 20) &
-                (data_df['left'] >= x_start - 50) &
-                (data_df['left'] <= x_start + 200)
-            ].sort_values(by='top')
-
-            if not value_candidates.empty:
-                y_start = int(value_candidates.iloc[0]['top']) - 8
-            else:
-                # Fallback: comenzar justo bajo la etiqueta
-                y_start = int(key_row['top'] + h_key + 5)
-
-            h_dep = int(CELL_HEIGHT_DEP)
-            w_dep = int(CELL_WIDTH_DEP)
-            
-            # ROIs verticales por defecto (líneas debajo de la etiqueta)
-            dynamic_rois['DEPENDENCIA_1'] = [y_start, x_start, h_dep, w_dep]
-            dynamic_rois['DEPENDENCIA_2'] = [y_start + h_dep, x_start, h_dep, w_dep]
-            dynamic_rois['DEPENDENCIA_3'] = [y_start + 2 * h_dep, x_start, h_dep, w_dep]
+            y_start = int(key_row['top'] + key_row['height'] + 5)
+            h_cell = 33
+            dynamic_rois['DEPENDENCIA_1'] = [y_start, 100, h_cell, 792]
+            dynamic_rois['DEPENDENCIA_2'] = [y_start + h_cell, 100, h_cell, 792]
+            dynamic_rois['DEPENDENCIA_3'] = [y_start + 2*h_cell, 100, h_cell, 792]
             dep_found = True
             break
-    
-    # Si DEPENDENCIA no se encontró, usar posiciones por defecto basadas en documento típico
+            
     if not dep_found:
-        # Posiciones fallback típicas para documentos estándar
-        # Buscar cualquier texto que se parezca a un departamento (contiene palabras clave)
-        dept_keywords = ['DEPTO', 'DIV', 'DIVISION', 'DEPARTAMENTO', 'C.U', 'NSTITUTO']
-        dept_matches = data_df[
-            data_df['text'].str.upper().str.contains('|'.join(dept_keywords), regex=True, na=False)
-        ]
+        y_fallback = int(H * 0.35)
+        h_cell = 33
+        dynamic_rois['DEPENDENCIA_1'] = [y_fallback, 100, h_cell, 792]
+        dynamic_rois['DEPENDENCIA_2'] = [y_fallback + h_cell, 100, h_cell, 792]
+        dynamic_rois['DEPENDENCIA_3'] = [y_fallback + 2*h_cell, 100, h_cell, 792]
+
+    # --- F. NUM ---
+    num_keywords = ['NÚM', 'NUM', 'NUM:', 'NÚM:']
+    matches = data_df[data_df['text'].str.contains('|'.join(num_keywords), case=False, regex=True)]
+    if not matches.empty:
+        key_row = matches.iloc[0]
+        val_right = data_df[
+            (data_df['top'] >= key_row['top'] - 15) & 
+            (data_df['top'] <= key_row['top'] + 15) &
+            (data_df['left'] >= key_row['left'] + key_row['width'])
+        ].sort_values(by='left').head(1)
         
-        if not dept_matches.empty:
-            # Encontramos algo que se parece un departamento
-            first_dept = dept_matches.iloc[0]
-            y_start = int(first_dept['top']) - 15
-            x_start = 100
+        if not val_right.empty:
+            dynamic_rois['NUM'] = [int(val_right.iloc[0]['top'] - 5), int(val_right.iloc[0]['left'] - 5), 40, 160]
         else:
-            # Usar posiciones completamente por defecto (35% desde la parte superior)
-            y_start = int(H * 0.35)
-            x_start = 100
-        
-        h_dep = int(CELL_HEIGHT_DEP)
-        w_dep = int(CELL_WIDTH_DEP)
-        
-        dynamic_rois['DEPENDENCIA_1'] = [y_start, x_start, h_dep, w_dep]
-        dynamic_rois['DEPENDENCIA_2'] = [y_start + h_dep, x_start, h_dep, w_dep]
-        dynamic_rois['DEPENDENCIA_3'] = [y_start + 2 * h_dep, x_start, h_dep, w_dep]
+            dynamic_rois['NUM'] = [int(key_row['top']), int(key_row['left'] + key_row['width'] + 10), 40, 160]
 
-    # 3. Lógica SOLO para NUM (a la derecha)
-    for field_name, keywords in simple_fields_right.items():
-        if field_name not in dynamic_rois:
-            for keyword in keywords:
-                matches = data_df[data_df['text'].str.contains(r'|'.join(keywords), case=False, regex=True)]
-                if not matches.empty:
-                    key_row = matches.iloc[0]
-                    key_right = key_row['left'] + key_row['width']
-                    y_start_label = key_row['top']
-                    
-                    w_roi, h_roi = 160, 40
-                    
-                    value_candidates = data_df[
-                        (data_df['top'] >= y_start_label - 15) &
-                        (data_df['top'] <= y_start_label + 15) &
-                        (data_df['left'] >= key_right + 5)
-                    ].sort_values(by='left').head(1)
-
-                    if value_candidates.empty:
-                        x_start, y_start = NUM_FALLBACK_X, NUM_FALLBACK_Y
-                    else:
-                        x_start = int(value_candidates.iloc[0]['left']) - 15
-                        y_start = int(value_candidates.iloc[0]['top']) - 15
-
-                    dynamic_rois[field_name] = [y_start, x_start, h_roi, w_roi]
-                    break
-
-    # 4. Lógica para RFC, IMSS, CURP (POSICIONES FIJAS INDEPENDIENTES)
-    base_row_y = None
-    
-    # Primero buscar todos para establecer la fila base común
-    # Hacer búsqueda más flexible sin el $ (fin de línea)
-    rfc_matches = data_df[data_df['text'].str.contains(r'R\.?F\.?C', case=False, regex=True)]
-    imss_matches = data_df[data_df['text'].str.contains(r'I\.?M\.?S\.?S|AFIL|NO\.?\s*AFIL', case=False, regex=True)]
-    # Búsqueda mejorada para CURP: no requiere fin de línea
-    curp_matches = data_df[data_df['text'].str.contains(r'CURP', case=False, regex=True)]
-    
-    # Establecer base_row_y con el primer campo que se encuentre
-    for matches in [rfc_matches, imss_matches, curp_matches]:
-        if not matches.empty:
-            key_row = matches.iloc[0]
-            y_search_start = key_row['top'] + key_row['height'] + 5
-            value_candidates = data_df[
-                (data_df['top'] >= y_search_start) &
-                (data_df['top'] <= y_search_start + 50) &
-                (data_df['left'] >= key_row['left'] - 50) &
-                (data_df['left'] <= key_row['left'] + 400)
-            ].sort_values(by='top').head(1)
-            
-            if not value_candidates.empty:
-                base_row_y = value_candidates.iloc[0]['top'] - 10
-                break
-    
-    # Si no se encontró ningún valor, usar posición por defecto más inteligente
-    if base_row_y is None:
-        # Buscar la primera fila de valores alfanuméricos largos (probablemente documentos)
-        long_text = data_df[data_df['text'].str.len() > 10].sort_values(by='top')
-        if not long_text.empty:
-            base_row_y = int(long_text.iloc[0]['top']) - 10
-        else:
-            base_row_y = 400  # Posición Y por defecto si nada funciona
-    
-    # Procesar RFC (si existe)
-    if not rfc_matches.empty:
-        dynamic_rois['RFC'] = [base_row_y, RFC_X, 45, RFC_WIDTH]
-    else:
-        # Fallback: posición por defecto para RFC
-        dynamic_rois['RFC'] = [base_row_y, RFC_X, 45, RFC_WIDTH]
-
-    # Procesar IMSS (si existe) - INDEPENDIENTE DE RFC
-    if not imss_matches.empty:
-        dynamic_rois['IMSS'] = [base_row_y + 3, IMSS_X, 33, IMSS_WIDTH]
-    else:
-        # Fallback: posición por defecto para IMSS
-        dynamic_rois['IMSS'] = [base_row_y + 3, IMSS_X, 33, IMSS_WIDTH]
-        
-    # Procesar CURP (si existe) - INDEPENDIENTE DE LOS OTROS
-    if not curp_matches.empty:
-        dynamic_rois['CURP'] = [base_row_y + 5, CURP_X, 45, CURP_WIDTH]
-    else:
-        # Fallback: posición por defecto para CURP
-        dynamic_rois['CURP'] = [base_row_y + 5, CURP_X, 45, CURP_WIDTH]
-
-    # 5. Lógica para campos DEBAJO (CÓDIGO, TELÉFONO, CRN, DESDE, HASTA, MATERIA, etc.)
-    for field_name, keywords in simple_fields_below.items():
-        if field_name not in dynamic_rois:
-            regex_pattern = '|'.join([re.escape(kw) for kw in keywords])
-            matches = data_df[data_df['text'].str.contains(regex_pattern, case=False, regex=True)]
-            
-            if not matches.empty:
-                key_row = matches.iloc[0]
-                y_search_start = key_row['top'] + key_row['height']
-                
-                value_candidates = data_df[
-                    (data_df['top'] >= y_search_start - 2) & 
-                    (data_df['top'] <= y_search_start ) &
-                    (data_df['left'] >= key_row['left'] - 15) & # Margen pequeño a la izquierda
-                    (data_df['left'] <= key_row['left'] + 60)   # Margen pequeño a la derecha
-                ].sort_values(by='top').head(1)
-
-                # Valores por defecto (si no encuentra candidato claro)
-                x_start = key_row['left']
-                y_start = y_search_start + 2
-                h_roi = 35 # Altura estándar para una línea de texto
-                w_roi = 200
-
-                if not value_candidates.empty:
-                    # Si encontramos el texto real, nos pegamos a su posición exacta
-                    y_start = value_candidates.iloc[0]['top'] - 5
-                    x_start = value_candidates.iloc[0]['left'] - 5
-
-                # Ajustes específicos
-                if field_name == 'CODIGO':
-                    w_roi = 150
-                    h_roi = 40
-                    x_start = 700 if value_candidates.empty else value_candidates.iloc[0]['left'] - 10
-                    
-                    # 🚨 Fallback extra si no lo encuentra directamente
-                    if value_candidates.empty:
-                        # Buscar si tenemos el ROI de NOMBRE o NUM para apoyarnos
-                        if 'NOMBRE_COMPLETO_RAW' in dynamic_rois:
-                            nombre_y, nombre_x, nombre_h, nombre_w = dynamic_rois['NOMBRE_COMPLETO_RAW']
-                            y_start = nombre_y
-                            x_start = nombre_x + nombre_w + 130  # 130px a la derecha de nombre
-                        
-                        elif 'NUM' in dynamic_rois:
-                            num_y, num_x, num_h, num_w = dynamic_rois['NUM']
-                            y_start = num_y + 5   # misma altura aprox
-                            x_start = num_x + 30  # 30px a la derecha de num
-                
-                elif field_name == 'TELEFONO':
-                    w_roi = 200
-                    x_start = 700 if value_candidates.empty else value_candidates.iloc[0]['left'] - 10
-                    
-                elif field_name == 'MATERIA':
-                    w_roi = 660
-                    h_roi = 35
-                    if value_candidates.empty:
-                        y_start = key_row['top'] + key_row['height'] + 2 # Pegado a la etiqueta
-                    
-                elif field_name == 'CRN':
-                    w_roi = 170
-                    h_roi = 35
-                    x_start = 150
-                    if value_candidates.empty:
-                        # Busca cerca de DESDE/HASTA si existen 
-                        if 'DESDE' in dynamic_rois:
-                            desde_y, desde_x, desde_h, desde_w = dynamic_rois['DESDE']
-                            y_start = desde_y
-                            x_start = desde_x - 300  # 300px a la izquierda de DESDE
-                    
-                elif field_name == 'HRS_TOTALES':
-                    w_roi = 150
-                    h_roi = 35
-                    x_start = 330
-                    if value_candidates.empty:
-                        #busca cerca de Desde/Hasta si existen
-                        if 'DESDE' in dynamic_rois:
-                            desde_y, desde_x, desde_h, desde_w = dynamic_rois['DESDE']
-                            y_start = desde_y
-                            x_start = desde_x - 250  # 150px a la izquierda de DESDE
-                
-                elif field_name == 'DESDE':
-                    w_roi = 200  # Un poco más ancho por si la fecha es larga
-                    h_roi = 40
-                elif field_name == 'HASTA':
-                    w_roi = 200  # Un poco más ancho por si la fecha es larga
-                    h_roi = 40
-
-                dynamic_rois[field_name] = [y_start, x_start, h_roi, w_roi]
-                print(f"    >> ROI final para {field_name}: y={int(y_start)}, x={int(x_start)}, h={h_roi}, w={w_roi}")
-                
     return dynamic_rois
 
 
