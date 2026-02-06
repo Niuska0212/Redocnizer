@@ -136,16 +136,6 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
     }
 
     dynamic_rois = {}
-
-    # ============ BÚSQUEDA DE DESDE/HASTA AL FINAL (DESPUÉS DE TODO) ============
-    # Si DESDE/HASTA no se encuentran por etiqueta, buscar por patrón de fecha
-    def search_date_pattern():
-        import re
-        """Buscar fechas en formato DD/MM/YYYY, DD-MM-YYYY, etc."""
-        date_pattern = r'(\d{1,2})[\/\-\.\s](\d{1,2})[\/\-\.\s](\d{2,4})'
-        date_matches = data_df[data_df['text'].str.contains(date_pattern, regex=True, na=False)]
-        return date_matches
-
     # 1. Lógica para extraer el nombre completo
     header_matches = data_df[data_df['text'].isin(name_keywords)]
     if not header_matches.empty:
@@ -313,32 +303,12 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
         
     # Procesar CURP (si existe) - INDEPENDIENTE DE LOS OTROS
     if not curp_matches.empty:
-        key_row = curp_matches.iloc[0]
-        # En lugar de usar base_row_y, usamos la posición exacta de su etiqueta
-        y_curp = key_row['top'] + key_row['height'] + 2 
-        # Intentar encontrar el valor de CURP a la derecha o debajo de la etiqueta
-        y_search_start = key_row['top'] + key_row['height'] + 2
-        value_candidates = data_df[
-            (data_df['top'] >= y_search_start - 6) &
-            (data_df['top'] <= y_search_start + 40) &
-            (data_df['left'] >= key_row['left']) &
-            (data_df['left'] <= key_row['left'] + 600)
-        ].sort_values(by='left').head(1)
-
-        if not value_candidates.empty:
-            x_curp = int(value_candidates.iloc[0]['left']) - 5
-            y_curp = int(value_candidates.iloc[0]['top']) - 6
-        else:
-            # Si no se encuentra a la derecha, colocar ROI justo a la derecha de la etiqueta
-            x_curp = int(key_row['left'] + key_row['width'] + 5)
-
-        # Bajamos el alto de 33 a 28 para que NO toque el recuadro de abajo
-        dynamic_rois['CURP'] = [y_curp, x_curp, 28, CURP_WIDTH]
+        dynamic_rois['CURP'] = [base_row_y + 5, CURP_X, 45, CURP_WIDTH]
     else:
         # Fallback: posición por defecto para CURP
-        dynamic_rois['CURP'] = [base_row_y, CURP_X, 33, CURP_WIDTH]
+        dynamic_rois['CURP'] = [base_row_y + 5, CURP_X, 45, CURP_WIDTH]
 
-    # 5. Lógica para campos DEBAJO (CÓDIGO, TELÉFONO, CRN, DESDE, HASTA, etc.)
+    # 5. Lógica para campos DEBAJO (CÓDIGO, TELÉFONO, CRN, DESDE, HASTA, MATERIA, etc.)
     for field_name, keywords in simple_fields_below.items():
         if field_name not in dynamic_rois:
             regex_pattern = '|'.join([re.escape(kw) for kw in keywords])
@@ -346,15 +316,11 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
             
             if not matches.empty:
                 key_row = matches.iloc[0]
-                
-                # --- AJUSTE DE PRECISIÓN ---
-                # Buscamos valores que empiecen casi en la misma X que la etiqueta
-                # y que estén inmediatamente abajo (máximo 40 pixeles de distancia)
                 y_search_start = key_row['top'] + key_row['height']
                 
                 value_candidates = data_df[
                     (data_df['top'] >= y_search_start - 2) & 
-                    (data_df['top'] <= y_search_start + 40) &
+                    (data_df['top'] <= y_search_start ) &
                     (data_df['left'] >= key_row['left'] - 15) & # Margen pequeño a la izquierda
                     (data_df['left'] <= key_row['left'] + 60)   # Margen pequeño a la derecha
                 ].sort_values(by='top').head(1)
@@ -399,7 +365,6 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
                     if value_candidates.empty:
                         y_start = key_row['top'] + key_row['height'] + 2 # Pegado a la etiqueta
                     
-                
                 elif field_name == 'CRN':
                     w_roi = 170
                     h_roi = 35
@@ -422,70 +387,15 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
                             y_start = desde_y
                             x_start = desde_x - 250  # 150px a la izquierda de DESDE
                 
-                elif field_name == 'DESDE' or field_name == 'HASTA':
+                elif field_name == 'DESDE':
+                    w_roi = 200  # Un poco más ancho por si la fecha es larga
+                    h_roi = 40
+                elif field_name == 'HASTA':
                     w_roi = 200  # Un poco más ancho por si la fecha es larga
                     h_roi = 40
 
                 dynamic_rois[field_name] = [y_start, x_start, h_roi, w_roi]
                 print(f"    >> ROI final para {field_name}: y={int(y_start)}, x={int(x_start)}, h={h_roi}, w={w_roi}")
-                
-    # ============ BÚSQUEDA ALTERNATIVA: Si DESDE/HASTA NO se encontraron, buscar por patrón de fecha ============
-    if 'DESDE' not in dynamic_rois or 'HASTA' not in dynamic_rois:
-        # Patrones más flexibles para detectar fechas
-        # Permite espacios, múltiples separadores, formatos variados
-        date_patterns = [
-            r'\d{1,2}\s*[/\-\.]\s*\d{1,2}\s*[/\-\.]\s*\d{2,4}',  # Flexible: 01 / 12 / 2023 o 1-1-2023
-            r'\d{4}[/\-]\d{1,2}[/\-]\d{1,2}',  # YYYY-MM-DD
-            r'\d{1,2}/\d{1,2}/\d{1,2}',  # 01/12/23
-        ]
-        
-        date_matches = None
-        for pattern in date_patterns:
-            date_matches = data_df[data_df['text'].str.contains(pattern, regex=True, na=False)]
-            if not date_matches.empty:
-                print(f"  [DEBUG] Detectadas {len(date_matches)} fechas potenciales con patrón: {pattern}")
-                break
-        
-        # Si aún no se encuentran fechas por patrón, buscar por proximidad a la etiqueta "DESDE"
-        if date_matches is None or date_matches.empty:
-            print(f"  [DEBUG] No se encontraron fechas por patrón de OCR, buscando por etiqueta flexible...")
-            # Buscar "DESDE" en cualquier formato (D, DESDE, DESDE:, etc.)
-            desde_etiqueta = data_df[data_df['text'].str.upper().str.contains(r'^D[ESDE]*|DESDE', regex=True, na=False)]
-            
-            if not desde_etiqueta.empty:
-                print(f"  [DEBUG] Etiqueta DESDE encontrada como fallback")
-                first_desde = desde_etiqueta.iloc[0]
-                y_date = int(first_desde['top']) + int(first_desde['height']) + 5
-                x_date = int(first_desde['left'])
-                
-                # Crear ROIs relativos a la etiqueta encontrada
-                if 'DESDE' not in dynamic_rois:
-                    dynamic_rois['DESDE'] = [y_date, x_date, 45, 150]
-                    print(f"  [DEBUG] DESDE asignado por etiqueta flexible")
-                
-                if 'HASTA' not in dynamic_rois:
-                    # HASTA está debajo o a la derecha de DESDE
-                    dynamic_rois['HASTA'] = [y_date + 50, x_date, 45, 150]
-                    print(f"  [DEBUG] HASTA asignado por etiqueta flexible")
-        else:
-            print(f"  [DEBUG] Detectadas {len(date_matches)} fechas potenciales:")
-            for idx, row in date_matches.iterrows():
-                print(f"    - Fecha en ({int(row['left'])}, {int(row['top'])}): '{row['text']}'")
-            
-            # Asignar las dos primeras fechas encontradas a DESDE y HASTA
-            if 'DESDE' not in dynamic_rois and len(date_matches) >= 1:
-                first_date_row = date_matches.iloc[0]
-                y_date = int(first_date_row['top']) - 5
-                x_date = int(first_date_row['left']) - 10
-                dynamic_rois['DESDE'] = [y_date, x_date, 45, 150]
-                print(f"  [DEBUG] DESDE asignado automáticamente por patrón de fecha")
-            
-            if 'HASTA' not in dynamic_rois and len(date_matches) >= 2:
-                second_date_row = date_matches.iloc[1]
-                y_date = int(second_date_row['top']) - 5
-                x_date = int(second_date_row['left']) - 10
-                dynamic_rois['HASTA'] = [y_date, x_date, 45, 150]
-                print(f"  [DEBUG] HASTA asignado automáticamente por patrón de fecha")
                 
     return dynamic_rois
 
@@ -523,7 +433,6 @@ def keep_allowed_chars(text: str, extra_allowed: str = ',.- ') -> str:
     # Quitar guiones bajos introducidos por \w
     cleaned = cleaned.replace('_', '')
     return cleaned
-
 
 
 
@@ -686,7 +595,6 @@ def validate_field_format(field_name: str, text: str) -> str:
             return ""
         if len(text) > 11:
             text = text[:11]
-        
         
     elif field_name == 'TELEFONO':
         text = re.sub(r'[^0-9]', '', text)
@@ -882,3 +790,11 @@ def procesar_bloque_dependencias(dict_textos_extraidos):
                 resultados_finales[key_original] = texto_limpio
 
     return resultados_finales
+
+
+def search_date_pattern():
+    import re
+    """Buscar fechas en formato DD/MM/YYYY, DD-MM-YYYY, etc."""
+    date_pattern = r'(\d{1,2})[\/\-\.\s](\d{1,2})[\/\-\.\s](\d{2,4})'
+    date_matches = data_df[data_df['text'].str.contains(date_pattern, regex=True, na=False)]
+    return date_matches
