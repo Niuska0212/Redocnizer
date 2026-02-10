@@ -114,7 +114,7 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
         'CODIGO':       {'keys': ['CÓDIGO', 'CODIGO'], 'w': 160, 'h_limit': 45},
         'MATERIA':      {'keys': ['MATERIA', 'MATERIAS', 'NOMBRE DE LA MATERIA'], 'w': 660, 'h_limit': 35},
         'CRN':          {'keys': ['CRN', 'C.R.N.', 'C R N'], 'w': 160, 'h_limit': 45},
-        'HRS_TOTALES':  {'keys': ['HRS. TOTALES', 'HORAS TOTALES', 'HRS TOTALES', 'HRS.'], 'w': 160, 'h_limit': 45},
+        'HRS_TOTALES':  {'keys': ['HRS. TOTALES', 'HORAS TOTALES', 'HRS TOTALES', 'HRS.', 'HORA'], 'w': 160, 'h_limit': 45},
         'DESDE':        {'keys': ['DESDE', 'DESDE:'], 'w': 200, 'h_limit': 45},
         'HASTA':        {'keys': ['HASTA', 'HASTA:'], 'w': 200, 'h_limit': 45}
     }
