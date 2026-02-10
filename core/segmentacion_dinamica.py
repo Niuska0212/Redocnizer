@@ -1,4 +1,4 @@
-# segmentacion_dinamica.py
+# core/segmentacion_dinamica.py
 import random
 import cv2
 import os
@@ -57,14 +57,31 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
     
     H, W = img_full.shape[:2]
     
-    # --- PREPROCESAMIENTO PARA MEJORAR LECTURA ---
+    # Campos críticos que nunca deben faltar
+    CAMPOS_CRITICOS = {'CODIGO', 'NUM', 'MATERIA', 'HRS_TOTALES', 'DEPENDENCIA_1', 'NOMBRE_COMPLETO_RAW'}
+    
+    # --- FUNCIÓN PARA MEJORAR IMAGEN CON ACLARAMIENTO AGRESIVO ---
+    def enhance_image_aggressive(gray_img):
+        """Aplica CLAHE más fuerte + threshold adaptativo para fondos grises"""
+        # 1. Normalizar
+        normalized = cv2.normalize(gray_img, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX)
+        
+        # 2. CLAHE más agresivo
+        clahe = cv2.createCLAHE(clipLimit=5.0, tileGridSize=(6, 6))
+        enhanced = clahe.apply(normalized)
+        
+        # 3. Threshold adaptativo para mejorar contraste de etiquetas
+        enhanced = cv2.adaptiveThreshold(enhanced, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+                                        cv2.THRESH_BINARY, 15, 5)
+        return enhanced
+    
+    # --- PREPROCESAMIENTO INICIAL ---
     img_gray = cv2.cvtColor(img_full, cv2.COLOR_BGR2GRAY) if len(img_full.shape) == 3 else img_full
     avg_brightness = np.mean(img_gray)
+    
     if avg_brightness < 120:
-        img_gray = cv2.normalize(img_gray, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX)
-        clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
-        img_gray = clahe.apply(img_gray)
-        
+        img_gray = enhance_image_aggressive(img_gray)
+    
     # Ejecución de EasyOCR
     results = reader.readtext(img_gray.astype(np.uint8))
     
@@ -176,6 +193,16 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
         anchor_row = header_matches.iloc[0]
         y_start = anchor_row['top'] + anchor_row['height'] + 5
         dynamic_rois['NOMBRE_COMPLETO_RAW'] = [int(y_start), 200, 30, 600]
+        
+    # 2. CODIGO (Prioridad: Vertical -> Espacial a la izquierda del Nombre)
+    roi_codigo = find_value_directly_below(['CÓDIGO', 'CODIGO'], 160, h_roi=35, vertical_limit=45)
+    if roi_codigo:
+        dynamic_rois['CODIGO'] = roi_codigo
+    elif 'NOMBRE_COMPLETO_RAW' in dynamic_rois:
+        # Si no lo halló debajo de la palabra "CODIGO", buscar a la izquierda del nombre
+        roi_espacial = get_code_by_proximity(data_df, dynamic_rois['NOMBRE_COMPLETO_RAW'])
+        if roi_espacial:
+            dynamic_rois['CODIGO'] = roi_espacial
 
     # --- E. DEPENDENCIAS ---
     dep_keywords = ['DEPENDENCIA', 'DEPENDENCIAS']
@@ -214,6 +241,101 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
             dynamic_rois['NUM'] = [int(val_right.iloc[0]['top'] - 5), int(val_right.iloc[0]['left'] - 5), 40, 160]
         else:
             dynamic_rois['NUM'] = [int(key_row['top']), int(key_row['left'] + key_row['width'] + 10), 40, 160]
+
+    # --- G. VALIDACIÓN Y REINTENTO CON IMAGEN MEJORADA ---
+    campos_encontrados = set(dynamic_rois.keys())
+    campos_faltantes = CAMPOS_CRITICOS - campos_encontrados
+    
+    # Si faltan campos críticos, re-ejecutar OCR con imagen más aclarada
+    if campos_faltantes and avg_brightness >= 100:
+        print(f"⚠️ Campos críticos faltantes: {campos_faltantes}. Re-procesando con aclaramiento agresivo...")
+        
+        # Re-procesar imagen con aclaramiento más fuerte
+        img_gray_enhanced = enhance_image_aggressive(img_gray)
+        results_enhanced = reader.readtext(img_gray_enhanced.astype(np.uint8))
+        
+        # Reconstruir dataframe con resultados mejorados
+        rows_enhanced = []
+        for (bbox, text, prob) in results_enhanced:
+            (tl, tr, br, bl) = bbox
+            rows_enhanced.append({
+                'left': int(tl[0]), 
+                'top': int(tl[1]),
+                'width': int(tr[0] - tl[0]), 
+                'height': int(bl[1] - tl[1]),
+                'text': text.upper().strip(), 
+                'conf': prob * 100
+            })
+        
+        data_df_enhanced = pd.DataFrame(rows_enhanced)
+        if not data_df_enhanced.empty:
+            data_df_enhanced = data_df_enhanced[data_df_enhanced['conf'] > 10].copy()
+            
+            # Intercambiar dataframe temporalmente
+            data_df_original = data_df
+            data_df = data_df_enhanced
+            
+            # Re-procesar solo los campos faltantes
+            # CODIGO
+            if 'CODIGO' in campos_faltantes:
+                roi = find_value_directly_below(['CÓDIGO', 'CODIGO'], 160, h_roi=35, vertical_limit=45)
+                if roi:
+                    dynamic_rois['CODIGO'] = roi
+            
+            # MATERIA
+            if 'MATERIA' in campos_faltantes:
+                roi = find_value_directly_below(['MATERIA', 'MATERIAS', 'NOMBRE DE LA MATERIA'], 660, h_roi=35, vertical_limit=35)
+                if roi:
+                    dynamic_rois['MATERIA'] = roi
+            
+            # HRS_TOTALES
+            if 'HRS_TOTALES' in campos_faltantes:
+                roi = find_value_directly_below(['HRS. TOTALES', 'HORAS TOTALES', 'HRS TOTALES', 'HRS.'], 160, h_roi=35, vertical_limit=45)
+                if roi:
+                    dynamic_rois['HRS_TOTALES'] = roi
+            
+            # NUM
+            if 'NUM' in campos_faltantes:
+                num_keywords = ['NÚM', 'NUM', 'NUM:', 'NÚM:']
+                matches = data_df[data_df['text'].str.contains('|'.join(num_keywords), case=False, regex=True)]
+                if not matches.empty:
+                    key_row = matches.iloc[0]
+                    val_right = data_df[
+                        (data_df['top'] >= key_row['top'] - 15) & 
+                        (data_df['top'] <= key_row['top'] + 15) &
+                        (data_df['left'] >= key_row['left'] + key_row['width'])
+                    ].sort_values(by='left').head(1)
+                    
+                    if not val_right.empty:
+                        dynamic_rois['NUM'] = [int(val_right.iloc[0]['top'] - 5), int(val_right.iloc[0]['left'] - 5), 40, 160]
+                    else:
+                        dynamic_rois['NUM'] = [int(key_row['top']), int(key_row['left'] + key_row['width'] + 10), 40, 160]
+            
+            # NOMBRE_COMPLETO_RAW
+            if 'NOMBRE_COMPLETO_RAW' in campos_faltantes:
+                name_keywords = ['PATERNO', 'MATERNO', 'NOMBRE(S)', 'APELLIDO PATERNO']
+                header_matches = data_df[data_df['text'].isin(name_keywords)]
+                if not header_matches.empty:
+                    anchor_row = header_matches.iloc[0]
+                    y_start = anchor_row['top'] + anchor_row['height'] + 5
+                    dynamic_rois['NOMBRE_COMPLETO_RAW'] = [int(y_start), 200, 30, 600]
+            
+            # DEPENDENCIA_1
+            if 'DEPENDENCIA_1' in campos_faltantes:
+                dep_keywords = ['DEPENDENCIA', 'DEPENDENCIAS']
+                for kw in dep_keywords:
+                    matches = data_df[data_df['text'].str.contains(kw, case=False, na=False)]
+                    if not matches.empty:
+                        key_row = matches.iloc[0]
+                        y_start = int(key_row['top'] + key_row['height'] + 5)
+                        h_cell = 33
+                        dynamic_rois['DEPENDENCIA_1'] = [y_start, 100, h_cell, 792]
+                        dynamic_rois['DEPENDENCIA_2'] = [y_start + h_cell, 100, h_cell, 792]
+                        dynamic_rois['DEPENDENCIA_3'] = [y_start + 2*h_cell, 100, h_cell, 792]
+                        break
+            
+            # Restaurar dataframe original
+            data_df = data_df_original
 
     return dynamic_rois
 
@@ -616,3 +738,38 @@ def search_date_pattern():
     date_pattern = r'(\d{1,2})[\/\-\.\s](\d{1,2})[\/\-\.\s](\d{2,4})'
     date_matches = data_df[data_df['text'].str.contains(date_pattern, regex=True, na=False)]
     return date_matches
+
+
+def get_code_by_proximity(df, anchor_roi, horizontal_threshold=35):
+    """
+    Busca un candidato a código a la izquierda de una ROI (usualmente NOMBRE_COMPLETO_RAW).
+    """
+    if not anchor_roi or df.empty:
+        return None
+    
+    # anchor_roi = [y, x, h, w]
+    y_top_anchor, x_left_anchor = anchor_roi[0], anchor_roi[1]
+    y_bottom_anchor = y_top_anchor + anchor_roi[2]
+    y_center_anchor = y_top_anchor + (anchor_roi[2] / 2)
+
+    # Buscar candidatos que estén en la misma franja horizontal pero a la izquierda
+    candidates = df[
+        (df['top'] + (df['height']/2) >= y_center_anchor - horizontal_threshold) &
+        (df['top'] + (df['height']/2) <= y_center_anchor + horizontal_threshold) &
+        (df['left'] + df['width'] < x_left_anchor + 50) # Que terminen antes de que empiece el nombre (con margen)
+    ].copy()
+
+    if not candidates.empty:
+        # Limpiar texto y validar que parezca un código (alfanumérico, sin mucha basura)
+        candidates['clean_text'] = candidates['text'].apply(lambda x: re.sub(r'[^A-Z0-9]', '', x))
+        # Filtrar por longitud típica de código (ej. >= 5 caracteres)
+        real_candidates = candidates[candidates['clean_text'].str.len() >= 5].copy()
+        
+        if not real_candidates.empty:
+            # Calcular distancia horizontal al nombre
+            real_candidates['dist'] = x_left_anchor - (real_candidates['left'] + real_candidates['width'])
+            # Retornar el más cercano
+            best = real_candidates.sort_values(by='dist').iloc[0]
+            return [int(best['top'] - 5), int(best['left'] - 5), 40, int(best['width'] + 10)]
+    
+    return None

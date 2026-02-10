@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout, QLineEdit, QProgressBar, QListWidget, 
     QListWidgetItem, QApplication, QTabWidget, QTableWidget,
     QTableWidgetItem, QHeaderView, QAbstractItemView, QStyleFactory,
-    QTextEdit, QGroupBox, QSpinBox, QCheckBox, QSplitter
+    QTextEdit, QGroupBox, QSpinBox, QCheckBox, QSplitter, QDialog
 )
 from PySide6.QtCore import Qt, QTimer, Signal, QObject, QSettings
 from PySide6.QtGui import QPixmap, QFont, QColor, QBrush, QIcon
@@ -21,6 +21,7 @@ from ui.calendar_db import CalendarDB
 from ui.data_manager import DataManager
 from ui.data_tab import DataTab
 from ui.drive_sync_tab import DriveSyncTab
+from ui.network_credentials_dialog import NetworkCredentialsDialog
 
 
 
@@ -298,6 +299,8 @@ class MainWindow(QMainWindow):
                 "2027A", "2027B",
                 "2028A", "2028B",
                 "2029A", "2029B",
+                "2030A", "2030B",
+                "2031A", "2031B"
             ])
             self.calendar_combo.setCurrentText("2024A")
         
@@ -480,21 +483,61 @@ class MainWindow(QMainWindow):
         if not directory:
             return
 
+        # Detectar si es una ruta UNC (red compartida)
+        if directory.startswith("\\\\") or directory.startswith("//"):
+            # Es una ruta de red: \\servidor\recurso
+            # Solicitar credenciales
+            result = self._prompt_network_credentials(directory)
+            if not result:
+                # Usuario canceló la autenticación
+                QMessageBox.warning(
+                    self,
+                    "Acceso denegado",
+                    "No se pudo acceder a la red compartida sin autenticación."
+                )
+                return
+            # El usuario mapeó la unidad, usar la nueva ruta
+            directory = result
+
         self.root_dir = directory
         self.root_input.setText(directory)
         
-        # --- NUEVO: GUARDAR EN MEMORIA PERMANENTE ---
+        # --- GUARDAR EN MEMORIA PERMANENTE ---
         self.settings.setValue("root_dir", directory)
         print(f"💾 Ruta guardada en configuración: {directory}")
-        # --------------------------------------------
+        # ----------------------------------------
 
-        # Inicializar controlador (código que ya tenías)
+        # Inicializar controlador
         self.controller = ContractController(
             root_dir=self.root_dir,
             preview_dir=self.preview_dir
         )
 
         self._update_process_state()
+
+    def _prompt_network_credentials(self, unc_path: str) -> str:
+        """
+        Muestra un diálogo para solicitar credenciales de red.
+        
+        Args:
+            unc_path: Ruta UNC (\\servidor\recurso)
+        
+        Returns:
+            Letra de unidad mapeada (Z:\\) o vacío si falló
+        """
+        dialog = NetworkCredentialsDialog(
+            parent=self,
+            network_path=unc_path,
+            drive_letter="Z"
+        )
+        
+        if dialog.exec() == QDialog.Accepted:
+            mapped_drive = dialog.get_mapped_drive()
+            if mapped_drive:
+                print(f"✅ Red mapeada como: {mapped_drive}")
+                return mapped_drive
+        
+        return ""
 
     def select_file(self):
         files, _ = QFileDialog.getOpenFileNames(
@@ -507,7 +550,11 @@ class MainWindow(QMainWindow):
         if not files:
             return
 
-        self.selected_files.extend(files)
+        # Solo agregar archivos que no estén ya en la lista (evitar duplicados)
+        for file_path in files:
+            if file_path not in self.selected_files:
+                self.selected_files.append(file_path)
+        
         self.update_files_list()
         
         # Mostrar vista previa del primer archivo

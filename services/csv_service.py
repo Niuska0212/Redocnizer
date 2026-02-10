@@ -3,6 +3,10 @@ import pandas as pd
 import os
 
 def update_calendar_csv(calendar_dir, data):
+    """Actualiza el CSV del calendario, creando la carpeta si no existe."""
+    # Asegurar que la carpeta existe
+    os.makedirs(calendar_dir, exist_ok=True)
+    
     csv_path = os.path.join(calendar_dir, "contratos.csv")
 
     if os.path.exists(csv_path):

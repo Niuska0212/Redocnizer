@@ -65,8 +65,7 @@ class ContractController:
 
         final_path = self.file_service.save_contract(
             calendar=calendar,
-            codigo_profesor=data["CODIGO"],
-            num_contrato=data["NUM"],
+            data=data,  # Pasamos todo el diccionario 'data' que tiene PATERNO, MATERNO, NOMBRES, CODIGO, NUM
             source_file=pdf_for_storage
         )
 
@@ -74,7 +73,7 @@ class ContractController:
         # 4. Actualizar CSV
         # -----------------------------------
 
-        calendar_dir = os.path.join(self.file_service.root_dir, calendar)
+        calendar_dir = self.file_service.get_calendar_dir(calendar)
         update_calendar_csv(calendar_dir, data)
 
         return {

@@ -138,11 +138,39 @@ Para retrain o experimentar con nuevas épocas y datasets:
 
 -----
 
+## 🌐 Acceso a Redes Compartidas (UNC Path)
+
+REDOCNIZER ahora soporta **carpetas compartidas en red** que requieren autenticación. Hay **dos opciones**:
+
+### **Opción 1: Mapeo Previo (Recomendado)**
+Pre-mapea la red desde Windows Explorer o PowerShell **antes** de abrir el programa:
+
+```powershell
+# Mapear unidad Z a una carpeta compartida con credenciales
+net use Z: "\\servidor\carpeta" /user:DOMINIO\usuario miContraseña /persistent:yes
+```
+
+Luego selecciona `Z:\` en el programa normalmente. ✅
+
+### **Opción 2: Autenticación Integrada**
+Si seleccionas una ruta UNC (`\\servidor\carpeta`), el programa te pide credenciales automáticamente:
+- Se abre un diálogo solicitando usuario y contraseña
+- La unidad se mapea automáticamente
+- Las credenciales se almacenan de forma segura
+
+**Más detalles:** Ver [GUIA_RED_COMPARTIDA.md](GUIA_RED_COMPARTIDA.md)
+
+-----
+
 ## 💡 Consejos y Troubleshooting
 
   * **Pylance / VSCode muestra "reportMissingImports":** Selecciona el intérprete correcto en VSCode: `Ctrl+Shift+P` → **"Python: Select Interpreter"** y asegúrate de elegir la versión `.venv`.
   * **Error `TesseractNotFoundError`:** Instala el ejecutable de Tesseract y verifica que la ruta `pytesseract.pytesseract.tesseract_cmd` sea la correcta en el script principal.
   * **Buenas Prácticas:** Siempre ejecuta los scripts desde la raíz del proyecto para mantener las rutas relativas consistentes.
+  * **Error de Acceso a Red:** Si no puedes acceder a una carpeta compartida, verifica: 
+    - Conexión a la red: `ping servidor`
+    - Credenciales con tu administrador de TI
+    - Permisos de lectura/escritura en la carpeta
 
 -----
 
@@ -151,6 +179,7 @@ Para retrain o experimentar con nuevas épocas y datasets:
 **Autor:** Niuska Isabel Gonzalez Rangel y Luis Diego Uribe Sandoval
 
   * **GitHub:**  https://github.com/Niuska0212 y https://github.com/luigi10072
+
 
 
 Para reportar errores o sugerir mejoras, por favor abrir un **Issue** detallado en este repositorio.
