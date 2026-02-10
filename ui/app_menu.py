@@ -77,18 +77,27 @@ def create_app_menu(window):
     act_exit.triggered.connect(on_exit)
     file_menu.addAction(act_exit)
 
-    # ---- Edit (placeholders) ----
+    # ---- Edit (Undo/Redo) ----
     edit_menu = menubar.addMenu("Editar")
 
-    def placeholder(msg="No implementado"):
-        QMessageBox.information(window, "Editar", msg)
-
     act_undo = QAction("Deshacer", window)
-    act_undo.triggered.connect(lambda: placeholder("Deshacer no implementado"))
+    act_undo.setShortcut("Ctrl+Z")
+    
+    def on_undo():
+        if hasattr(window, 'data_tab') and hasattr(window.data_tab, 'undo_change'):
+            window.data_tab.undo_change()
+    
+    act_undo.triggered.connect(on_undo)
     edit_menu.addAction(act_undo)
 
     act_redo = QAction("Rehacer", window)
-    act_redo.triggered.connect(lambda: placeholder("Rehacer no implementado"))
+    act_redo.setShortcut("Ctrl+Y")
+    
+    def on_redo():
+        if hasattr(window, 'data_tab') and hasattr(window.data_tab, 'redo_change'):
+            window.data_tab.redo_change()
+    
+    act_redo.triggered.connect(on_redo)
     edit_menu.addAction(act_redo)
 
     # ---- Configuración ----

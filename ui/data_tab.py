@@ -10,6 +10,9 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QPixmap, QColor, QBrush
 
 from services.pdf_service import pdf_to_images
+from ui.history_manager import HistoryManager
+from ui.edit_record_dialog import EditRecordDialog
+from ui.file_watcher import FileWatcher
 
 
 class DataTab(QWidget):
@@ -20,6 +23,9 @@ class DataTab(QWidget):
         self.data_manager = data_manager
         self.original_df = None  # Guardar datos originales para búsqueda
         self.filtered_df = None  # Datos filtrados por búsqueda
+        self.history = HistoryManager()  # Sistema de undo/redo
+        self.file_watcher = FileWatcher()  # Monitor de cambios externos
+        self.file_watcher.file_changed.connect(self._on_external_file_changed)
         self.setup_ui()
 
         # Conectar señal de actualización
@@ -41,6 +47,17 @@ class DataTab(QWidget):
         self.search_input.setPlaceholderText("Buscar en nombres, códigos, teléfono, etc...")
         self.search_input.setMaximumWidth(300)
         self.search_input.textChanged.connect(self.apply_filter)
+
+        # Botones de edición
+        self.btn_undo = QPushButton("↶ Deshacer")
+        self.btn_undo.clicked.connect(self.undo_change)
+        self.btn_undo.setMaximumWidth(100)
+        self.btn_undo.setEnabled(False)
+
+        self.btn_redo = QPushButton("↷ Rehacer")
+        self.btn_redo.clicked.connect(self.redo_change)
+        self.btn_redo.setMaximumWidth(100)
+        self.btn_redo.setEnabled(False)
 
         # Botón para recargar
         self.btn_reload = QPushButton("🔄 Recargar")
@@ -64,6 +81,8 @@ class DataTab(QWidget):
 
         controls_layout.addWidget(search_label)
         controls_layout.addWidget(self.search_input)
+        controls_layout.addWidget(self.btn_undo)
+        controls_layout.addWidget(self.btn_redo)
         controls_layout.addWidget(self.btn_reload)
         controls_layout.addWidget(self.btn_export)
         controls_layout.addWidget(self.btn_save_all)
@@ -75,7 +94,7 @@ class DataTab(QWidget):
         self.table.setAlternatingRowColors(True)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)  # Seleccionar filas completas
         self.table.setSelectionMode(QAbstractItemView.SingleSelection)
-        self.table.setEditTriggers(QAbstractItemView.DoubleClicked)  # Solo doble clic para editar
+        self.table.setEditTriggers(QAbstractItemView.DoubleClicked)  # Doble clic para editar celda
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.table.verticalHeader().setVisible(False)
 
@@ -86,6 +105,8 @@ class DataTab(QWidget):
         # Conectar cambios en celdas y selección
         self.table.itemChanged.connect(self._on_item_changed)
         self.table.itemSelectionChanged.connect(self._on_row_selected)
+        # Doble clic en fila para editar registro completo
+        self.table.doubleClicked.connect(self._on_row_double_clicked)
 
         # -------- Vista previa --------
         table_preview_layout = QHBoxLayout()
@@ -117,11 +138,21 @@ class DataTab(QWidget):
             self.info_label.setText("0 registros - No hay datos")
             self.original_df = pd.DataFrame()
             self.filtered_df = pd.DataFrame()
+            self.history.clear()
+            self.btn_undo.setEnabled(False)
+            self.btn_redo.setEnabled(False)
+            self.btn_save_all.setEnabled(False)
             return
 
         # Guardar datos originales
         self.original_df = df.copy()
         self.filtered_df = df.copy()
+        
+        # Limpiar historial al cargar nuevos datos
+        self.history.clear()
+        self.btn_undo.setEnabled(False)
+        self.btn_redo.setEnabled(False)
+        self.btn_save_all.setEnabled(False)
 
         # Reordenar columnas para visualización según preferencia del usuario
         preferred_display_order = [
@@ -141,6 +172,11 @@ class DataTab(QWidget):
         remaining = [c for c in df.columns if c not in ordered_cols]
         self.original_df = self.original_df[ordered_cols + remaining]
         self.filtered_df = self.original_df.copy()
+
+        # Si hay un CSV source establecido, iniciar el file watcher
+        if self.data_manager.source_csv_file:
+            self.file_watcher.set_file(self.data_manager.source_csv_file)
+            self.file_watcher.start()
 
         # Mostrar datos
         self._populate_table(self.filtered_df)
@@ -253,7 +289,7 @@ class DataTab(QWidget):
         self._populate_table(self.filtered_df)
 
     def _on_item_changed(self, item):
-        """Detecta cambios en las celdas y guarda en el data_manager"""
+        """Detecta cambios en las celdas y registra en el historial"""
         if self.filtered_df is None or self.filtered_df.empty:
             return
 
@@ -263,25 +299,28 @@ class DataTab(QWidget):
         if row < len(self.filtered_df) and col < len(self.filtered_df.columns):
             column_name = self.filtered_df.columns[col]
             new_value = item.text()
+            old_value = str(self.filtered_df.iloc[row, col])
+
+            # Registrar en historial
+            self.history.record_change(row, column_name, old_value, new_value)
 
             # Actualizar en datos filtrados
             self.filtered_df.iloc[row, col] = new_value
 
-            # Actualizar en datos originales (encontrar el índice correspondiente)
+            # Actualizar en datos originales
             try:
-                original_index = self.original_df[
-                    (self.original_df.iloc[:, col].astype(str) == self.filtered_df.iloc[row, col].astype(str))
-                ].index[0]
-                self.original_df.iloc[original_index, col] = new_value
-
-                # Actualizar en data_manager
-                self.data_manager.update_record(original_index, column_name, new_value)
-
-                # Habilitar botón guardar
-                self.btn_save_all.setEnabled(True)
+                # Encontrar el índice en original_df
+                orig_indices = self.original_df[self.original_df.index.isin(self.filtered_df.index[row:row+1])].index
+                if len(orig_indices) > 0:
+                    self.original_df.at[orig_indices[0], column_name] = new_value
 
             except Exception:
                 pass
+
+            # Habilitar botones de guardado y undo/redo
+            self.btn_save_all.setEnabled(True)
+            self.btn_undo.setEnabled(self.history.can_undo())
+            self.btn_redo.setEnabled(self.history.can_redo())
 
     def _on_row_selected(self):
         """Cuando se selecciona una fila, mostrar la visualización"""
@@ -370,11 +409,149 @@ class DataTab(QWidget):
             )
 
     def save_all_to_manager(self):
-        """Guarda todos los cambios realizados"""
-        # Los cambios ya se guardan automáticamente en _on_item_changed
-        QMessageBox.information(
-            self,
-            "Guardado",
-            "Todos los cambios han sido guardados correctamente"
+        """Guarda todos los cambios realizados al data_manager y CSV del calendario"""
+        try:
+            # Actualizar datos del manager con el dataframe actual
+            self.data_manager.data = self.original_df.copy()
+            self.data_manager.save_data()
+            
+            # Limpiar historial después de guardar
+            self.history.clear()
+            self.btn_save_all.setEnabled(False)
+            self.btn_undo.setEnabled(False)
+            self.btn_redo.setEnabled(False)
+            
+            QMessageBox.information(
+                self,
+                "Guardado",
+                "✅ Todos los cambios han sido guardados correctamente"
+            )
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Error al guardar",
+                f"No se pudo guardar: {e}"
+            )
+
+    def has_unsaved_changes(self) -> bool:
+        """Verifica si hay cambios sin guardar.
+        
+        Retorna True si hay cambios pendientes (botón 'Guardar Cambios' está habilitado)
+        """
+        return self.btn_save_all.isEnabled()
+
+    def undo_change(self):
+        """Deshace el último cambio."""
+        changes = self.history.undo()
+        if not changes:
+            return
+        
+        # Revertir los cambios en la UI
+        for change in changes:
+            row = change.row_idx
+            col = change.col_name
+            
+            if row < len(self.original_df):
+                col_idx = list(self.original_df.columns).index(col)
+                self.original_df.iloc[row, col_idx] = change.old_value
+                
+                # Si está filtrada, también actualizar
+                if self.filtered_df is not None:
+                    for f_row, o_idx in enumerate(self.filtered_df.index):
+                        if o_idx == row:
+                            self.filtered_df.iloc[f_row, col_idx] = change.old_value
+                            break
+        
+        # Redibujar tabla
+        self._populate_table(self.filtered_df)
+        
+        # Actualizar botones
+        self.btn_save_all.setEnabled(True)
+        self.btn_undo.setEnabled(self.history.can_undo())
+        self.btn_redo.setEnabled(self.history.can_redo())
+
+    def redo_change(self):
+        """Rehace el último cambio deshecho."""
+        changes = self.history.redo()
+        if not changes:
+            return
+        
+        # Rehacer los cambios en la UI
+        for change in changes:
+            row = change.row_idx
+            col = change.col_name
+            
+            if row < len(self.original_df):
+                col_idx = list(self.original_df.columns).index(col)
+                self.original_df.iloc[row, col_idx] = change.new_value
+                
+                # Si está filtrada, también actualizar
+                if self.filtered_df is not None:
+                    for f_row, o_idx in enumerate(self.filtered_df.index):
+                        if o_idx == row:
+                            self.filtered_df.iloc[f_row, col_idx] = change.new_value
+                            break
+        
+        # Redibujar tabla
+        self._populate_table(self.filtered_df)
+        
+        # Actualizar botones
+        self.btn_save_all.setEnabled(True)
+        self.btn_undo.setEnabled(self.history.can_undo())
+        self.btn_redo.setEnabled(self.history.can_redo())
+
+    def _on_row_double_clicked(self, index):
+        """Cuando se hace doble clic en una fila, abre el modal de edición."""
+        row = index.row()
+        if row < 0 or self.filtered_df is None:
+            return
+        
+        # Obtener datos de la fila
+        row_data = self.filtered_df.iloc[row].to_dict()
+        column_names = list(self.filtered_df.columns)
+        
+        # Abrir modal
+        accepted, edited_data = EditRecordDialog.edit_record(
+            parent=self,
+            row_data=row_data,
+            column_names=column_names
         )
-        self.btn_save_all.setEnabled(False)
+        
+        if accepted:
+            # Actualizar la fila con los nuevos datos
+            for col_name, new_value in edited_data.items():
+                old_value = row_data.get(col_name, "")
+                
+                if old_value != new_value:
+                    # Registrar el cambio en el historial
+                    self.history.record_change(row, col_name, old_value, new_value)
+                    
+                    # Actualizar en filtered_df
+                    col_idx = list(self.filtered_df.columns).index(col_name)
+                    self.filtered_df.iloc[row, col_idx] = new_value
+                    
+                    # Actualizar en original_df
+                    orig_row = self.original_df[self.original_df.index.isin(self.filtered_df.index[row:row+1])].index
+                    if len(orig_row) > 0:
+                        self.original_df.at[orig_row[0], col_name] = new_value
+            
+            # Redibujar tabla
+            self._populate_table(self.filtered_df)
+            
+            # Actualizar estado de botones
+            self.btn_save_all.setEnabled(True)
+            self.btn_undo.setEnabled(self.history.can_undo())
+            self.btn_redo.setEnabled(self.history.can_redo())
+
+    def _on_external_file_changed(self):
+        """Se ejecuta cuando el CSV externo fue modificado."""
+        reply = QMessageBox.question(
+            self,
+            "Archivo Modificado",
+            "El archivo CSV ha sido modificado externamente.\n¿Desea recargar los cambios?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes
+        )
+        
+        if reply == QMessageBox.Yes:
+            self.load_data()

@@ -678,10 +678,31 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Sin directorio raíz", "Primero seleccione el directorio raíz.")
             return
 
+        # Verificar si hay cambios sin guardar
+        if hasattr(self, 'data_tab') and self.data_tab.has_unsaved_changes():
+            reply = QMessageBox.warning(
+                self,
+                "Cambios sin guardar",
+                "⚠️ Tienes cambios sin guardar en los datos actuales.\n\n¿Deseas guardarlos antes de cargar otro calendario?",
+                QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
+                QMessageBox.Save
+            )
+            
+            if reply == QMessageBox.Save:
+                self.data_tab.save_all_to_manager()
+            elif reply == QMessageBox.Cancel:
+                # El usuario canceló la operación, volver al calendario anterior
+                return
+
         if calendar is None:
             calendar = self.calendar_combo.currentText()
 
         calendar_dir = self.controller.file_service.get_calendar_dir(calendar)
+        
+        # Establecer el CSV source para que se guarden cambios allí
+        csv_path = os.path.join(calendar_dir, 'contratos.csv')
+        self.data_manager.set_source_csv(csv_path)
+        
         loaded = self.data_manager.load_from_calendar_dir(calendar_dir)
         if loaded:
             QMessageBox.information(self, "CSV cargado", f"CSV del calendario '{calendar}' cargado en la vista de datos.")
@@ -871,13 +892,54 @@ class MainWindow(QMainWindow):
             
     def closeEvent(self, event):
         """Se ejecuta al cerrar la ventana principal"""
-        # Los cambios se guardan automáticamente en DataTab al editar
-        event.accept()
+        # Verificar si hay cambios sin guardar en la pestaña de datos
+        if hasattr(self, 'data_tab') and self.data_tab.has_unsaved_changes():
+            reply = QMessageBox.warning(
+                self,
+                "Cambios sin guardar",
+                "⚠️ Tienes cambios sin guardar.\n\n¿Estás seguro de que deseas salir sin guardarlos?",
+                QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
+                QMessageBox.Cancel
+            )
+            
+            if reply == QMessageBox.Save:
+                # Guardar cambios y luego cerrar
+                self.data_tab.save_all_to_manager()
+                event.accept()
+            elif reply == QMessageBox.Discard:
+                # Cerrar sin guardar
+                event.accept()
+            else:
+                # Cancelar cierre
+                event.ignore()
+        else:
+            # No hay cambios sin guardar, cerrar normalmente
+            event.accept()
 
     def on_tab_changed(self, index):
-        """Cuando cambia la pestaña, si se sale de la de datos, preguntar si guardar"""
-        # Si el usuario estaba en la pestaña de datos (index 1) y se va a otra
-        # Podrías implementar una lógica similar aquí si quieres que guarde al cambiar de pestaña
+        """Cuando cambia la pestaña, verificar si hay cambios sin guardar"""
+        # Si el usuario estaba en la pestaña de datos (index 1) y hay cambios, advertir
+        if hasattr(self, 'tabs'):
+            previous_index = getattr(self, '_last_tab_index', None)
+            
+            if previous_index == 1 and index != 1:
+                # Saliendo de la pestaña de datos
+                if hasattr(self, 'data_tab') and self.data_tab.has_unsaved_changes():
+                    reply = QMessageBox.warning(
+                        self,
+                        "Cambios sin guardar",
+                        "⚠️ Tienes cambios sin guardar en la pestaña de datos.\n\n¿Deseas guardarlos antes de cambiar?",
+                        QMessageBox.Save | QMessageBox.Discard,
+                        QMessageBox.Save
+                    )
+                    
+                    if reply == QMessageBox.Save:
+                        self.data_tab.save_all_to_manager()
+            
+            # Actualizar índice de pestaña anterior
+            self._last_tab_index = index
+        
+        # Si entramos a la pestaña de datos, cargar datos
         if index == 1: 
             self.data_tab.load_data()
             

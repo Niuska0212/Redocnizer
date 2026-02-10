@@ -17,6 +17,7 @@ class DataManager(QObject):
         self.data = pd.DataFrame()
         # Usar CSV en vez de XLSX según preferencia del usuario
         self.data_file = os.path.join(os.getcwd(), "contratos_data.csv")
+        self.source_csv_file = None  # Archivo source (del calendario) si aplica
         self._load_data()
 
     def _load_data(self):
@@ -48,6 +49,15 @@ class DataManager(QObject):
         self.save_data()
         self.data_updated.emit()
 
+    def set_source_csv(self, csv_path: str):
+        """Establece el CSV source (del calendario) para guardar cambios en él."""
+        if os.path.exists(csv_path):
+            self.source_csv_file = csv_path
+            print(f"📁 CSV source establecido: {csv_path}")
+        else:
+            print(f"⚠️ CSV source no existe: {csv_path}")
+            self.source_csv_file = None
+
     def update_record(self, row_index, column_name, value):
         """Actualiza un registro específico"""
         if not self.data.empty and row_index < len(self.data):
@@ -67,6 +77,7 @@ class DataManager(QObject):
         try:
             # Crear directorio si no existe
             os.makedirs(os.path.dirname(self.data_file), exist_ok=True)
+            
             # Columnas esenciales en el orden solicitado por el usuario
             preferred_columns = [
                 'PATERNO', 'MATERNO', 'NOMBRE_S', 'NUM', 'CODIGO', 'RFC', 'IMSS', 'CURP',
@@ -96,8 +107,16 @@ class DataManager(QObject):
             # Guardar como CSV usando el orden final de columnas
             # Aseguramos encoding utf-8-sig para compatibilidad con Excel
             self.data[final_columns].to_csv(self.data_file, index=False, encoding='utf-8-sig')
-
-            print(f"Datos guardados en: {self.data_file}")
+            print(f"✅ Datos guardados en: {self.data_file}")
+            
+            # Si hay un CSV source (del calendario), guardar cambios allí también
+            if self.source_csv_file and os.path.exists(self.source_csv_file):
+                try:
+                    self.data[final_columns].to_csv(self.source_csv_file, index=False, encoding='utf-8-sig')
+                    print(f"✅ Datos guardados en CSV del calendario: {self.source_csv_file}")
+                except Exception as e:
+                    print(f"⚠️ Error guardando en CSV del calendario: {e}")
+        
         except Exception as e:
             print(f"Error guardando datos: {e}")
 
