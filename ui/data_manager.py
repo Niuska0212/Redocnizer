@@ -7,7 +7,6 @@ import pandas as pd
 from datetime import datetime
 from PySide6.QtCore import Signal, QObject
 
-
 class DataManager(QObject):
     """Manejador de datos para el sistema (extraído de main_window.py)."""
     data_updated = Signal()

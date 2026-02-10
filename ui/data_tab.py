@@ -184,6 +184,8 @@ class DataTab(QWidget):
 
     def _populate_table(self, df):
         """Llena la tabla con los datos del dataframe"""
+        self.table.blockSignals(True)  # Evitar señales mientras llenamos la tabla
+        
         self.table.setRowCount(len(df))
         self.table.setColumnCount(len(df.columns))
         self.table.setHorizontalHeaderLabels(df.columns)
@@ -213,6 +215,8 @@ class DataTab(QWidget):
 
         # Actualizar info
         self.info_label.setText(f"{len(df)} registros - {len(df.columns)} columnas")
+        
+        self.table.blockSignals(False)  # Rehabilitar señales después de llenar la tabla
 
         # Limpiar vista previa
         self.preview_img_label.setText("Sin visualización")
@@ -314,8 +318,7 @@ class DataTab(QWidget):
                 if len(orig_indices) > 0:
                     self.original_df.at[orig_indices[0], column_name] = new_value
 
-            except Exception:
-                pass
+            except Exception: pass
 
             # Habilitar botones de guardado y undo/redo
             self.btn_save_all.setEnabled(True)
@@ -434,39 +437,11 @@ class DataTab(QWidget):
             )
 
     def has_unsaved_changes(self) -> bool:
-        """Verifica si hay cambios sin guardar comparando datos actuales con los originales.
+        """Verifica si hay cambios sin guardar.
         
-        Retorna True solo si hay diferencias reales en los datos, no solo por cambio de pestaña.
+        Retorna True si hay cambios pendientes (botón 'Guardar Cambios' está habilitado)
         """
-        # Si no hay datos, no hay cambios
-        if self.original_df is None or self.original_df.empty:
-            return False
-        
-        # Comparar dataframe actual con el original
-        try:
-            # Obtener el dataframe del manager
-            current_df = self.data_manager.get_dataframe()
-            
-            if current_df.empty and self.original_df.empty:
-                return False
-            
-            if current_df.empty or self.original_df.empty:
-                return True
-            
-            # Comparar forma (filas y columnas)
-            if current_df.shape != self.original_df.shape:
-                return True
-            
-            # Comparar valores
-            # Usar equals que maneja NaN correctamente
-            differences = ~(current_df == self.original_df).all().all()
-            
-            return bool(differences)
-        
-        except Exception as e:
-            print(f"Error comparando datos: {e}")
-            # Si hay error, confiar en el estado del botón guardar
-            return self.btn_save_all.isEnabled()
+        return self.btn_save_all.isEnabled()
 
     def undo_change(self):
         """Deshace el último cambio."""

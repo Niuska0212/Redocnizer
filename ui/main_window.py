@@ -963,30 +963,31 @@ class MainWindow(QMainWindow):
             event.accept()
 
     def on_tab_changed(self, index):
-        """Cuando cambia la pestaña, verificar si hay cambios sin guardar"""
-        # Si el usuario estaba en la pestaña de datos (index 1) y hay cambios, advertir
-        if hasattr(self, 'tabs'):
-            previous_index = getattr(self, '_last_tab_index', None)
-            
-            if previous_index == 1 and index != 1:
-                # Saliendo de la pestaña de datos
-                if hasattr(self, 'data_tab') and self.data_tab.has_unsaved_changes():
-                    reply = QMessageBox.warning(
-                        self,
-                        "Cambios sin guardar",
-                        "⚠️ Tienes cambios sin guardar en la pestaña de datos.\n\n¿Deseas guardarlos antes de cambiar?",
-                        QMessageBox.Save | QMessageBox.Discard,
-                        QMessageBox.Save
-                    )
-                    
-                    if reply == QMessageBox.Save:
-                        self.data_tab.save_all_to_manager()
-            
-            # Actualizar índice de pestaña anterior
-            self._last_tab_index = index
+        """Controla el cambio entre pestañas"""
         
-        # Si entramos a la pestaña de datos, cargar datos
-        if index == 1: 
+        # Si el usuario intenta SALIR de la pestaña de datos (index anterior era 1)
+        if hasattr(self, '_last_tab_index') and self._last_tab_index == 1:
+            # Verificar si hay cambios reales usando el HistoryManager
+            if self.data_tab.history.can_undo(): 
+                reply = QMessageBox.question(
+                    self,
+                    "Cambios sin guardar",
+                    "⚠️ Tienes cambios sin guardar en la pestaña de datos.\n¿Deseas guardarlos antes de cambiar?",
+                    QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel
+                )
+                
+                if reply == QMessageBox.Yes:
+                    self.data_tab.save_all_to_manager()
+                elif reply == QMessageBox.Cancel:
+                    # Bloquear el cambio de pestaña y regresar a la de datos
+                    self.tabs.setCurrentIndex(1)
+                    return
+
+        # Actualizar el índice de la pestaña actual para la próxima vez
+        self._last_tab_index = index
+        
+        # Si entra a la pestaña de datos, cargar la información
+        if index == 1:
             self.data_tab.load_data()
             
     # =========================================================
