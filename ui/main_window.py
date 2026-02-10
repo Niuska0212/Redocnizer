@@ -310,15 +310,20 @@ class MainWindow(QMainWindow):
         calendar_layout.addWidget(QLabel("Calendario:"))
         calendar_layout.addWidget(self.calendar_combo)
         # Botones rápidos para abrir CSV y carpeta del calendario
-        self.btn_open_calendar_csv = QPushButton("Abrir CSV del calendario")
-        self.btn_open_calendar_csv.setMaximumWidth(180)
-        self.btn_open_calendar_csv.clicked.connect(self.open_calendar_csv)
+        self.btn_open_calendar_excel = QPushButton("📊 Abrir Excel del calendario")
+        self.btn_open_calendar_excel.setMaximumWidth(180)
+        self.btn_open_calendar_excel.clicked.connect(self.open_calendar_excel)
+
+        self.btn_load_calendar_data = QPushButton("📥 Cargar datos del calendario")
+        self.btn_load_calendar_data.setMaximumWidth(180)
+        self.btn_load_calendar_data.clicked.connect(self.load_calendar_file)
 
         self.btn_open_calendar_folder = QPushButton("Abrir carpeta del calendario")
         self.btn_open_calendar_folder.setMaximumWidth(180)
         self.btn_open_calendar_folder.clicked.connect(self.open_calendar_folder)
 
-        calendar_layout.addWidget(self.btn_open_calendar_csv)
+        calendar_layout.addWidget(self.btn_open_calendar_excel)
+        calendar_layout.addWidget(self.btn_load_calendar_data)
         calendar_layout.addWidget(self.btn_open_calendar_folder)
         calendar_layout.addStretch()
         config_layout.addLayout(calendar_layout)
@@ -771,8 +776,8 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"No se pudo abrir la carpeta: {e}")
 
-    def open_calendar_csv(self):
-        """Abre el CSV del calendario con la aplicación por defecto y lo carga en la vista."""
+    def open_calendar_excel(self):
+        """Abre el CSV del calendario en Excel (solo abre, no carga datos)."""
         if not self.controller:
             QMessageBox.warning(self, "Sin directorio raíz", "Primero seleccione el directorio raíz.")
             return
@@ -782,12 +787,53 @@ class MainWindow(QMainWindow):
         if os.path.exists(csv_path):
             try:
                 os.startfile(csv_path)
+                QMessageBox.information(self, "Archivo abierto", f"Se abrió el archivo de calendario en Excel.")
             except Exception as e:
-                QMessageBox.critical(self, "Error", f"No se pudo abrir el CSV: {e}")
-            # También cargar en la pestaña de datos
-            self.load_calendar_data(calendar)
+                QMessageBox.critical(self, "Error", f"No se pudo abrir el archivo en Excel: {e}")
         else:
-            QMessageBox.information(self, "Sin CSV", f"No existe '{csv_path}'")
+            QMessageBox.information(self, "Sin CSV", f"No existe el archivo '{csv_path}'")
+
+    def load_calendar_file(self):
+        """Carga el CSV del calendario en la vista de datos (sin abrir Excel)."""
+        if not self.controller:
+            QMessageBox.warning(self, "Sin directorio raíz", "Primero seleccione el directorio raíz.")
+            return
+        calendar = self.calendar_combo.currentText()
+        
+        # Verificar si hay cambios sin guardar
+        if hasattr(self, 'data_tab') and self.data_tab.has_unsaved_changes():
+            reply = QMessageBox.warning(
+                self,
+                "Cambios sin guardar",
+                "⚠️ Tienes cambios sin guardar en los datos actuales.\n\n¿Deseas guardarlos antes de cargar otro calendario?",
+                QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
+                QMessageBox.Save
+            )
+            
+            if reply == QMessageBox.Save:
+                self.data_tab.save_all_to_manager()
+            elif reply == QMessageBox.Cancel:
+                return
+        
+        calendar_dir = self.controller.file_service.get_calendar_dir(calendar)
+        csv_path = os.path.join(calendar_dir, 'contratos.csv')
+        
+        if not os.path.exists(csv_path):
+            QMessageBox.warning(self, "Sin CSV", f"No existe el archivo de calendario en:\n{csv_path}")
+            return
+        
+        # Establecer el CSV source para que se guarden cambios allí
+        self.data_manager.set_source_csv(csv_path)
+        
+        # Cargar datos
+        loaded = self.data_manager.load_from_calendar_dir(calendar_dir)
+        if loaded:
+            QMessageBox.information(self, "Datos cargados", f"✅ Datos del calendario '{calendar}' cargados correctamente.")
+            # Cambiar a pestaña de datos para mostrar los datos cargados
+            self.tabs.setCurrentIndex(1)
+        else:
+            QMessageBox.warning(self, "Error", f"No se pudieron cargar los datos del calendario.")
+
 
     # =========================================================
     # PROCESAMIENTO

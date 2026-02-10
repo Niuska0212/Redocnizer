@@ -434,11 +434,39 @@ class DataTab(QWidget):
             )
 
     def has_unsaved_changes(self) -> bool:
-        """Verifica si hay cambios sin guardar.
+        """Verifica si hay cambios sin guardar comparando datos actuales con los originales.
         
-        Retorna True si hay cambios pendientes (botón 'Guardar Cambios' está habilitado)
+        Retorna True solo si hay diferencias reales en los datos, no solo por cambio de pestaña.
         """
-        return self.btn_save_all.isEnabled()
+        # Si no hay datos, no hay cambios
+        if self.original_df is None or self.original_df.empty:
+            return False
+        
+        # Comparar dataframe actual con el original
+        try:
+            # Obtener el dataframe del manager
+            current_df = self.data_manager.get_dataframe()
+            
+            if current_df.empty and self.original_df.empty:
+                return False
+            
+            if current_df.empty or self.original_df.empty:
+                return True
+            
+            # Comparar forma (filas y columnas)
+            if current_df.shape != self.original_df.shape:
+                return True
+            
+            # Comparar valores
+            # Usar equals que maneja NaN correctamente
+            differences = ~(current_df == self.original_df).all().all()
+            
+            return bool(differences)
+        
+        except Exception as e:
+            print(f"Error comparando datos: {e}")
+            # Si hay error, confiar en el estado del botón guardar
+            return self.btn_save_all.isEnabled()
 
     def undo_change(self):
         """Deshace el último cambio."""
