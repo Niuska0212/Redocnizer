@@ -6,14 +6,29 @@ from PySide6.QtWidgets import (
     QTableWidgetItem, QHeaderView, QLineEdit, QFileDialog, QMessageBox,
     QAbstractItemView
 )
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QPixmap, QColor, QBrush
+from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtGui import QPixmap, QColor, QBrush, QWheelEvent
 
 from services.pdf_service import pdf_to_images
 from ui.history_manager import HistoryManager
 from ui.edit_record_dialog import EditRecordDialog
 from ui.file_watcher import FileWatcher
+try:
+    from ui.image_preview_dialog import ImagePreviewDialog
+except ImportError:
+    ImagePreviewDialog = None
 
+
+class ClickableLabel(QLabel):
+    """Un QLabel que emite una señal cuando se hace clic en él."""
+    clicked = Signal()
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.clicked.emit()
 
 class DataTab(QWidget):
     """Pestaña para visualizar y editar datos con búsqueda, ordenamiento y edición directa."""
@@ -26,11 +41,14 @@ class DataTab(QWidget):
         self.history = HistoryManager()  # Sistema de undo/redo
         self.file_watcher = FileWatcher()  # Monitor de cambios externos
         self.file_watcher.file_changed.connect(self._on_external_file_changed)
+        self.current_preview_pixmap = None  # Para almacenar la imagen de vista previa actual
         self.setup_ui()
 
         # Conectar señal de actualización
         self.data_manager.data_updated.connect(self.load_data)
-
+        
+        self.data_manager.data_updated.connect(self.load_data)
+        
         # Cargar datos iniciales
         QTimer.singleShot(100, self.load_data)
 
@@ -157,8 +175,9 @@ class DataTab(QWidget):
         # Reordenar columnas para visualización según preferencia del usuario
         preferred_display_order = [
             'Archivo', 'PATERNO', 'MATERNO', 'NOMBRE_S', 'CODIGO', 'NUM',
-            'RFC', 'IMSS', 'CURP', 'CRN', 'TELEFONO', 'DESDE', 'HASTA',
-            'DEPENDENCIA_1', 'DEPENDENCIA_2', 'DEPENDENCIA_3'
+            'CRN','HRS_TOTALES', 'MATERIA', 'DESDE', 'HASTA', 'TELEFONO',
+            'DEPENDENCIA_3', 'DEPENDENCIA_2', 'DEPENDENCIA_1',  
+            'RFC', 'IMSS', 'CURP'
         ]
 
         # Mapear nombres reales de columnas respetando case-insensitive

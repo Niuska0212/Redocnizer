@@ -58,7 +58,7 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
     H, W = img_full.shape[:2]
     
     # Campos críticos que nunca deben faltar
-    CAMPOS_CRITICOS = {'CODIGO', 'NUM', 'MATERIA', 'HRS_TOTALES', 'DEPENDENCIA_1', 'NOMBRE_COMPLETO_RAW'}
+    CAMPOS_CRITICOS = {'CODIGO', 'NUM', 'MATERIA', 'HRS_TOTALES', 'DEPENDENCIA_3', 'NOMBRE_COMPLETO_RAW'}
     
     # --- FUNCIÓN PARA MEJORAR IMAGEN CON ACLARAMIENTO AGRESIVO ---
     def enhance_image_aggressive(gray_img):
@@ -382,8 +382,23 @@ def clean_data_by_field(field_name: str, text: str) -> str:
         return ""
     
     cleaned_value = text.upper().strip()
+    if field_name == 'HRS_TOTALES':
+        # Eliminar cualquier carácter no numérico (excepto punto decimal)
+        cleaned_value = re.sub(r'[^\d\.]', '', cleaned_value)
+        # Si el valor es vacío después de limpiar, devolver placeholder
+        if cleaned.count('.') > 1:
+            # Si hay más de un punto, mantener solo el primero y los siguientes dígitos
+            parts = cleaned_value.split('.')
+            cleaned = parts[0] + '.' + ''.join(parts[1:])
+            
+        try:
+            val = float(cleaned_value)
+            return "{:.2f}".format(val)
+        except ValueError:
+            return cleaned_value if cleaned_value else "0.00"
+
     # 1. Campos que SÓLO deberían ser Números (o casi)
-    if field_name in ['TELEFONO', 'CODIGO', 'NUM', 'HRS_TOTALES', 'CRN']:
+    if field_name in ['TELEFONO', 'CODIGO', 'NUM', 'CRN']:
         # --- Lógica Específica para TELEFONO ---
         if field_name == 'TELEFONO':
             # 1. Si el valor coincide con un token de 'dato vacío en el documento', estandarizar.
@@ -687,57 +702,48 @@ def buscador_identidad_global(texto_ocr, threshold=0.65):
 
 def procesar_bloque_dependencias(dict_textos_extraidos):
     """
-    Recibe un dict con {'DEPENDENCIA_1': 'texto...', 'DEPENDENCIA_2': ...}
-    y los reacomoda según su identidad real.
-    Maneja casos donde los textos están vacíos o son muy cortos.
+    Procesa dependencias priorizando la Dependencia 3 y buscando patrones dinámicos.
     """
     resultados_finales = {
-        "DEPENDENCIA_1": "",
-        "DEPENDENCIA_2": "",
-        "DEPENDENCIA_3": ""
+        "DEPENDENCIA_1": EMPTY_DATA_PLACEHOLDER,
+        "DEPENDENCIA_2": EMPTY_DATA_PLACEHOLDER,
+        "DEPENDENCIA_3": EMPTY_DATA_PLACEHOLDER
     }
     
-    textos_sucios = [
-        dict_textos_extraidos.get("DEPENDENCIA_1", ""),
-        dict_textos_extraidos.get("DEPENDENCIA_2", ""),
-        dict_textos_extraidos.get("DEPENDENCIA_3", "")
-    ]
+    # Unificamos todos los textos encontrados en el área de dependencias para analizarlos
+    textos_area = [str(v).upper() for v in dict_textos_extraidos.values() if v]
+    texto_completo = "\n".join(textos_area)
+    lineas = [l.strip() for l in texto_completo.split('\n') if len(l.strip()) > 3]
 
-    for i, texto in enumerate(textos_sucios):
-        if not texto: 
-            continue
+    # 1. Prioridad: Identificar Dependencia 3 (Departamentos)
+    for linea in lineas:
+        # Intentar coincidencia con catálogo
+        match_cat = corregir_con_catalogo(linea, "DEPENDENCIA_3", threshold=0.75)
+        if match_cat in CATALOGO_DEPENDENCIAS["DEPENDENCIA_3"]:
+            resultados_finales["DEPENDENCIA_3"] = match_cat
+            break
         
-        # Primero una limpieza básica de basura OCR
-        texto_limpio = re.sub(r'^((\d\.)+\d?\s*|22\s*|\d+)\s+', '', texto)
-        texto_limpio = re.sub(r'^[-\s!|\/,\?=:-]+', '', texto_limpio).strip()
+        # BÚSQUEDA DINÁMICA: Si contiene "DEPTO. DE" y no se halló en catálogo
+        regex_depto = re.search(r'(DEPTO\.\s+DE\s+.*)', linea)
+        if regex_depto:
+            resultados_finales["DEPENDENCIA_3"] = regex_depto.group(1).strip()
+            break
 
-        # Si el texto quedó muy corto después de limpieza, ignorar
-        if len(texto_limpio) < 3:
-            continue
+    # 2. Identificar Dependencia 2 (Divisiones)
+    for linea in lineas:
+        match_cat = corregir_con_catalogo(linea, "DEPENDENCIA_2", threshold=0.75)
+        if match_cat in CATALOGO_DEPENDENCIAS["DEPENDENCIA_2"]:
+            resultados_finales["DEPENDENCIA_2"] = match_cat
+            break
 
-        # Intentamos identificar qué es
-        nivel_identificado, texto_oficial = buscador_identidad_global(texto_limpio, threshold=0.65)
-
-        if nivel_identificado:
-            # Si lo identificamos, lo ponemos en su lugar correcto (1, 2 o 3)
-            resultados_finales[nivel_identificado] = texto_oficial
-        else:
-            # REGLA DE ESCAPE: Si no está en el diccionario, 
-            # lo dejamos donde el OCR lo encontró originalmente
-            # pero solo si no hay nada ahí ya
-            key_original = f"DEPENDENCIA_{i+1}"
-            if not resultados_finales[key_original]:  # Solo si está vacío
-                resultados_finales[key_original] = texto_limpio
-
+    # 3. Identificar Dependencia 1 (Centro)
+    for linea in lineas:
+        match_cat = corregir_con_catalogo(linea, "DEPENDENCIA_1", threshold=0.75)
+        if match_cat in CATALOGO_DEPENDENCIAS["DEPENDENCIA_1"]:
+            resultados_finales["DEPENDENCIA_1"] = match_cat
+            break
+    
     return resultados_finales
-
-
-def search_date_pattern():
-    import re
-    """Buscar fechas en formato DD/MM/YYYY, DD-MM-YYYY, etc."""
-    date_pattern = r'(\d{1,2})[\/\-\.\s](\d{1,2})[\/\-\.\s](\d{2,4})'
-    date_matches = data_df[data_df['text'].str.contains(date_pattern, regex=True, na=False)]
-    return date_matches
 
 
 def get_code_by_proximity(df, anchor_roi, horizontal_threshold=35):

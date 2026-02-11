@@ -10,7 +10,7 @@ import easyocr
 from tensorflow.keras import backend as K 
 from difflib import SequenceMatcher # Necesario para calcular la similitud (Levenshtein)
 from PIL import Image, ImageDraw, ImageFont
-from .segmentacion_dinamica import get_dynamic_rois, clean_data_by_field, clean_border_chars, validate_field_format, clean_name_specific, procesar_bloque_dependencias
+from .segmentacion_dinamica import get_dynamic_rois, clean_data_by_field, clean_border_chars, validate_field_format, clean_name_specific, procesar_bloque_dependencias, EMPTY_DATA_PLACEHOLDER
 from .CRNN_inference import load_inference_model
 from .preprocessing import prepare_roi_for_ocr, invert_image_color, rotate_image, enhance_for_easyocr
 
@@ -149,7 +149,7 @@ def clean_name_contamination(name: str) -> str:
 # =========================================================================
 
 def read_with_easyocr(roi_image: np.ndarray) -> str:
-    """Lee el texto usando EasyOCR en lugar de Tesseract."""
+    """Lee el texto usando EasyOCR """
     try:
         # EasyOCR funciona mejor con imágenes en color o gris sin tanto threshold agresivo
         results = reader.readtext(roi_image, detail=0) # detail=0 devuelve solo el texto
@@ -158,7 +158,6 @@ def read_with_easyocr(roi_image: np.ndarray) -> str:
     except Exception as e:
         print(f"Error en EasyOCR: {e}")
         return ""
-
 
 
 def extract_data_from_image(image_path, modelo_inferencia, index_to_char, output_sequence_length, output_dir_preview):
@@ -183,209 +182,145 @@ def extract_data_from_image(image_path, modelo_inferencia, index_to_char, output
         
         # Lógica de pre-procesamiento por intento
         if attempt == 1:
-            # Revisa si el intento 0 fue suficiente. Si sí, termina.
-            if extracted_data_list and len([v for v in extracted_data_list[0].values() if v and len(str(v).strip()) > 1]) >= MIN_REQUIRED_FIELDS:
+            if extracted_data_list and len([v for v in extracted_data_list[0].values() if v and str(v) != EMPTY_DATA_PLACEHOLDER]) >= MIN_REQUIRED_FIELDS:
                 break
-            print("  [REINTENTO 1] Intentando con imagen invertida.")
+            print(f"  [REINTENTO 1] Imagen invertida para {os.path.basename(image_path)}")
             current_img = invert_image_color(img_full_original)
         
         elif attempt == 2:
-            # Revisa si el intento 0 o 1 fue suficiente. Si sí, termina.
-            # Nota: Si el intento 1 fue el mejor, se habría roto en el chequeo anterior,
-            # pero este chequeo es de seguridad.
-            if extracted_data_list and len([v for v in extracted_data_list[0].values() if v and len(str(v).strip()) > 1]) >= MIN_REQUIRED_FIELDS:
+            if extracted_data_list and len([v for v in extracted_data_list[0].values() if v and str(v) != EMPTY_DATA_PLACEHOLDER]) >= MIN_REQUIRED_FIELDS:
                 break
-            
-            print("  [REINTENTO 2] Intentando con imagen ligeramente rotada (2 grados).")
-            # Usamos la imagen original para rotar y evitar rotar la ya invertida.
+            print(f"  [REINTENTO 2] Imagen rotada 2 grados para {os.path.basename(image_path)}")
             current_img = rotate_image(img_full_original, 2.0) 
 
         # --- PRE-PROCESAMIENTO DE REGIONES DE INTERÉS (ROIS) ---
         rois_dinamicas = get_dynamic_rois(current_img)
         img_height, img_width = current_img.shape[:2]
         
-        # --- VISUALIZACIÓN (Solo con el primer intento) ---
-        if attempt == 0:
+        # --- VISUALIZACIÓN (Solo con el primer intento exitoso de ROI) ---
+        if attempt == 0 and output_dir_preview:
             img_color = cv2.cvtColor(current_img, cv2.COLOR_GRAY2BGR)
-            # ... (CÓDIGO DE VISUALIZACIÓN DE ROIS, IGUAL AL ORIGINAL) ...
-            COLORS = {
-                'NOMBRE_COMPLETO_RAW': (0, 0, 255),
-                'DEPENDENCIA': (255, 0, 0),
-                'SIMPLE_FIELD': (0, 255, 0)
-            }
-            output_filename = "Vizualizacion_"+ os.path.basename(image_path)
-            output_dir = output_dir_preview
+            COLORS = {'NOMBRE_COMPLETO_RAW': (0, 0, 255), 'DEPENDENCIA': (255, 0, 0), 'SIMPLE_FIELD': (0, 255, 0)}
             
             for field_name, (y, x, h, w) in rois_dinamicas.items():
                 color = COLORS.get(field_name, COLORS['SIMPLE_FIELD'])
-                if field_name.startswith('DEPENDENCIA'):
-                    color = COLORS['DEPENDENCIA']
-                x_end = x + w
-                y_end = y + h
-                cv2.rectangle(img_color, (x, y), (x_end, y_end), color, 2)
-                cv2.putText(img_color, field_name, (x, max(0, y - 5)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+                if 'DEPENDENCIA' in field_name: color = COLORS['DEPENDENCIA']
+                cv2.rectangle(img_color, (int(x), int(y)), (int(x + w), int(y + h)), color, 2)
+                cv2.putText(img_color, field_name, (int(x), max(0, int(y) - 5)), cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
 
-            save_path = os.path.join(output_dir, output_filename)
+            save_path = os.path.join(output_dir_preview, "Viz_" + os.path.basename(image_path))
             cv2.imwrite(save_path, img_color)
-            print(f"Visualización guardada en: {save_path}")
         
         # --- EXTRACCIÓN OCR POR ROI ---
         all_extracted_data = {}
         for field_name, roi_data in rois_dinamicas.items():
-            # ... (CÓDIGO DE CLAMPING, EXTRACCIÓN CRNN/EASYOCR) ...
             if not isinstance(roi_data, (list, tuple)) or len(roi_data) != 4:
                 all_extracted_data[field_name] = ""
                 continue
 
             y, x, h, w = roi_data
-            y_start = max(0, int(y))
-            x_start = max(0, int(x))
-            y_end = min(img_height, int(y + h))
-            x_end = min(img_width, int(x + w))
+            y_start, x_start = max(0, int(y)), max(0, int(x))
+            y_end, x_end = min(img_height, int(y + h)), min(img_width, int(x + w))
 
-            # Para campos DEPENDENCIA, asegurar tamaño mínimo más generoso
-            # Para códigos como CURP/RFC/IMSS, también más generoso
+            # Ajuste de márgenes para campos específicos
             if 'DEPENDENCIA' in field_name or field_name in ['CURP', 'RFC', 'IMSS']:
-                min_w, min_h = 150, 25  # Más generoso para captar líneas completas o códigos
+                min_w, min_h = 150, 25
             else:
                 min_w, min_h = 12, 12
                 
             if (x_end - x_start) < min_w:
                 extra = (min_w - (x_end - x_start)) // 2 + 5
-                x_start = max(0, x_start - extra)
-                x_end = min(img_width, x_end + extra)
+                x_start, x_end = max(0, x_start - extra), min(img_width, x_end + extra)
             if (y_end - y_start) < min_h:
                 extra = (min_h - (y_end - y_start)) // 2 + 5
-                y_start = max(0, y_start - extra)
-                y_end = min(img_height, y_end + extra)
+                y_start, y_end = max(0, y_start - extra), min(img_height, y_end + extra)
 
             roi_image = current_img[y_start:y_end, x_start:x_end]
-            if roi_image.size == 0 or y_end <= y_start or x_end <= x_start:
+            if roi_image.size == 0:
                 all_extracted_data[field_name] = ""
                 continue
             
-            # Para DEPENDENCIAS y códigos como CURP/RFC/IMSS, usar solo EasyOCR
-            # (CRNN está entrenado para palabras, no para códigos alfanuméricos)
+            # --- Lógica de Lectura ---
             if 'DEPENDENCIA' in field_name or field_name in ['CURP', 'RFC', 'IMSS']:
                 try:
-                    # Mejorar la imagen antes de pasar a EasyOCR
                     roi_for_easy = enhance_for_easyocr(roi_image)
                     final_result = read_with_easyocr(roi_for_easy).upper().strip()
-                except Exception as e:
-                    final_result = ""
+                except: final_result = ""
             else:
-                # Para otros campos, usar lógica híbrida CRNN + EasyOCR
-                # 1) Lectura CRNN 
+                # Híbrido CRNN + EasyOCR
                 ocr_result_base = ""
                 try:
-                    # El modelo CRNN usa su propio preprocesamiento
                     X_input = prepare_roi_for_ocr(roi_image)
                     y_pred_probs = modelo_inferencia.predict(X_input, verbose=0)
                     pred_words_crnn = decode_batch_predictions(y_pred_probs, index_to_char, output_sequence_length)
                     ocr_result_base = pred_words_crnn[0].upper().strip() if pred_words_crnn else ""
-                except Exception:
-                    ocr_result_base = ""
+                except: ocr_result_base = ""
 
-                # 2) Lectura EasyOCR
                 try:
-                    # USAMOS la nueva función para que EasyOCR vea la imagen nítida
                     roi_for_easy = enhance_for_easyocr(roi_image) 
                     ocr_result_refuerzo = read_with_easyocr(roi_for_easy).upper().strip()
-                except Exception:
-                    ocr_result_refuerzo = ""
+                except: ocr_result_refuerzo = ""
 
-                # 3) Selección y post-procesamiento corregido
+                # Selección
                 final_result = ocr_result_base or ocr_result_refuerzo
-                
-                # Si ambos fallan o son muy distintos, EasyOCR suele tener la razón en textos largos
                 if ocr_result_base and ocr_result_refuerzo:
-                    similarity = SequenceMatcher(None, ocr_result_base, ocr_result_refuerzo).ratio()
-                    if similarity < 0.60: # Bajamos un poco el umbral porque EasyOCR es más preciso
+                    if SequenceMatcher(None, ocr_result_base, ocr_result_refuerzo).ratio() < 0.60:
                         final_result = ocr_result_refuerzo
 
-            # APLICAR LIMPIEZA Y VALIDACIÓN (Orden correcto)
+            # Limpieza y Validación individual
             final_result = clean_border_chars(final_result)
             cleaned_value = clean_data_by_field(field_name, final_result)
-            final_validate_value = validate_field_format(field_name, cleaned_value)
+            all_extracted_data[field_name] = validate_field_format(field_name, cleaned_value)
 
-            all_extracted_data[field_name] = final_validate_value
-
-        # --- POSTPROCESAMIENTO Y VALIDACIÓN ---
+        # --- POSTPROCESAMIENTO DE RESULTADOS ---
         extracted_data = {'Archivo': os.path.basename(image_path)}
         
-        # 1. Preparar bloque de dependencias
-        solo_deps_raw = {
-            "DEPENDENCIA_1": all_extracted_data.get("DEPENDENCIA_1", ""),
-            "DEPENDENCIA_2": all_extracted_data.get("DEPENDENCIA_2", ""),
-            "DEPENDENCIA_3": all_extracted_data.get("DEPENDENCIA_3", "")
-        }
+        # 1. Bloque de dependencias
+        solo_deps_raw = {k: all_extracted_data.get(k, "") for k in ["DEPENDENCIA_1", "DEPENDENCIA_2", "DEPENDENCIA_3"]}
         deps_corregidas = procesar_bloque_dependencias(solo_deps_raw)
         
-        # 2. Procesar todos los campos (QUITAMOS LA RE-LIMPIEZA ADICIONAL)
+        # 2. Mapeo final
         for key, value in all_extracted_data.items():
             if key.startswith('DEPENDENCIA'):
-                extracted_data[key] = deps_corregidas.get(key, "")
+                extracted_data[key] = deps_corregidas.get(key, value)
             elif key == 'NOMBRE_COMPLETO_RAW':
-                # El nombre sí necesita split porque genera 3 columnas nuevas
                 name_parts = split_full_name(value)
-                for name_key in name_parts:
-                    name_parts[name_key] = clean_name_specific(name_parts[name_key])
+                for nk in name_parts: name_parts[nk] = clean_name_specific(name_parts[nk])
                 extracted_data.update(name_parts)
             else:
-                # PARA CURP, RFC, etc., simplemente pasamos el valor que ya validamos arriba
                 extracted_data[key] = value
 
-        # asegurar campos obligatorios
-        if 'PATERNO' not in extracted_data: extracted_data['PATERNO'] = ''
-        if 'MATERNO' not in extracted_data: extracted_data['MATERNO'] = ''
-        if 'NOMBRE_S' not in extracted_data: extracted_data['NOMBRE_S'] = ''
+        # Asegurar campos básicos de nombre
+        for k in ['PATERNO', 'MATERNO', 'NOMBRE_S']:
+            if k not in extracted_data: extracted_data[k] = ''
         
-        # Almacenar el resultado del intento actual
         extracted_data_list.append(extracted_data)
 
-        # --- LÓGICA DE REINTENTO: Contar campos no vacíos ---
-        relevant_fields = {k: v for k, v in extracted_data.items() if k not in ['NOMBRE_COMPLETO_RAW', 'PATERNO', 'MATERNO', 'NOMBRE_S', 'Archivo']}
-        
-        # Contador especial: NUM incompleto (< 7 dígitos) NO cuenta como exitoso
-        successful_fields_count = 0
-        for field_key, field_val in relevant_fields.items():
-            if field_val and len(str(field_val).strip()) > 1:
-                # Si es NUM, validar que tenga exactamente 7 dígitos
-                if field_key == 'NUM':
-                    num_digits = re.sub(r'[^0-9]', '', str(field_val))
-                    if len(num_digits) == 7:
-                        successful_fields_count += 1
-                else:
-                    successful_fields_count += 1
+        # --- EVALUACIÓN DEL INTENTO ---
+        score = 0
+        for k, v in extracted_data.items():
+            if k in ['Archivo', 'PATERNO', 'MATERNO', 'NOMBRE_S', 'NOMBRE_COMPLETO_RAW']: continue
+            if v and str(v).strip() and str(v) != EMPTY_DATA_PLACEHOLDER:
+                if k == 'NUM':
+                    if len(re.sub(r'[^0-9]', '', str(v))) == 7: score += 1
+                else: score += 1
 
-        print(f"  Intento {attempt + 1}: {successful_fields_count} campos extraídos.")
-        
-        if successful_fields_count >= MIN_REQUIRED_FIELDS:
-            # Éxito: Usar este resultado y terminar
+        print(f"  Intento {attempt + 1}: {score} campos válidos.")
+        if score >= MIN_REQUIRED_FIELDS:
             return extracted_data, None
             
-    # Si el bucle termina sin éxito, comparamos los resultados para ver cuál fue el mejor
+    # Si no se llegó al mínimo, elegir el mejor intento
     if extracted_data_list:
-        # Contar campos exitosos para cada intento (NUM debe tener exactamente 7 dígitos)
-        scores = []
-        for data in extracted_data_list:
-            relevant_fields = {k: v for k, v in data.items() if k not in ['NOMBRE_COMPLETO_RAW', 'PATERNO', 'MATERNO', 'NOMBRE_S', 'Archivo']}
-            score = 0
-            for field_key, field_val in relevant_fields.items():
-                if field_val and len(str(field_val).strip()) > 1:
-                    if field_key == 'NUM':
-                        num_digits = re.sub(r'[^0-9]', '', str(field_val))
-                        if len(num_digits) == 7:
-                            score += 1
-                    else:
-                        score += 1
-            scores.append(score)
-        
-        # Retorna el resultado con el puntaje más alto
-        best_attempt_index = np.argmax(scores)
-        return extracted_data_list[best_attempt_index], None
+        best_idx = 0
+        max_score = -1
+        for idx, data in enumerate(extracted_data_list):
+            current_score = sum(1 for k, v in data.items() if v and str(v).strip() and str(v) != EMPTY_DATA_PLACEHOLDER)
+            if current_score > max_score:
+                max_score = current_score
+                best_idx = idx
+        return extracted_data_list[best_idx], None
     
-    return {'Archivo': os.path.basename(image_path)}, "No se pudo extraer ningún dato en los intentos."
+    return {'Archivo': os.path.basename(image_path)}, "No se detectaron datos."
 
 
 

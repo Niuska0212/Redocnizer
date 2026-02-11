@@ -79,8 +79,10 @@ class DataManager(QObject):
             
             # Columnas esenciales en el orden solicitado por el usuario
             preferred_columns = [
-                'PATERNO', 'MATERNO', 'NOMBRE_S', 'NUM', 'CODIGO', 'RFC', 'IMSS', 'CURP',
-                'TELEFONO', 'CRN', 'DESDE', 'HASTA', 'DEPENDENCIA_1', 'DEPENDENCIA_2', 'DEPENDENCIA_3'
+                'PATERNO', 'MATERNO', 'NOMBRE_S', 'CODIGO', 'NUM',
+                'CRN','HRS_TOTALES', 'MATERIA', 'DESDE', 'HASTA', 'TELEFONO',
+                'DEPENDENCIA_1', 'DEPENDENCIA_2', 'DEPENDENCIA_3',
+                'RFC', 'IMSS', 'CURP'
             ]
 
             # Añadir columnas faltantes con valores vacíos y mapear columnas
@@ -149,8 +151,10 @@ class DataManager(QObject):
 
                 # Asegurar columnas mínimas (mismo esquema que en save_data)
                 preferred_columns = [
-                    'PATERNO', 'MATERNO', 'NOMBRE_S', 'NUM', 'CODIGO', 'RFC', 'IMSS', 'CURP',
-                    'TELEFONO', 'CRN', 'DESDE', 'HASTA', 'DEPENDENCIA_1', 'DEPENDENCIA_2', 'DEPENDENCIA_3'
+                    'PATERNO', 'MATERNO', 'NOMBRE_S', 'CODIGO', 'NUM',
+                    'CRN','HRS_TOTALES', 'MATERIA', 'DESDE', 'HASTA', 'TELEFONO',
+                    'DEPENDENCIA_1', 'DEPENDENCIA_2', 'DEPENDENCIA_3',
+                    'RFC', 'IMSS', 'CURP'
                 ]
 
                 for col in preferred_columns:
