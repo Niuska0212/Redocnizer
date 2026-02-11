@@ -56,7 +56,7 @@ class DataTab(QWidget):
         """Configura la interfaz de la pestaña de datos"""
         layout = QVBoxLayout()
 
-        # -------- Controles superiores --------
+        # -------- Controles superiores (Restaurados completamente) --------
         controls_layout = QHBoxLayout()
 
         # Campo de búsqueda
@@ -107,44 +107,68 @@ class DataTab(QWidget):
         controls_layout.addStretch()
         controls_layout.addWidget(self.info_label)
 
-        # -------- Tabla de datos --------
+        # -------- Tabla de datos (Restaurada configuración) --------
         self.table = QTableWidget()
         self.table.setAlternatingRowColors(True)
-        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)  # Seleccionar filas completas
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SingleSelection)
-        self.table.setEditTriggers(QAbstractItemView.DoubleClicked)  # Doble clic para editar celda
+        self.table.setEditTriggers(QAbstractItemView.DoubleClicked)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.table.verticalHeader().setVisible(False)
 
-        # Permitir ordenamiento al hacer clic en encabezados
+        # Permitir ordenamiento
         self.table.horizontalHeader().setSectionsClickable(True)
         self.table.horizontalHeader().sectionClicked.connect(self.sort_by_column)
 
-        # Conectar cambios en celdas y selección
+        # Conexiones
         self.table.itemChanged.connect(self._on_item_changed)
         self.table.itemSelectionChanged.connect(self._on_row_selected)
-        # Doble clic en fila para editar registro completo
         self.table.doubleClicked.connect(self._on_row_double_clicked)
 
-        # -------- Vista previa --------
+        # -------- Vista previa (Mejorada con ClickableLabel) --------
         table_preview_layout = QHBoxLayout()
         table_preview_layout.addWidget(self.table, 3)
 
-        self.preview_img_label = QLabel()
+        # Usamos ClickableLabel con tus estilos originales y el cursor de mano
+        self.preview_img_label = ClickableLabel()
         self.preview_img_label.setObjectName("preview_label_data")
         self.preview_img_label.setFixedSize(250, 350)
+        self.preview_img_label.setCursor(Qt.PointingHandCursor)
+        self.preview_img_label.setToolTip("Haz clic para ampliar imagen")
         self.preview_img_label.setStyleSheet("""
-            QLabel { border: 2px dashed rgba(25,118,210,0.18); border-radius: 8px; 
-                    background-color: #ffffff; color: #0b2545; qproperty-alignment: AlignCenter; 
-                    font-weight: 600; }
+            QLabel { 
+                border: 2px dashed rgba(25,118,210,0.18); 
+                border-radius: 8px; 
+                background-color: #ffffff; 
+                color: #0b2545; 
+                qproperty-alignment: AlignCenter; 
+                font-weight: 600; 
+            }
+            QLabel:hover {
+                border: 2px solid #1976d2;
+                background-color: #f0f7ff;
+            }
         """)
         self.preview_img_label.setText("Sin visualización")
+        
+        # Conexión para abrir el visor
+        self.preview_img_label.clicked.connect(self._open_advanced_preview)
+        
         table_preview_layout.addWidget(self.preview_img_label, 0)
 
         # -------- Ensamblar layout --------
         layout.addLayout(controls_layout)
         layout.addLayout(table_preview_layout)
         self.setLayout(layout)
+        
+    def _open_advanced_preview(self):
+        """Abre la ventana con zoom y movimiento."""
+        if self.current_preview_pixmap and not self.current_preview_pixmap.isNull():
+            if ImagePreviewDialog:
+                dialog = ImagePreviewDialog(self.current_preview_pixmap, parent=self)
+                dialog.exec()
+            else:
+                QMessageBox.warning(self, "Error", "No se encontró image_preview_dialog.py")
 
     def load_data(self):
         """Carga los datos en la tabla"""
@@ -358,7 +382,7 @@ class DataTab(QWidget):
             self.preview_img_label.setPixmap(QPixmap())
 
     def show_preview_for_row(self, row):
-        """Muestra la visualización para una fila"""
+        """Muestra la miniatura y guarda el original para el visor."""
         if self.filtered_df is None or row >= len(self.filtered_df):
             return
 
@@ -367,30 +391,41 @@ class DataTab(QWidget):
             archivo_col = next((c for c in self.filtered_df.columns if c.lower() == 'archivo'), None)
 
             if archivo_col is not None:
-                archivo = row_data[archivo_col]
-                if pd.isna(archivo) or not str(archivo).strip():
-                    self.preview_img_label.setText("Sin visualización")
-                    self.preview_img_label.setPixmap(QPixmap())
-                else:
-                    preview_name = f"Vizualizacion_{os.path.basename(str(archivo))}"
-                    preview_path = os.path.join(os.getcwd(), 'previews', preview_name)
-                    if os.path.exists(preview_path):
-                        pix = QPixmap(preview_path)
-                        if not pix.isNull():
-                            pix = pix.scaled(
-                                self.preview_img_label.width(),
-                                self.preview_img_label.height(),
-                                Qt.KeepAspectRatio,
-                                Qt.SmoothTransformation
-                            )
-                            self.preview_img_label.setPixmap(pix)
-                            self.preview_img_label.setText("")
-                        else:
-                            self.preview_img_label.setText("Sin visualización")
-                    else:
-                        self.preview_img_label.setText("Sin visualización")
-        except Exception:
+                archivo = str(row_data[archivo_col])
+                # Ajustamos la ruta según tu estructura de carpetas
+                preview_name = f"Vizualizacion_{os.path.basename(archivo)}"
+                preview_path = os.path.join(os.getcwd(), 'previews', preview_name)
+                
+                # Intentar ruta alternativa si no está en previews
+                if not os.path.exists(preview_path):
+                    # Ajusta esto a donde guardes las imágenes procesadas
+                    preview_path = os.path.join(os.getcwd(), 'data', 'data', 'contratos', 'preview', f"Viz_{os.path.basename(archivo)}")
+
+                if os.path.exists(preview_path):
+                    pix = QPixmap(preview_path)
+                    if not pix.isNull():
+                        # GUARDAR ORIGINAL para que el zoom se vea bien
+                        self.current_preview_pixmap = pix
+                        
+                        # Crear MINIATURA para el panel lateral
+                        scaled = pix.scaled(
+                            self.preview_img_label.width() - 5,
+                            self.preview_img_label.height() - 5,
+                            Qt.KeepAspectRatio,
+                            Qt.SmoothTransformation
+                        )
+                        self.preview_img_label.setPixmap(scaled)
+                        self.preview_img_label.setText("")
+                        return
+            
+            # Si falla algo
             self.preview_img_label.setText("Sin visualización")
+            self.preview_img_label.setPixmap(QPixmap())
+            self.current_preview_pixmap = None
+
+        except Exception as e:
+            print(f"Error en preview: {e}")
+            self.preview_img_label.setText("Error")
 
     def export_data(self):
         """Exporta los datos a archivo"""
