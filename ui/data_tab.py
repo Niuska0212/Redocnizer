@@ -393,7 +393,7 @@ class DataTab(QWidget):
             if archivo_col is not None:
                 archivo = str(row_data[archivo_col])
                 # Ajustamos la ruta según tu estructura de carpetas
-                preview_name = f"Vizualizacion_{os.path.basename(archivo)}"
+                preview_name = f"Viz_{os.path.basename(archivo)}"
                 preview_path = os.path.join(os.getcwd(), 'previews', preview_name)
                 
                 # Intentar ruta alternativa si no está en previews

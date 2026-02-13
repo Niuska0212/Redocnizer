@@ -386,10 +386,10 @@ def clean_data_by_field(field_name: str, text: str) -> str:
         # Eliminar cualquier carácter no numérico (excepto punto decimal)
         cleaned_value = re.sub(r'[^\d\.]', '', cleaned_value)
         # Si el valor es vacío después de limpiar, devolver placeholder
-        if cleaned.count('.') > 1:
+        if cleaned_value.count('.') > 1:
             # Si hay más de un punto, mantener solo el primero y los siguientes dígitos
             parts = cleaned_value.split('.')
-            cleaned = parts[0] + '.' + ''.join(parts[1:])
+            cleaned_value = parts[0] + '.' + ''.join(parts[1:])
             
         try:
             val = float(cleaned_value)
