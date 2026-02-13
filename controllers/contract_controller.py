@@ -102,3 +102,17 @@ class ContractController:
                 })
 
         return results
+
+    def limpiar_previews(self):
+        """Elimina todas las imágenes dentro de la carpeta preview para ahorrar espacio."""
+        if not self.preview_dir or not os.path.exists(self.preview_dir):
+            return
+
+        try:
+            for archivo in os.listdir(self.preview_dir):
+                ruta_archivo = os.path.join(self.preview_dir, archivo)
+                if os.path.isfile(ruta_archivo):
+                    os.remove(ruta_archivo)
+            print(f"✅ Carpeta de previews vaciada: {self.preview_dir}")
+        except Exception as e:
+            print(f"⚠️ No se pudo limpiar previews: {e}")

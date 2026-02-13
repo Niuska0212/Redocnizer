@@ -1,3 +1,4 @@
+# ui/app_menu.py
 from PySide6.QtWidgets import QFileDialog, QMessageBox, QDialog
 from PySide6.QtGui import QAction
 import os
@@ -99,6 +100,35 @@ def create_app_menu(window):
     
     act_redo.triggered.connect(on_redo)
     edit_menu.addAction(act_redo)
+    
+    # ---- NUEVO MENÚ: Herramientas (Limpieza de emergencia) ----
+    tools_menu = menubar.addMenu("Herramientas")
+
+    def on_clear_previews():
+        """Acción de emergencia para borrar imágenes de preview."""
+        reply = QMessageBox.warning(
+            window, 
+            "Limpieza de Emergencia", 
+            "¿Estás seguro de que deseas eliminar TODAS las imágenes de vista previa?\n\n"
+            "Esto liberará espacio en disco, pero no podrás ver las imágenes en la tabla hasta procesar de nuevo.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            if hasattr(window, 'controller') and window.controller:
+                window.controller.limpiar_previews()
+                # Limpiar el visualizador actual para que no intente mostrar algo borrado
+                if hasattr(window, 'data_tab'):
+                    window.data_tab.preview_img_label.clear()
+                    window.data_tab.preview_img_label.setText("Vistas previas eliminadas.")
+                QMessageBox.information(window, "Limpieza Completa", "Se han eliminado los archivos de vista previa correctamente.")
+            else:
+                QMessageBox.critical(window, "Error", "El controlador no está inicializado.")
+
+    act_clear_cache = QAction("🧹 Vaciar carpeta de Previews", window)
+    act_clear_cache.triggered.connect(on_clear_previews)
+    tools_menu.addAction(act_clear_cache)
 
     # ---- Configuración ----
     config_menu = menubar.addMenu("Configuración")
