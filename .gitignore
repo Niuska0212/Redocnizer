@@ -7,3 +7,13 @@ previews/*.png
 previews/*.jpg
 previews/*.jpeg
 data/2324725 5648990 ASIG 2018B.pdf
+
+to-do
+
+build/
+dist/
+
+dist/REDOCNIZER.exe
+
+**/__pycache__/
+*.pyc

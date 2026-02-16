@@ -198,10 +198,10 @@ class DataTab(QWidget):
 
         # Reordenar columnas para visualización según preferencia del usuario
         preferred_display_order = [
-            'Archivo', 'PATERNO', 'MATERNO', 'NOMBRE_S', 'CODIGO', 'NUM',
-            'CRN','HRS_TOTALES', 'MATERIA', 'DESDE', 'HASTA', 'TELEFONO',
+            'Archivo', 'DESDE', 'HASTA', 'PATERNO', 'MATERNO', 'NOMBRE_S', 'CODIGO', 'NUM',
+            'CRN','HRS_TOTALES', 'MATERIA',
             'DEPENDENCIA_3', 'DEPENDENCIA_2', 'DEPENDENCIA_1',  
-            'RFC', 'IMSS', 'CURP'
+            'RFC', 'IMSS', 'CURP', 'TELEFONO'
         ]
 
         # Mapear nombres reales de columnas respetando case-insensitive

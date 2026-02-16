@@ -13,9 +13,12 @@ from PIL import Image, ImageDraw, ImageFont
 from .segmentacion_dinamica import get_dynamic_rois, clean_data_by_field, clean_border_chars, validate_field_format, clean_name_specific, procesar_bloque_dependencias, EMPTY_DATA_PLACEHOLDER
 from .CRNN_inference import load_inference_model
 from .preprocessing import prepare_roi_for_ocr, invert_image_color, rotate_image, enhance_for_easyocr
+from PySide6.QtCore import QSettings
 
-
-reader = easyocr.Reader(['es', 'en'], gpu=False)
+# Respectar la preferencia de GPU del usuario (la UI guarda esta opción en QSettings)
+settings = QSettings("CUCEI", "Redocnizer")
+gpu_preference = settings.value("use_gpu_acceleration", False, type=bool)
+reader = easyocr.Reader(['es', 'en'], gpu=gpu_preference)
 
 # --- CONFIGURACIÓN DE RUTAS ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -45,7 +48,7 @@ def decode_batch_predictions(y_pred_probs, index_to_char, output_sequence_length
 
 
 def split_full_name(full_name: str) -> dict:
-    PARTICULAS = {'DE', 'DEL', 'LA', 'LAS', 'LOS', 'Y', 'MC', 'MAC', 'VON', 'VAN', 'SAN', 'SANTA', 'DI', 'DA', 'EL', 'LE'}
+    PARTICULAS = {'DE', 'DEL', 'LA', 'LAS', 'LOS', 'Y', 'MC', 'MAC', 'VON', 'VAN', 'SAN', 'SANTA', 'DI', 'DA', 'EL', 'LE', 'DE LA'}
     
     # PRIMERO: Limpiar caracteres problemáticos específicos para nombres
     full_name = re.sub(r'[=:!]', '', full_name)  # Eliminar caracteres problemáticos

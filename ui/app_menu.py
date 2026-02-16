@@ -1,6 +1,7 @@
 # ui/app_menu.py
 from PySide6.QtWidgets import QFileDialog, QMessageBox, QDialog
 from PySide6.QtGui import QAction
+from PySide6.QtCore import QSettings
 import os
 from ui.calendar_config_dialog import CalendarConfigDialog
 
@@ -132,6 +133,27 @@ def create_app_menu(window):
 
     # ---- Configuración ----
     config_menu = menubar.addMenu("Configuración")
+    
+    #ACcion para activar o desactivar aceleracion GPU
+    settings = QSettings("CUCEI", "Redocnizer")
+    # Leemos el estado actual (por defecto False)
+    gpu_enabled = settings.value("use_gpu_acceleration", False, type=bool)
+    
+    act_gpu = QAction("🚀 Usar Aceleración GPU (NVIDIA)", window, checkable=True)
+    act_gpu.setChecked(gpu_enabled)
+    
+    def on_toggle_gpu(checked):
+        settings.setValue("use_gpu_acceleration", checked)
+        if checked:
+            QMessageBox.information(window, "Aceleración GPU", 
+                "Has activado la GPU. Reicia la aplicación para aplicar los cambios.\n\n"
+                "Nota: Requiere tarjeta NVIDIA y drivers CUDA instalados.")
+        else:
+            QMessageBox.information(window, "Aceleración GPU", 
+                "Se usará el Procesador (CPU) para el próximo procesamiento.")
+
+    act_gpu.triggered.connect(on_toggle_gpu)
+    config_menu.addAction(act_gpu)
 
     def on_config_calendar():
         dialog = CalendarConfigDialog(window)
@@ -148,3 +170,5 @@ def create_app_menu(window):
     config_menu.addAction(act_config)
 
     return menubar
+
+

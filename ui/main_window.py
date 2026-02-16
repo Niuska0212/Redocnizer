@@ -24,19 +24,23 @@ from ui.drive_sync_tab import DriveSyncTab
 from ui.network_credentials_dialog import NetworkCredentialsDialog
 
 
-
-
-
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
         self.setWindowTitle("REDOCNIZER - Gestión de Contratos CUCEI")
-        self.resize(1000, 700)
+        screen = QApplication.primaryScreen().geometry()
+        width = screen.width() * 0.65  
+        height = screen.height() * 0.52
+        self.resize(int(width), int(height))
+        self.move((screen.width() - width) / 2, (screen.height() - height) / 2)
         
         # --------------------------------------
         #LOGO EN LA VENTANA de la aplicacion
         # --------------------------------------
+        icon_path = os.path.join(os.path.dirname(__file__), 'assets', 'logo_redocnizer.png')
+        self.setWindowIcon(QIcon(icon_path))
+        
         # 1. cargar la imagen del logo
         logo_path = os.path.join(os.path.dirname(__file__), 'assets', 'logo_redocnizer.png')
         
@@ -51,6 +55,7 @@ class MainWindow(QMainWindow):
         
         # CONFIGURACION DE MEMORIA (QSettings)
         self.settings = QSettings("Redocnizer", "RedocnizerApp")
+        self.setAttribute(Qt.WA_TranslucentBackground)
         
         # -----------------------------------------
         # ESTADO DE LA APLICACIÓN
@@ -80,11 +85,12 @@ class MainWindow(QMainWindow):
         # Se asegura contraste de texto oscuro sobre fondos claros para legibilidad
         self.setStyleSheet("""
             /* Colores base */
-            QMainWindow { background-color: #f6f8fb; color: #0b2545; }
+            QMainWindow { background-color: rgba(246, 248, 251, 240);  
+            color: #0b2545; }
 
             /* Barra de menú */
-            QMenuBar { background: transparent; color: #0b2545; }
-            QMenuBar::item { background: transparent; padding: 6px 12px; }
+            QMenuBar { background: #f6f8fb;; color: #0b2545; }
+            QMenuBar::item { background: #f6f8fb; padding: 6px 12px; }
             QMenu { background: #ffffff; color: #0b2545; }
 
             /* Botones: minimalistas con acento azul/índigo */
@@ -133,6 +139,10 @@ class MainWindow(QMainWindow):
                 border: 1px solid #e3e7ee;
                 font-weight: 600;
             }
+            
+            QTabBar {
+                background: #f6f8fb;    /* Fondo claro para el área de las pestañas */
+            }
 
             QTabBar::tab:selected {
                 background: #ffffff;
@@ -151,7 +161,7 @@ class MainWindow(QMainWindow):
                 margin-top: 10px;
                 padding: 12px;
                 color: #0b2545;
-                background: transparent;
+                background: #ffffff;
             }
             QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px; }
 
@@ -842,6 +852,10 @@ class MainWindow(QMainWindow):
     def process_contract(self):
         # Procesa los archivos seleccionados y muestra progreso
         #la barra de progreso y resultados se encuentran en self.progress_bar y self.results_list
+        
+        # Bloquear botón durante el procesamiento
+        self.btn_process.setEnabled(False)
+        
         try:
             calendar = self.calendar_combo.currentText()
             files = list(self.selected_files)
@@ -912,6 +926,8 @@ class MainWindow(QMainWindow):
                 f"Se produjo un error inesperado:\n\n{str(e)}"
             )
             self.progress_bar.setVisible(False)
+            # Actualizar estado del botón en caso de error
+            self._update_process_state()
 
     def update_stats(self):
         return

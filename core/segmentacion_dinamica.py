@@ -382,238 +382,159 @@ def clean_data_by_field(field_name: str, text: str) -> str:
         return ""
     
     cleaned_value = text.upper().strip()
+    
+    # --- 1. HORAS TOTALES ---
     if field_name == 'HRS_TOTALES':
-        # Eliminar cualquier carácter no numérico (excepto punto decimal)
-        cleaned_value = re.sub(r'[^\d\.]', '', cleaned_value)
-        # Si el valor es vacío después de limpiar, devolver placeholder
+        cleaned_value = re.sub(r'[^\d\.]', '', str(text))
+        if not cleaned_value or cleaned_value == ".":
+            return "0.00"
+
         if cleaned_value.count('.') > 1:
-            # Si hay más de un punto, mantener solo el primero y los siguientes dígitos
             parts = cleaned_value.split('.')
             cleaned_value = parts[0] + '.' + ''.join(parts[1:])
-            
+        
         try:
             val = float(cleaned_value)
+            if val >= 100 and '.' not in str(text):
+                val = val / 100
+            if val == 0: 
+                return "0.00"
             return "{:.2f}".format(val)
         except ValueError:
-            return cleaned_value if cleaned_value else "0.00"
+            return "0.00"
 
-    # 1. Campos que SÓLO deberían ser Números (o casi)
+    # --- 2. CAMPOS NUMÉRICOS ---
     if field_name in ['TELEFONO', 'CODIGO', 'NUM', 'CRN']:
-        # --- Lógica Específica para TELEFONO ---
-        if field_name == 'TELEFONO':
-            # 1. Si el valor coincide con un token de 'dato vacío en el documento', estandarizar.
-            if cleaned_value in PHONE_EMPTY_TOKENS:
-                return EMPTY_DATA_PLACEHOLDER
-        # Elimina cualquier letra (a-z) en el texto
+        if field_name == 'TELEFONO' and cleaned_value in PHONE_EMPTY_TOKENS:
+            return EMPTY_DATA_PLACEHOLDER
+        
         text = re.sub(r'[A-Z]', '', text, flags=re.IGNORECASE)
-        # Elimina cualquier símbolo, manteniendo solo números y espacios
         text = re.sub(r'[^\d\s\-\.]', '', text).strip()
-        # Limpia espacios extra
         text = re.sub(r'\s+', ' ', text).strip()
+        return text
 
-        if field_name == 'TELEFONO' and not text:
-            return ""
-    
-    # 2. Campos Alfa-Numéricos (RFC, IMSS, CURP) - LIMPIEZA MÁS AGRESIVA
+    # --- 3. CAMPOS ALFA-NUMÉRICOS (RFC, CURP, IMSS) ---
     elif field_name in ['RFC', 'CURP', 'IMSS']:
-        # Eliminar TODOS los caracteres especiales y espacios
         text = re.sub(r'[^A-Z0-9]', '', text.upper())
-        
-        # Validaciones específicas por tipo de campo
-        if field_name == 'RFC':
-            # RFC debe tener 12-13 caracteres alfanuméricos
-            if len(text) > 13:
-                # Buscar el patrón RFC válido en el texto
-                rfc_match = re.search(r'[A-Z&Ñ]{3,4}\d{6}[A-Z0-9]{3}', text)
-                if rfc_match:
-                    text = rfc_match.group()
-                else:
-                    text = text[:13]
-            
+        if field_name == 'RFC' and len(text) > 13:
+            rfc_match = re.search(r'[A-Z&Ñ]{3,4}\d{6}[A-Z0-9]{3}', text)
+            text = rfc_match.group() if rfc_match else text[:13]
         elif field_name == 'CURP':
-            # CURP debe tener exactamente 18 caracteres
-            # Patrón: 6 letras + 6 números + 6 letras/números
-            # Primero intentar encontrar el patrón CURP válido dentro del texto
             curp_match = re.search(r'[A-Z]{6}\d{6}[A-Z0-9]{6}', text)
-            if curp_match:
-                text = curp_match.group()
-            elif len(text) >= 18:
-                # Si hay suficientes caracteres, tomar los últimos 18
-                text = text[-18:]
-            # Si tiene menos de 18 caracteres, mantener como está (posiblemente incompleto)
-            
+            if curp_match: text = curp_match.group()
+            elif len(text) >= 18: text = text[-18:]
         elif field_name == 'IMSS':
-            # IMSS generalmente son 11 dígitos, pero puede variar
-            # Mantener solo números para IMSS
             text = re.sub(r'[^0-9]', '', text)
-            if len(text) > 11:
-                text = text[:11]
+            if len(text) > 11: text = text[:11]
+        return text
+
+    # --- 4. MATERIA (CON SOPORTE MEJORADO PARA T/P) ---
+    elif field_name == 'MATERIA':
+        text_up = text.upper().strip()
         
-        elif field_name == 'MATERIA':
-            # Si el OCR leyó "FISICA CREDITOS" o "FISICA 8", 
-            # buscamos palabras clave de la columna de al lado para cortar.
-            palabras_bloqueo = ['CREDITOS', 'CRÉDITOS', 'HORAS', 'HRS', 'CREDIT']
-            for palabra in palabras_bloqueo:
-                if palabra in text.upper():
-                    # Cortamos el texto justo antes de la palabra prohibida
-                    text = text.upper().split(palabra)[0]
+        # A. Rescatar indicador (T) o (P) con o sin paréntesis, incluso con espacios
+        # Detecta: "(T)", "( P )", " T", " P" al final del texto pero antes de basura numérica
+        tipo_rescatado = ""
+        # Buscamos una T o P que esté sola al final o rodeada de paréntesis
+        match_tipo = re.search(r'[\s\(]([TP])[\s\)]?$', text_up)
+        if not match_tipo:
+            # Reintento: si hay números de créditos al final, buscamos la T/P antes de ellos
+            match_tipo = re.search(r'[\s\(]([TP])[\s\)]?(?=\s+\d+)', text_up)
+        
+        if match_tipo:
+            tipo_rescatado = f"({match_tipo.group(1)})"
+
+        # B. Cortar por palabras de bloqueo (columna contigua)
+        palabras_bloqueo = ['CREDITOS', 'CRÉDITOS', 'HORAS', 'HRS', 'CREDIT']
+        for palabra in palabras_bloqueo:
+            if palabra in text_up:
+                text_up = text_up.split(palabra)[0]
+        
+        # C. Limpieza de números de créditos al final (ej. "MATERIA 8")
+        # Pero nos aseguramos de no borrar la T o P si ya la identificamos
+        text_up = re.sub(r'\s+\d+\s*$', '', text_up).strip()
+        
+        # D. Si rescatamos un tipo y ya no está en el texto limpio, lo re-anexamos
+        if tipo_rescatado:
+            # Evitar duplicados como "MATERIA (T) (T)"
+            base_sin_tipo = re.sub(r'[\s\(]+[TP][\s\)]*$', '', text_up).strip()
+            return f"{base_sin_tipo} {tipo_rescatado}".strip()
             
-            # Eliminar números aislados al final (que suelen ser los créditos)
-            text = re.sub(r'\s+\d+\s*$', '', text)
-            return text.strip()
-        elif field_name == 'HRS_TOTALES':
-            # 1. Dejar solo números y puntos
-            text = re.sub(r'[^0-9\.]', '', text)
-            # 2. Si el OCR leyó "2000" (sin punto), asumimos 2 decimales
-            if '.' not in text and len(text) >= 3:
-                text = text[:-2] + "." + text[-2:]
-            # 3. Si leyó algo como "20..00" o "20.0.0", limpiar
-            if text.count('.') > 1:
-                partes = text.split('.')
-                text = partes[0] + "." + "".join(partes[1:])[:2]
-                
-            return text
+        return text_up.strip()
             
-                
+    # --- 5. DEPENDENCIAS ---
     elif "DEPENDENCIA" in field_name:
-        # Primero una limpieza básica de ruido
         text = re.sub(r'^((\d\.)+\d?\s*|22\s*|\d+)\s+', '', text)
         text = re.sub(r'^[-\s!|\/,\?=:-]+', '', text)
-        
-        # Aplicamos la corrección difusa
-        # field_name será 'DEPENDENCIA_1', 'DEPENDENCIA_2', etc.
-        text = corregir_con_catalogo(text, field_name)
+        if 'corregir_con_catalogo' in globals():
+            text = corregir_con_catalogo(text, field_name)
         return text.strip()
     
-    # 3. Campos de texto general (Dependencias, Nombres)
+    # --- 6. TEXTO GENERAL ---
     else:
-        # Eliminar contaminación en campos de dependencia
         text = re.sub(r'^((\d\.)+\d?\s*|22\s*|\d+)\s+', '', text)
-
-        # Eliminar caracteres no alfanuméricos al inicio y final, para agregar mas limpieza debes poner aqui las reglas de la siguiete forma : text = re.sub(r'^[-\s!|\/,\?]+', '', text)
         text = re.sub(r'^[-\s!|\/,\?=:-]+', '', text)
         text = re.sub(r'[-\s!|\/,\?=:-]+$', '', text)
-        
-        # Limpiar espacios múltiples
         text = re.sub(r'\s+', ' ', text).strip()
-        # Aplicar allowlist final para normalizar caracteres permitidos
         text = keep_allowed_chars(text, ',.- ')
+        return text
 
-    return text.strip()
-
-# Función adicional para validación específica
 def validate_field_format(field_name: str, text: str) -> str:
-    """Valida y corrige el formato de campos específicos."""
+    """Valida y corrige el formato de campos específicos después de la limpieza inicial."""
     if not text:
         return text
-    # LIMPIEZA GENERAL: conservar solo caracteres permitidos (A-Z a-z 0-9 y ', . -' y espacio)
+    
     text = keep_allowed_chars(text, ',.- ')
     text = text.upper().strip()
     
     if field_name == 'RFC':
-        # Eliminar espacios y caracteres especiales
         text = re.sub(r'[^A-Z0-9]', '', text)
-        # Asegurar formato: 4 letras, 6 números, 3 alfanuméricos
-        if len(text) >= 10:
-            # Tomar primeros 13 caracteres máximo
-            text = text[:13]
+        if len(text) >= 10: text = text[:13]
             
     elif field_name == 'CURP':
-        # 1. Limpieza básica
-        text = re.sub(r'[^A-Z0-9]', '', text.upper())
-        
-        # 2. Nueva lógica: No ser tan estrictos con la posición de números/letras
-        # Buscamos una cadena que tenga la estructura general de una CURP (18 caracteres aprox)
+        text = re.sub(r'[^A-Z0-9]', '', text)
         if len(text) >= 10: 
-            # Intentamos buscar el patrón pero permitiendo letras donde van números 
-            # por si el OCR se equivoca (ej. O por 0, I por 1)
             curp_match = re.search(r'[A-Z0-9]{10,18}', text)
-            
             if curp_match:
-                candidate = curp_match.group()
-                # Si tiene al menos algo de coherencia, lo mantenemos
-                if len(candidate) > 18:
-                    text = candidate[:18]
-                else:
-                    text = candidate
-            else:
-                text = "" # Solo si de plano no hay nada alfanumérico largo
-        else:
-            text = ""
+                text = curp_match.group()[:18]
+            else: text = ""
+        else: text = ""
             
-    # CÓDIGO MEJORADO PARA IMSS (Línea ~279)
     elif field_name == 'IMSS':
-        # IMSS generalmente son 11 dígitos, pero puede variar
-        # Mantener solo números para IMSS
         text = re.sub(r'[^0-9]', '', text)
-        if len(text) < 5:
-            return ""
-        if len(text) > 11:
-            text = text[:11]
+        if len(text) < 5: return ""
+        if len(text) > 11: text = text[:11]
         
     elif field_name == 'TELEFONO':
         text = re.sub(r'[^0-9]', '', text)
-        if len(text) > 10:
-            text = text[:10]
+        if len(text) > 10: text = text[:10]
     
     elif field_name == 'NUM':
-        # NUM debe ser EXACTAMENTE 7 dígitos (obligatorio, nunca incompleto, nunca con relleno)
         text = re.sub(r'[^0-9]', '', text)
-        # Si tiene exactamente 7, mantener
-        if len(text) == 7:
-            pass  # Válido
-        elif len(text) > 7:
-            # Si tiene más de 7, tomar los primeros 7
-            text = text[:7]
-        # Si tiene 1-6 dígitos, dejar como está (será penalizado en contador de reintentos)
-        # Si está vacío, dejar vacío
+        if len(text) > 7: text = text[:7]
 
     elif field_name == 'RNC':
-        # asegurar que rnc sea numerico y tenga maximo 10 caracteres
         text = re.sub(r'[^0-9]', '', text)
-        if len(text) < 2:
-            return ""
-        if len(text) > 6:
-            text = text[:6]
+        if len(text) < 2: return ""
+        if len(text) > 6: text = text[:6]
 
-    elif field_name == 'DESDE' or field_name == 'HASTA':
-        # 1. Limpieza total: solo números y separadores básicos
+    elif field_name in ['DESDE', 'HASTA']:
         text = re.sub(r'[^0-9\/\-\.]', '', text) 
         text = text.replace('.', '/').replace('-', '/')
-        
-        # 2. Insertar diagonales si el OCR pegó todo (DDMMYYYY -> DD/MM/YYYY)
         if len(text) == 8 and text.isdigit():
             text = f"{text[:2]}/{text[2:4]}/{text[4:]}"
         
-        # 3. Intentar extraer componentes para corregir errores de lectura (como el 46)
         match = re.match(r'(\d{1,2})[\/](\d{1,2})[\/](\d{2,4})', text)
         if match:
             day, month, year = match.groups()
-            
-            # --- CORRECCIÓN DE DÍGITOS (El truco del 46) ---
-            # Si el día es > 31, es casi seguro que el '4' o '7' era un '1'
-            if int(day) > 31:
-                if day.startswith('4') or day.startswith('7'): 
-                    day = '1' + day[1]
-            
-            # Si el mes es > 12 (ej. leyó 42 en vez de 02)
-            if int(month) > 12:
-                if month.startswith('4'): 
-                    month = '0' + month[1]
-            
-            # Rellenar con ceros (ej. '4' -> '04')
-            day = day.zfill(2)
-            month = month.zfill(2)
-            
-            # Corregir año de 2 dígitos
-            if len(year) == 2:
-                year = '20' + year
-                
+            if int(day) > 31 and (day.startswith('4') or day.startswith('7')): 
+                day = '1' + day[1:]
+            if int(month) > 12 and month.startswith('4'): 
+                month = '0' + month[1:]
+            day, month = day.zfill(2), month.zfill(2)
+            if len(year) == 2: year = '20' + year
             return f"{day}/{month}/{year}"
-        
-        # Si no tiene el formato mínimo, devolvemos lo que hay o vacío
         return text if len(text) >= 8 else ""
-
             
     return text
 
