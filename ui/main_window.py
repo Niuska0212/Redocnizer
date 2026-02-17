@@ -23,6 +23,8 @@ from ui.data_tab import DataTab
 from ui.drive_sync_tab import DriveSyncTab
 from ui.network_credentials_dialog import NetworkCredentialsDialog
 
+from services.concurrent_worker import ConcurrentOCRWorker
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -850,84 +852,94 @@ class MainWindow(QMainWindow):
     # =========================================================
 
     def process_contract(self):
-        # Procesa los archivos seleccionados y muestra progreso
-        #la barra de progreso y resultados se encuentran en self.progress_bar y self.results_list
+        """
+        Lanza el procesamiento concurrente (Módulo 3).
+        Sustituye el bucle for síncrono por la ejecución en un hilo secundario.
+        """
+        # 1. Validaciones previas
+        if not self.selected_files:
+            return
+
+        calendar = self.calendar_combo.currentText()
+        files = list(self.selected_files)
         
-        # Bloquear botón durante el procesamiento
+        # 2. Configuración visual inicial
         self.btn_process.setEnabled(False)
+        self.progress_bar.setMaximum(len(files))
+        self.progress_bar.setValue(0)
+        self.progress_bar.setVisible(True)
+        self.results_list.clear()
+
+        # 3. CREAR EL TRABAJADOR (HILO)     
+        self.worker = ConcurrentOCRWorker(
+            file_paths=files, 
+            calendar=calendar, 
+            controller=self.controller
+        )
+
+        # 4. CONECTAR LAS SEÑALES (Protocolo de comunicación interna)
         
+        # Actualiza la barra y el mensaje de estado
+        self.worker.progress.connect(self.update_processing_ui)
+        
+        # Cuando un archivo termina, se añade a la lista visual
+        self.worker.file_finished.connect(self.add_result_to_list)
+        
+        # Cuando TODO termina, muestra el resumen y limpia
+        self.worker.all_finished.connect(self.show_final_summary)
+        
+        # Manejo de errores críticos del hilo
+        self.worker.error.connect(self.handle_worker_error)
+
+        # 5. INICIAR EL HILO (Módulo 3.1.1)
+        self.worker.start()
+
+    # --- Funciones de soporte para el Hilo ---
+
+    def update_processing_ui(self, value, message):
+        self.progress_bar.setValue(value)
+        # Si tienes un label de estado, podrías poner: self.status_label.setText(message)
+
+    def add_result_to_list(self, item_text, result_data):
+        from PySide6.QtWidgets import QListWidgetItem
+        self.results_list.addItem(QListWidgetItem(item_text))
+        # Hace scroll automático al final
+        self.results_list.scrollToBottom()
+
+    def show_final_summary(self, successful, failed, results):
+        total = successful + failed
+        msg = f"""
+        <h3>Proceso Completado</h3>
+        <p><b>Total:</b> {total} archivo(s)</p>
+        <p style='color: green;'><b>Exitosos:</b> {successful}</p>
+        <p style='color: red;'><b>Fallidos:</b> {failed}</p>
+        """
+        
+        if successful > 0:
+            msg += "<p>Los datos se han guardado en la pestaña 'Ver/Editar Datos'</p>"
+        
+        QMessageBox.information(self, "Resultado", msg)
+        
+        # Limpieza final
+        self.clear_files()
+        self.progress_bar.setVisible(False)
+        self.btn_process.setEnabled(True)
+        
+        # Actualizar tabla de datos
+        calendar = self.calendar_combo.currentText()
         try:
-            calendar = self.calendar_combo.currentText()
-            files = list(self.selected_files)
-            total = len(files)
+            self.load_calendar_data(calendar)
+        except:
+            if self.tabs.currentIndex() == 1:
+                self.data_tab.load_data()
+
+    def handle_worker_error(self, error_msg):
+        QMessageBox.critical(self, "Error de Sistema Paralelo", error_msg)
+        self.progress_bar.setVisible(False)
+        self.btn_process.setEnabled(True)
             
-            # Configurar progreso
-            self.progress_bar.setMaximum(total)
-            self.progress_bar.setValue(0)
-            self.progress_bar.setVisible(True)
-            self.results_list.clear()
             
-            successful = 0
-            failed = 0
-            
-            for i, file_path in enumerate(files):
-                # Permitir que la UI responda
-                QApplication.processEvents()
-                
-                try:
-                    # Procesar archivo
-                    result = self.controller.process_uploaded_file(
-                        file_path=file_path, 
-                        calendar=calendar
-                    )
-                    
-                    # Mostrar en lista de resultados (no guardamos más registros automáticamente)
-                    final_path = result.get('final_path', '')
-                    item_text = f"✅ {os.path.basename(file_path)} -> {final_path}"
-                    successful += 1
-                    
-                except Exception as e:
-                    item_text = f"❌ {os.path.basename(file_path)} -> Error: {str(e)}"
-                    failed += 1
-                
-                self.results_list.addItem(QListWidgetItem(item_text))
-                self.progress_bar.setValue(i + 1)
-            
-            # Mostrar resumen
-            msg = f"""
-            <h3>Proceso Completado</h3>
-            <p><b>Total:</b> {total} archivo(s)</p>
-            <p style='color: green;'><b>Exitosos:</b> {successful}</p>
-            <p style='color: red;'><b>Fallidos:</b> {failed}</p>
-            """
-            
-            if successful > 0:
-                msg += "<p>Los datos se han guardado en la pestaña 'Ver/Editar Datos'</p>"
-            
-            QMessageBox.information(self, "Resultado", msg)
-            
-            # Limpiar selección
-            self.clear_files()
-            self.progress_bar.setVisible(False)
-            
-            # Actualizar pestaña de datos si está visible
-            # Cargar CSV del calendario procesado y mostrarlo
-            try:
-                self.load_calendar_data(calendar)
-            except Exception:
-                # Fallback: refrescar la vista actual del DataTab
-                if self.tabs.currentIndex() == 1:
-                    self.data_tab.load_data()
-            
-        except Exception as e:
-            QMessageBox.critical(
-                self,
-                "Error en el procesamiento",
-                f"Se produjo un error inesperado:\n\n{str(e)}"
-            )
-            self.progress_bar.setVisible(False)
-            # Actualizar estado del botón en caso de error
-            self._update_process_state()
+    # =========================================================
 
     def update_stats(self):
         return
