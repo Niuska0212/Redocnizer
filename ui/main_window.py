@@ -865,6 +865,9 @@ class MainWindow(QMainWindow):
         
         # 2. Configuración visual inicial
         self.btn_process.setEnabled(False)
+        self.btn_select_file.setEnabled(False)
+        self.btn_clear_files.setEnabled(False)
+        self.btn_remove_file.setEnabled(False)
         self.progress_bar.setMaximum(len(files))
         self.progress_bar.setValue(0)
         self.progress_bar.setVisible(True)
@@ -923,7 +926,9 @@ class MainWindow(QMainWindow):
         # Limpieza final
         self.clear_files()
         self.progress_bar.setVisible(False)
+        
         self.btn_process.setEnabled(True)
+        self.btn_select_file.setEnabled(True)
         
         # Actualizar tabla de datos
         calendar = self.calendar_combo.currentText()
@@ -937,6 +942,8 @@ class MainWindow(QMainWindow):
         QMessageBox.critical(self, "Error de Sistema Paralelo", error_msg)
         self.progress_bar.setVisible(False)
         self.btn_process.setEnabled(True)
+        self._update_process_state()
+        
             
             
     # =========================================================
