@@ -1,19 +1,154 @@
+# ============================================
+# REDOCNIZER - .gitignore
+# ============================================
+
+# ========== CREDENCIALES Y SECRETOS ==========
 credentials.json
+.env
+.env.local
+.env.*.local
+firebase-config.json
+api_keys.txt
+secrets/
 
+# ========== PYTHON ==========
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.hypothesis/
 
-data/data/contratos/data/data/contratos/
-
+# ========== DATOS Y ALMACENAMIENTO ==========
+data/data/contratos/
 previews/*.png
 previews/*.jpg
 previews/*.jpeg
-data/2324725 5648990 ASIG 2018B.pdf
+previews/*.gif
+previews/*.bmp
+*.csv
+*.xlsx
+*.xls
+data/
+logs/
+*.db
+*.sqlite
+*.sqlite3
 
+# ========== ARCHIVOS TEMPORALES ==========
+temp/
+tmp/
+*.tmp
+*.temp
+*.bak
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+# ========== PROYECTO ESPECÍFICO ==========
 to-do
-
-build/
-dist/
-
+redocnizer.spec
 dist/REDOCNIZER.exe
+build/
 
-**/__pycache__/
-*.pyc
+# ========== IDE ==========
+.vscode/
+.idea/
+*.swp
+*.swo
+.vscode/settings.json
+.vscode/launch.json
+*.sublime-project
+*.sublime-workspace
+.project
+.pydevproject
+.settings/
+
+# ========== OS ==========
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+desktop.ini
+
+# ========== LOGS ==========
+*.log
+logs/
+
+# ========== ARCHIVOS ESPECÍFICOS A IGNORAR ==========
+2324725\ 5648990\ ASIG\ 2018B.pdf
+
+# ========== MODELOS GRANDES (DESCOMENTA SI NECESITAS) ==========
+# models/*.h5
+# models/*.hdf5
+# models/*.pkl
+# data/dataset/
+
+# ========== DOCUMENTACIÓN GENERADA ==========
+site/
+docs/_build/
+*.md~
+
+# ========== ARCHIVOS DE COMPILACIÓN ==========
+*.o
+*.a
+*.lib
+*.dylib
+*.dll
+*.exe
+
+# ========== VARIABLES DE ENTORNO ESPECÍFICAS ==========
+config.local.yaml
+settings.local.ini
+
+# ========== CACHÉ DE PYTEST Y TESTING ==========
+.pytest_cache/
+.coverage
+coverage/
+htmlcov/
+
+# ========== ARCHIVOS VSCODE ==========
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# ========== CACHÉ DE PIP ==========
+pip-log.txt
+pip-delete-this-directory.txt
+
+# ========== DISTRIBUCIÓN ==========
+*.tar.gz
+*.zip
+*.rar
+dist-old/
+releases/
+
