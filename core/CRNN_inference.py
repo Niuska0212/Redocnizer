@@ -11,15 +11,20 @@ settings = QSettings("CUCEI", "Redocnizer")
 use_gpu = settings.value("use_gpu_acceleration", False, type=bool)
 
 # Si el usuario NO activó explícitamente la GPU, forzamos el modo CPU.
-# Esto es lo que evita el error "Multiple OpKernel registrations" en cualquier PC.
+# Usamos '-1' y una cadena vacía para asegurar que ninguna capa de abstracción vea la GPU.
 if not use_gpu:
     os.environ['CUDA_VISIBLE_DEVICES'] = '-1' 
     os.environ['TF_LSTMS_USE_GPU'] = '0'
     os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0' 
+else:
+    # Si se usa GPU, forzamos que no reserve toda la memoria de golpe,
+    # lo cual a veces causa el error de registro duplicado.
+    os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = 'true'
 
 # Nivel 3 silencia casi todo excepto errores que detengan el programa
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
 
+# IMPORTANTE: Importar tensorflow DESPUÉS de configurar las variables de entorno anteriores
 import tensorflow as tf
 
 # Silenciar logs internos de la biblioteca para una terminal limpia
@@ -34,7 +39,10 @@ if use_gpu:
         gpus = tf.config.list_physical_devices('GPU')
         if gpus:
             for g in gpus:
-                tf.config.experimental.set_memory_growth(g, True)
+                try:
+                    tf.config.experimental.set_memory_growth(g, True)
+                except:
+                    pass
             print(f"[TF] Aceleración de hardware activada (GPU detectada).")
         else:
             print(f"[TF] GPU solicitada pero no detectada. Usando CPU de forma segura.")
@@ -69,6 +77,7 @@ def build_pure_inference_model():
     Construye la arquitectura CRNN (CNN + RNN).
     Diseñada con capas estándar para funcionar en cualquier procesador o tarjeta.
     """
+    # Definimos el input explícitamente como float32 para evitar conversiones automáticas de GPU
     input_img = Input(shape=(IMG_HEIGHT, IMG_WIDTH, 1), name="image", dtype="float32")
 
     # Bloque 1: Extracción de formas (CNN)
@@ -112,6 +121,7 @@ def load_inference_model():
         return None, None, None
 
     # Construir estructura en memoria
+    # El error ocurría aquí porque build_pure_inference_model() gatilla el registro de kernels
     modelo_inf = build_pure_inference_model()
 
     if os.path.exists(MODELO_PATH):
