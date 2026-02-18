@@ -10,6 +10,7 @@ credentials.json
 firebase-config.json
 api_keys.txt
 secrets/
+token.json
 
 # ========== PYTHON ==========
 __pycache__/

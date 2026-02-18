@@ -44,6 +44,9 @@ a = Analysis(
         'google.auth',
         'google.oauth2',
         'firebase_admin',
+        'googleapiclient.discovery',
+        'googleapiclient.http',
+        'google_auth_oauthlib.flow'
         'controllers.contract_controller',
         'core.document_extractor',
         'core.CRNN_inference',

@@ -245,7 +245,7 @@ class MainWindow(QMainWindow):
         
         # Pestaña 3: Google Drive (Módulo 3)
         self.drive_sync_tab = DriveSyncTab(self)
-        self.tabs.addTab(self.drive_sync_tab, "☁️ Sincronización Nube")
+        self.tabs.addTab(self.drive_sync_tab, "☁️ Cloud")
         
         # Conectar cambio de pestaña para actualizar datos
         self.tabs.currentChanged.connect(self.on_tab_changed)
