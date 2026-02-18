@@ -38,9 +38,12 @@ class FileService:
     def get_calendar_dir(self, calendar: str) -> str:
         """
         Retorna la carpeta donde se guardan los CSVs de cada calendario.
-        Estructura: RAIZ / CALENDARIOS / {CALENDARIO} /
+        Se guarda en la raíz del PROYECTO, no en la raíz de contratos del usuario.
+        Estructura: PROYECTO_RAIZ / CALENDARIOS / {CALENDARIO} /
         """
-        calendar_path = os.path.join(self.root_dir, "CALENDARIOS", calendar)
+        # Obtener la ruta raíz del proyecto (2 niveles arriba de services/)
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        calendar_path = os.path.join(project_root, "CALENDARIOS", calendar)
         os.makedirs(calendar_path, exist_ok=True)
         return calendar_path
 
