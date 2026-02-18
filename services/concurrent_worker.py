@@ -1,3 +1,5 @@
+# services/concurrent_worker.py
+
 import os
 from PySide6.QtCore import QThread, Signal
 from concurrent.futures import ThreadPoolExecutor

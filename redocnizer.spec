@@ -6,21 +6,20 @@ from PyInstaller.utils.hooks import collect_submodules, collect_data_files
 # Rutas base
 root = SPECPATH
 
-# Recopilar archivos de datos de las dependencias pesadas si es necesario
+# 1. Recopilar archivos de datos de las dependencias pesadas
 tensorflow_datas = collect_data_files('tensorflow')
 keras_datas = collect_data_files('keras')
 pyside6_datas = collect_data_files('PySide6')
 
-# Archivos de datos locales a incluir
+# 2. Definir archivos de datos locales a incluir
 datas = [
     (os.path.join(root, 'ui', 'assets'), 'ui/assets'),
 ] + tensorflow_datas + keras_datas + pyside6_datas
 
-# Agregar base de datos si existe
+# Agregar archivos de configuración y bases de datos si existen
 if os.path.exists(os.path.join(root, 'calendarios.db')):
     datas.append((os.path.join(root, 'calendarios.db'), '.'))
 
-# Agregar credenciales si existen
 if os.path.exists(os.path.join(root, 'credentials.json')):
     datas.append((os.path.join(root, 'credentials.json'), '.'))
 
@@ -46,7 +45,7 @@ a = Analysis(
         'firebase_admin',
         'googleapiclient.discovery',
         'googleapiclient.http',
-        'google_auth_oauthlib.flow'
+        'google_auth_oauthlib.flow',
         'controllers.contract_controller',
         'core.document_extractor',
         'core.CRNN_inference',
@@ -63,11 +62,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludedimports=[
-        'matplotlib',
-        'scipy',
-        'numpy.random._utils',
-    ],
+    excludedimports=['matplotlib', 'scipy', 'numpy.random._utils'],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
@@ -76,23 +71,34 @@ a = Analysis(
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
+# --- CAMBIO CLAVE AQUÍ: EXE ahora no contiene los binarios ni los datos ---
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
-    [],
+    [],  # Se dejan los binarios vacíos para que no se compriman dentro del .exe
+    exclude_binaries=True, # IMPORTANTE: Esto habilita el modo 'Onedir'
     name='REDOCNIZER',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    upx_exclude=[],
-    runtime_tmpdir=None,
-    console=False,  # False = ventana sin consola (GUI pura)
+    console=False, # True para ver errores de carga, False para entrega final
+    disable_windowed_traceback=False,
+    argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
     icon=os.path.join(root, 'ui', 'assets', 'logo_redocnizer.png'),
+)
+
+# --- NUEVA SECCIÓN: COLLECT crea la carpeta con todo ya descomprimido ---
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    name='REDOCNIZER_DIST' # Nombre de la carpeta final
 )
