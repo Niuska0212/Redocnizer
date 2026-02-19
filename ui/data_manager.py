@@ -1,6 +1,5 @@
 # !/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# ui/data_manager.py
 """Módulo para manejar operaciones de datos (carga, guardado, actualización)."""
 import os
 import pandas as pd
@@ -8,76 +7,59 @@ from datetime import datetime
 from PySide6.QtCore import Signal, QObject
 
 class DataManager(QObject):
-    """Manejador de datos para el sistema (extraído de main_window.py)."""
+    """
+    Manejador de datos estricto. 
+    Solo opera sobre el archivo 'contratos.csv' del calendario seleccionado.
+    """
     data_updated = Signal()
 
     def __init__(self):
         super().__init__()
         self.data = pd.DataFrame()
-        # Usar CSV en vez de XLSX según preferencia del usuario
-        self.data_file = os.path.join(os.getcwd(), "contratos_data.csv")
-        self.source_csv_file = None  # Archivo source (del calendario) si aplica
-        self._load_data()
-
-    def _load_data(self):
-        """Carga datos existentes del archivo CSV"""
-        if os.path.exists(self.data_file):
-            try:
-                # Leer CSV si existe
-                self.data = pd.read_csv(self.data_file, encoding='utf-8', dtype=str)
-                # Normalizar nombres y convertir Fecha_Procesamiento si existe
-                self.data.columns = [str(c).replace('\ufeff', '').strip() for c in self.data.columns]
-                if 'Fecha_Procesamiento' in self.data.columns:
-                    self.data['Fecha_Procesamiento'] = pd.to_datetime(self.data['Fecha_Procesamiento'], errors='coerce')
-            except Exception as e:
-                print(f"Error cargando datos: {e}")
-                self.data = pd.DataFrame()
-        else:
-            self.data = pd.DataFrame()
-
-    def add_record(self, record_data):
-        """Agrega un nuevo registro"""
-        record_data['Fecha_Procesamiento'] = datetime.now()
-
-        if self.data.empty:
-            self.data = pd.DataFrame([record_data])
-        else:
-            new_df = pd.DataFrame([record_data])
-            self.data = pd.concat([self.data, new_df], ignore_index=True)
-
-        self.save_data()
-        self.data_updated.emit()
+        self.source_csv_file = None  # Ruta absoluta al contratos.csv activo
 
     def set_source_csv(self, csv_path: str):
-        """Establece el CSV source (del calendario) para guardar cambios en él."""
+        """
+        Establece el archivo de trabajo principal. 
+        Si el archivo existe, lo carga. Si no, limpia la vista para iniciar uno nuevo.
+        """
+        self.source_csv_file = csv_path
+        
         if os.path.exists(csv_path):
-            self.source_csv_file = csv_path
-            print(f"📁 CSV source establecido: {csv_path}")
+            print(f"📁 Cargando base de datos del calendario: {csv_path}")
+            self._internal_load(csv_path)
         else:
-            print(f"⚠️ CSV source no existe: {csv_path}")
-            self.source_csv_file = None
-
-    def update_record(self, row_index, column_name, value):
-        """Actualiza un registro específico"""
-        if not self.data.empty and row_index < len(self.data):
-            self.data.at[row_index, column_name] = value
-            self.save_data()
+            print(f"✨ No se encontró base de datos previa en: {csv_path}. Iniciando nueva.")
+            self.data = pd.DataFrame()
             self.data_updated.emit()
 
-    def delete_record(self, row_index):
-        """Elimina un registro"""
-        if not self.data.empty and row_index < len(self.data):
-            self.data = self.data.drop(row_index).reset_index(drop=True)
-            self.save_data()
+    def _internal_load(self, path):
+        """Carga técnica de datos con limpieza de codificación."""
+        try:
+            # Se usa utf-8-sig para ignorar automáticamente el BOM de archivos Excel/CSV
+            df = pd.read_csv(path, encoding='utf-8-sig', dtype=str)
+            
+            # Limpiar nombres de columnas (espacios en blanco o caracteres invisibles)
+            df.columns = [str(c).replace('\ufeff', '').strip() for c in df.columns]
+            
+            # Normalización de la fecha de procesamiento si existe
+            if 'Fecha_Procesamiento' in df.columns:
+                df['Fecha_Procesamiento'] = pd.to_datetime(df['Fecha_Procesamiento'], errors='coerce')
+            
+            self.data = df
             self.data_updated.emit()
+        except Exception as e:
+            print(f"❌ Error al cargar el archivo CSV: {e}")
+            self.data = pd.DataFrame()
 
     def save_data(self):
-        """Guarda los datos al archivo CSV con solo columnas esenciales"""
+        """Guarda el estado actual del DataFrame directamente en el archivo del calendario."""
+        if not self.source_csv_file:
+            print("⚠️ Error: No se puede guardar porque no se ha establecido un calendario de destino.")
+            return
+
         try:
-            # Crear directorio si no existe
-            os.makedirs(os.path.dirname(self.data_file), exist_ok=True)
-            
-            # Columnas esenciales en el orden solicitado por el usuario
+            # Columnas requeridas según el orden del sistema
             preferred_columns = [
                 'PATERNO', 'MATERNO', 'NOMBRE_S', 'CODIGO', 'NUM',
                 'CRN','HRS_TOTALES', 'MATERIA', 'DESDE', 'HASTA', 'TELEFONO',
@@ -85,137 +67,87 @@ class DataManager(QObject):
                 'RFC', 'IMSS', 'CURP'
             ]
 
-            # Añadir columnas faltantes con valores vacíos y mapear columnas
-            # existentes de forma case-insensitive para evitar perder datos
-            col_map = {c.lower(): c for c in self.data.columns}
+            # Garantizar que todas las columnas preferidas existan en el DataFrame
+            for col in preferred_columns:
+                if col not in self.data.columns:
+                    self.data[col] = ""
 
-            ordered = []
-            for pref in preferred_columns:
-                if pref in self.data.columns:
-                    ordered.append(pref)
-                elif pref.lower() in col_map:
-                    # Usar el nombre real existente (p. ej. 'nombre' vs 'Nombre')
-                    ordered.append(col_map[pref.lower()])
-                else:
-                    # Crear columna preferida si no existe
-                    self.data[pref] = ""
-                    ordered.append(pref)
-
-            # Añadir el resto de columnas que no están en 'ordered', preservando nombres reales
-            remaining = [c for c in self.data.columns if c not in ordered]
-            final_columns = ordered + remaining
-
-            # Guardar como CSV usando el orden final de columnas
-            # Aseguramos encoding utf-8-sig para compatibilidad con Excel
-            self.data[final_columns].to_csv(self.data_file, index=False, encoding='utf-8-sig')
-            print(f"✅ Datos guardados en: {self.data_file}")
+            # Asegurar que existan las carpetas (ej: CALENDARIOS/2024A/)
+            os.makedirs(os.path.dirname(self.source_csv_file), exist_ok=True)
             
-            # Si hay un CSV source (del calendario), guardar cambios allí también
-            if self.source_csv_file and os.path.exists(self.source_csv_file):
-                try:
-                    self.data[final_columns].to_csv(self.source_csv_file, index=False, encoding='utf-8-sig')
-                    print(f"✅ Datos guardados en CSV del calendario: {self.source_csv_file}")
-                except Exception as e:
-                    print(f"⚠️ Error guardando en CSV del calendario: {e}")
-        
+            # Reordenar columnas para mantener consistencia: Preferidas + El resto
+            other_cols = [c for c in self.data.columns if c not in preferred_columns]
+            final_df = self.data[preferred_columns + other_cols]
+
+            # Guardado final
+            final_df.to_csv(self.source_csv_file, index=False, encoding='utf-8-sig')
+            print(f"✅ Archivo actualizado correctamente en: {self.source_csv_file}")
+            
         except Exception as e:
-            print(f"Error guardando datos: {e}")
+            print(f"❌ Error crítico al guardar datos: {e}")
+
+    def add_record(self, record_data):
+        """Añade una fila nueva y sincroniza el archivo."""
+        record_data['Fecha_Procesamiento'] = datetime.now()
+        new_row = pd.DataFrame([record_data])
+        
+        if self.data.empty:
+            self.data = new_row
+        else:
+            self.data = pd.concat([self.data, new_row], ignore_index=True)
+            
+        self.save_data()
+        self.data_updated.emit()
+
+    def update_record(self, row_index, column_name, value):
+        """Actualiza una celda específica y sincroniza el archivo."""
+        if 0 <= row_index < len(self.data):
+            self.data.at[row_index, column_name] = value
+            self.save_data()
+            self.data_updated.emit()
+
+    def delete_record(self, row_index):
+        """Elimina una fila y sincroniza el archivo."""
+        if 0 <= row_index < len(self.data):
+            self.data = self.data.drop(row_index).reset_index(drop=True)
+            self.save_data()
+            self.data_updated.emit()
 
     def get_dataframe(self):
-        """Retorna el DataFrame actual"""
+        """Retorna una copia de los datos actuales."""
         return self.data.copy()
 
     def load_from_csv(self, csv_path: str):
-        """Carga datos desde un CSV (por ejemplo el CSV de un calendario)."""
-        try:
-            if os.path.exists(csv_path):
-                # Leer preservando todo como strings para evitar conversión errónea
-                # Intentar primero con utf-8-sig (con BOM), si falla usar utf-8
-                try:
-                    df = pd.read_csv(csv_path, encoding='utf-8-sig', dtype=str)
-                except:
-                    df = pd.read_csv(csv_path, encoding='utf-8', dtype=str)
-
-                # Sanitizar nombres de columnas: eliminar BOM, trim y espacios extra
-                df.columns = [str(c).replace('\ufeff', '').strip() for c in df.columns]
-
-                # Eliminar columnas inesperadas generadas por parsing erróneo (ej: sufijo _LEFT)
-                drop_cols = [c for c in df.columns if c.strip().upper().endswith('_LEFT')]
-                if drop_cols:
-                    df = df.drop(columns=drop_cols)
-
-                # Normalizar columna Fecha_Procesamiento si existe
-                fecha_col = next((c for c in df.columns if c.lower() == 'fecha_procesamiento' or c == 'Fecha_Procesamiento'), None)
-                if fecha_col is not None:
-                    df[fecha_col] = pd.to_datetime(df[fecha_col], errors='coerce')
-
-                # Asegurar columnas mínimas (mismo esquema que en save_data)
-                preferred_columns = [
-                    'PATERNO', 'MATERNO', 'NOMBRE_S', 'CODIGO', 'NUM',
-                    'CRN','HRS_TOTALES', 'MATERIA', 'DESDE', 'HASTA', 'TELEFONO',
-                    'DEPENDENCIA_1', 'DEPENDENCIA_2', 'DEPENDENCIA_3',
-                    'RFC', 'IMSS', 'CURP'
-                ]
-
-                for col in preferred_columns:
-                    # Añadir si no existe cualquier variante (case-insensitive)
-                    if not any(c.lower() == col.lower() for c in df.columns):
-                        df[col] = ""
-
-                # Reordenar: preferidas (si existen) luego el resto
-                ordered = [c for c in preferred_columns if any(dc.lower() == c.lower() for dc in df.columns)]
-                # Obtener nombres reales de las columnas preferidas en el orden correcto (preservando casing existente)
-                real_ordered = []
-                for pref in ordered:
-                    real = next((c for c in df.columns if c.lower() == pref.lower()), pref)
-                    real_ordered.append(real)
-
-                remaining = [c for c in df.columns if c not in real_ordered]
-                df = df[real_ordered + remaining]
-
-                # Fusionar con datos existentes en lugar de sobrescribir
-                if self.data is None or self.data.empty:
-                    combined = df.copy()
-                else:
-                    combined = pd.concat([self.data, df], ignore_index=True, sort=False)
-
-                # Eliminar duplicados si existe columna 'archivo' (case-insensitive)
-                archivo_col = next((c for c in combined.columns if c.lower() == 'archivo' or c.lower() == 'archivo'), None)
-                if archivo_col is not None:
-                    combined = combined.drop_duplicates(subset=[archivo_col], keep='first').reset_index(drop=True)
-
-                # Guardar resultado en self.data
-                self.data = combined
-                self.data_updated.emit()
-                return True
-            return False
-        except Exception as e:
-            print(f"Error cargando CSV: {e}")
-            return False
+        """
+        Carga manual desde un archivo seleccionado por el usuario. 
+        Esto lo convierte en el archivo activo.
+        """
+        self.set_source_csv(csv_path)
+        return True
 
     def load_from_calendar_dir(self, calendar_dir: str):
-        """Carga el CSV 'contratos.csv' desde un directorio de calendario."""
+        """Apunta al 'contratos.csv' dentro de la carpeta de un calendario."""
         csv_path = os.path.join(calendar_dir, 'contratos.csv')
         return self.load_from_csv(csv_path)
-
+    
     def export_to_csv(self, filepath):
-        """Exporta a CSV con encoding UTF-8-sig para compatibilidad con Excel"""
+        """Exporta los datos actuales a un archivo CSV externo."""
         try:
             self.data.to_csv(filepath, index=False, encoding='utf-8-sig')
             return True
         except Exception as e:
-            print(f"Error exportando CSV: {e}")
+            print(f"❌ Error exportando CSV: {e}")
             return False
 
     def export_to_excel(self, filepath):
-        """Exporta a Excel"""
+        """Exporta los datos actuales a un archivo Excel externo."""
         try:
-            # Si es .xlsx, usar Excelwriter; si es .csv, usar to_csv
+            # Si termina en .xlsx usa el motor de Excel, si no, lo saca como CSV (pero con extensión cambiada)
             if filepath.lower().endswith('.xlsx'):
-                self.data.to_excel(filepath, index=False, encoding='utf-8')
+                self.data.to_excel(filepath, index=False)
             else:
                 self.data.to_csv(filepath, index=False, encoding='utf-8-sig')
             return True
         except Exception as e:
-            print(f"Error exportando Excel: {e}")
+            print(f"❌ Error exportando Excel: {e}")
             return False

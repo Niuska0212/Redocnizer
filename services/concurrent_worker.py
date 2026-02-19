@@ -1,4 +1,6 @@
-# services/concurrent_worker.py
+# !/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""Módulo 3.1: Implementación de concurrencia para procesamiento masivo de OCR."""
 
 import os
 import threading
@@ -11,84 +13,120 @@ class ConcurrentOCRWorker(QThread):
     Esta clase implementa la ejecución asíncrona para evitar el bloqueo de la UI
     y permitir la distribución de carga en hilos de hardware.
     """
+    
     # Señales para comunicación entre hilos (Protocolo de comunicación interna)
-    # Reemplazan la necesidad de actualizar la UI directamente desde el bucle
-    progress = Signal(int, str)  # Envia (valor_barra, mensaje_estado)
-    file_finished = Signal(str, dict) # Envia (texto_para_lista, resultados_completos)
-    all_finished = Signal(int, int, list) # Envia (exitosos, fallidos, lista_total)
-    error = Signal(str) # Envia mensaje de error crítico
+    progress = Signal(int, str)           # (valor_barra, mensaje_estado)
+    file_finished = Signal(str, dict)      # (texto_para_lista, resultados_completos)
+    all_finished = Signal(int, int, list)  # (exitosos, fallidos, lista_total)
+    error = Signal(str)                    # Mensaje de error crítico
 
     def __init__(self, file_paths, calendar, controller):
+        """
+        Inicializa el trabajador con la carga de archivos.
+        
+        file_paths: Lista de rutas de archivos a procesar.
+        calendar: Nombre del calendario activo (ej. 2024A).
+        controller: Instancia de ContractController (Entidad de Control).
+        """
         super().__init__()
         self.file_paths = file_paths
         self.calendar = calendar
         self.controller = controller
         self._is_running = True
         
+        # Punto 3.1.4: Gestión de recursos de hardware
+        # Limitamos a 4 hilos para no saturar la memoria VRAM/RAM con modelos de IA
         self.max_workers = 4 
         self._semaphore = threading.Semaphore(self.max_workers)
-        
 
     def process_single_file(self, fp):
-        """Ejecuta el proceso pesado de un solo archivo."""
+        """
+        Ejecuta el proceso pesado de un solo archivo.
+        Este método es ejecutado por el ThreadPoolExecutor.
+        """
         if not self._is_running:
             return None
 
-        # El semáforo limita cuántos archivos entran a la IA al mismo tiempo
+        nombre_archivo = os.path.basename(fp)
+
+        # El semáforo limita cuántas instancias de la IA corren simultáneamente
         with self._semaphore:
             try:
-                # El controlador gestiona la IA (OCR + CRNN)
-                res = self.controller.process_uploaded_file(file_path=fp, calendar=self.calendar)
+                # Invocación de la lógica de negocio (Entidad de Control)
+                # Este es el punto de mayor carga computacional del sistema
+                res = self.controller.process_uploaded_file(
+                    file_path=fp, 
+                    calendar=self.calendar
+                )
+                
+                final_path = res.get("final_path", "N/A")
+                
                 return {
                     "status": "success",
-                    "file": os.path.basename(fp),
-                    "path": res.get("final_path"),
+                    "file": nombre_archivo,
+                    "path": final_path,
                     "data": res.get("data")
                 }
             except Exception as e:
                 return {
                     "status": "error",
-                    "file": os.path.basename(fp),
+                    "file": nombre_archivo,
                     "error": str(e)
                 }
 
     def run(self):
+        """
+        Punto 3.5: Distribución de carga en entidades funcionales.
+        Ejecución principal del hilo del Sistema Operativo.
+        """
         try:
             total = len(self.file_paths)
             successful = 0
             failed = 0
             results = []
 
-            # ThreadPoolExecutor permite que el SO gestione los 24 hilos disponibles
+            # ThreadPoolExecutor permite que el SO gestione los hilos disponibles
             with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-                # Lanzamos todas las tareas al pool
+                # Lanzamos las tareas al pool de forma no bloqueante
                 futures = [executor.submit(self.process_single_file, fp) for fp in self.file_paths]
                 
                 for i, future in enumerate(futures):
                     if not self._is_running:
                         break
                     
+                    # Esperamos el resultado de cada futuro
                     result_item = future.result()
+                    
                     if result_item:
                         if result_item["status"] == "success":
                             successful += 1
-                            item_text = f"✅ {result_item['file']} -> Terminado"
+                            # Texto con ruta de guardado (formato preferido del usuario)
+                            item_text = f"✅ {result_item['file']} -> {result_item['path']}"
                         else:
                             failed += 1
-                            item_text = f"❌ {result_item['file']} -> Error"
+                            item_text = f"❌ {result_item['file']} -> Error: {result_item.get('error')}"
                         
-                        # Actualizar la UI inmediatamente
+                        # Notificar a la UI el fin de este archivo específico
                         self.file_finished.emit(item_text, result_item)
                         results.append(result_item)
                     
-                    # Cálculo de progreso
-                    self.progress.emit(int(((i + 1) / total) * 100), f"Procesando {i+1}/{total}")
+                    # Punto 3.1.2: Actualización asíncrona de progreso
+                    progreso_val = int(((i + 1) / total) * 100)
+                    self.progress.emit(progreso_val, f"Procesado {i+1} de {total} documentos...")
 
-            self.all_finished.emit(successful, failed, results)
+            # Notificar finalización total al sistema principal
+            if self._is_running:
+                self.progress.emit(100, "Proceso completado exitosamente")
+                self.all_finished.emit(successful, failed, results)
             
         except Exception as e:
+            # Robustez 3.1.5: Captura de errores en hilos secundarios
             self.error.emit(f"Error en procesamiento paralelo: {str(e)}")
 
     def stop(self):
-        """Permite detener el hilo de manera segura (Robustez 3.1.5)"""
+        """
+        Permite detener el hilo de manera segura (Robustez 3.1.5).
+        Corta el bucle de procesamiento y detiene el envío de señales.
+        """
         self._is_running = False
+        print("🛑 Deteniendo trabajador concurrente...")
