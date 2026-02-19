@@ -16,7 +16,22 @@ datas = [
     (os.path.join(root, 'ui', 'assets'), 'ui/assets'),
 ] + tensorflow_datas + keras_datas + pyside6_datas
 
-# Agregar archivos de configuración y bases de datos si existen
+# --- NUEVOS ARCHIVOS DE DOCUMENTACIÓN Y RAÍZ ---
+
+# Agregar README y LICENSE si existen en la raíz
+for extra_file in ['README.md', 'LICENSE', 'README.txt']:
+    file_path = os.path.join(root, extra_file)
+    if os.path.exists(file_path):
+        datas.append((file_path, '.')) # El '.' significa que se copia a la raíz del EXE
+
+# Agregar carpeta de documentación completa (docs/)
+docs_path = os.path.join(root, 'docs')
+if os.path.exists(docs_path):
+    # (Ruta_Origen, Nombre_Carpeta_Destino)
+    datas.append((docs_path, 'docs'))
+
+# --- ARCHIVOS DE CONFIGURACIÓN Y BASES DE DATOS ---
+
 if os.path.exists(os.path.join(root, 'calendarios.db')):
     datas.append((os.path.join(root, 'calendarios.db'), '.'))
 
@@ -71,18 +86,17 @@ a = Analysis(
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
-# --- CAMBIO CLAVE AQUÍ: EXE ahora no contiene los binarios ni los datos ---
 exe = EXE(
     pyz,
     a.scripts,
-    [],  # Se dejan los binarios vacíos para que no se compriman dentro del .exe
-    exclude_binaries=True, # IMPORTANTE: Esto habilita el modo 'Onedir'
+    [],
+    exclude_binaries=True,
     name='REDOCNIZER',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    console=False, # True para ver errores de carga, False para entrega final
+    console=False, 
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
@@ -91,7 +105,6 @@ exe = EXE(
     icon=os.path.join(root, 'ui', 'assets', 'logo_redocnizer.png'),
 )
 
-# --- NUEVA SECCIÓN: COLLECT crea la carpeta con todo ya descomprimido ---
 coll = COLLECT(
     exe,
     a.binaries,
@@ -100,5 +113,5 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name='REDOCNIZER_DIST' # Nombre de la carpeta final
+    name='REDOCNIZER_DIST'
 )
