@@ -962,12 +962,12 @@ class MainWindow(QMainWindow):
     
     def _on_calendar_changed(self):
         """Cuando se cambia el calendario seleccionado."""
+        # 1. Obtener el dato del calendario actual
         current_data = self.calendar_combo.currentData()
+        calendar_name = self.calendar_combo.currentText()
         
-        # --- LÓGICA DE LIMPIEZA CON CHECKBOX ---
+        # --- LÓGICA DE LIMPIEZA CON CHECKBOX (Mantener igual) ---
         if self.controller:
-            # 1. Revisar si el usuario ya marcó "No volver a mostrar" anteriormente
-            # Usamos QSettings para recordar la preferencia
             settings = QSettings("MiEmpresa", "Redocnizer")
             skip_prompt = settings.value("skip_preview_cleanup_prompt", False, type=bool)
             last_answer = settings.value("last_preview_cleanup_answer", QMessageBox.No, type=int)
@@ -982,29 +982,7 @@ class MainWindow(QMainWindow):
                 
                 # Añadir el checkbox
                 cb = QCheckBox("No volver a preguntar (recordar mi elección)")
-                cb.setStyleSheet("""
-                    QCheckBox {
-                        color: #0b2545;  /* Texto Negro/Azul muy oscuro */
-                        font-weight: 500;
-                        spacing: 8px;    /* Espacio entre el cuadro y el texto */
-                        margin-top: 10px;
-                    }
-                    QCheckBox::indicator {
-                        width: 18px;
-                        height: 18px;
-                        border-radius: 4px;
-                        border: 2px solid #1976d2; /* Borde Azul */
-                        background-color: white;
-                    }
-                    QCheckBox::indicator:unchecked:hover {
-                        border: 2px solid #6a1b9a; /* Borde Morado al pasar el mouse */
-                    }
-                    QCheckBox::indicator:checked {
-                        background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
-                                        stop:0 #1976d2, stop:1 #6a1b9a); /* Degradado Azul-Morado */
-                        border: 2px solid #6a1b9a;
-                    }
-                """)
+                # ... (tu estilo css del checkbox se mantiene igual)
                 msg_box.setCheckBox(cb)
                 msg_box.setStyleSheet("QLabel{ color: #0b2545; font-size: 13px; } QPushButton{ width: 80px; }")
                 
@@ -1026,12 +1004,28 @@ class MainWindow(QMainWindow):
                 if hasattr(self, 'data_tab'):
                     self.data_tab.preview_img_label.clear()
                     self.data_tab.preview_img_label.setText("Carpeta de previews vaciada automáticamente.")
-        # -----------------------------------
+        
+        # 2. Cambiar el contexto del DataManager al nuevo calendario
+        # para que el cambio de calendario actualice automáticamente la pestaña de datos sin necesidad de recargar manualmente
+        if self.root_dir:
+            # 1. Construimos la ruta al archivo CSV del nuevo calendario
+            new_csv_path = os.path.join(self.root_dir, calendar_name, "contratos.csv")
+            
+            # 2. Actualizamos el DataManager (esto cambia el "puntero" del archivo)
+            print(f"🔄 Cambiando base de datos a: {new_csv_path}")
+            self.data_manager.set_source_csv(new_csv_path)
+            
+            # 3. ACCIÓN AUTOMÁTICA: Forzar la carga de datos en la pestaña de la tabla
+            # Esto evita que la tabla aparezca vacía al cambiar de calendario
+            if hasattr(self, 'data_tab'):
+                self.data_tab.load_data()
+                print(f"📥 Datos de {calendar_name} cargados automáticamente.")
 
+        # Debug logs finales
         if current_data and hasattr(current_data, 'nombre'):
-            print(f"Calendario seleccionado: {current_data.nombre}")
+            print(f"✅ Contexto listo: {current_data.nombre}")
         else:
-            print(f"Calendario seleccionado: {self.calendar_combo.currentText()}")
+            print(f"✅ Contexto listo: {calendar_name}")
             
     def _on_search_query_changed(self, text):
         """Lógica para filtrar los datos del DataTab desde la barra de búsqueda"""

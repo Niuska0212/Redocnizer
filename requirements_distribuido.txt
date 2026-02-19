@@ -6,7 +6,6 @@ PySide6==6.6.0
 tensorflow==2.14.0
 keras==2.14.0
 opencv-python==4.8.0
-pytesseract==0.3.10
 pillow==10.1.0
 pandas==2.1.0
 numpy==1.24.0

@@ -18,26 +18,7 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 1.2 Dependencia Adicional: Tesseract OCR
-
-REDOCNIZER requiere Tesseract OCR instalado en tu sistema:
-
-#### Windows
-1. Descarga el instalador desde: https://github.com/UB-Mannheim/tesseract/wiki
-2. Ejecuta `tesseract-ocr-w64-setup-v5.3.0.exe`
-3. Instala en la ruta predeterminada (`C:\Program Files\Tesseract-OCR`)
-
-#### macOS
-```bash
-brew install tesseract
-```
-
-#### Linux (Ubuntu/Debian)
-```bash
-sudo apt-get install tesseract-ocr
-```
-
-### 1.3 Configuración de Google Drive (Opcional)
+### 1.2 Configuración de Google Drive (Opcional)
 
 Para sincronizar con Google Drive:
 
@@ -47,7 +28,7 @@ Para sincronizar con Google Drive:
 4. Crear credenciales (OAuth 2.0 - Desktop)
 5. Descargar JSON y guardar como `credentials.json` en la carpeta raíz
 
-### 1.4 Configuración de Firebase (Opcional)
+### 1.3 Configuración de Firebase (Opcional)
 
 Para sincronización en tiempo real:
 

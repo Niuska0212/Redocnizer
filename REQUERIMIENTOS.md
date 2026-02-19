@@ -87,7 +87,7 @@
 | Backend | Python | 3.8+ |
 | ML/AI | TensorFlow/Keras | 2.10+ |
 | Visión Artificial | OpenCV | 4.5+ |
-| OCR | Tesseract | 5.0+ / pytesseract |
+| OCR | EasyOCR | 1.6+ |
 | Base de Datos | SQLite (local) | 3.36+ |
 | Procesamiento PDF | PyPDF2 | 3.0+ |
 | Análisis de Datos | pandas | 1.3+ |
@@ -112,7 +112,7 @@
   - `keras_cnn_lstm_v4_ctc.h5`: Versión mejorada
 
 #### OCR Híbrido
-- **Componente 1**: Tesseract OCR (modelo preentrenado)
+- **Componente 1**: EasyOCR (múltiples idiomas, alta precisión)
 - **Componente 2**: CRNN personalizado (entrenado con dataset de CUCEI)
 - **Estrategia**: Combinación de resultados con validación cruzada
 
