@@ -689,14 +689,18 @@ class MainWindow(QMainWindow):
             count = len(self.selected_files)
             self.btn_process.setText(f"🚀 Procesar {count} Contrato(s)")
 
-    def load_calendar_data(self, calendar: str = None):
-        """Carga el CSV del calendario seleccionado en el DataManager y refresca la pestaña de datos."""
+    def load_calendar_data(self, calendar: str = None, silent: bool = False):
+        """
+        Carga el CSV del calendario seleccionado.
+        :param silent: Si es True, no muestra mensajes de éxito ni advertencias de cambios.
+        """
         if not self.controller:
-            QMessageBox.warning(self, "Sin directorio raíz", "Primero seleccione el directorio raíz.")
+            if not silent:
+                QMessageBox.warning(self, "Sin directorio raíz", "Primero seleccione el directorio raíz.")
             return
 
-        # Verificar si hay cambios sin guardar
-        if hasattr(self, 'data_tab') and self.data_tab.has_unsaved_changes():
+        # Solo preguntar por cambios si NO estamos en modo silencioso
+        if not silent and hasattr(self, 'data_tab') and self.data_tab.has_unsaved_changes():
             reply = QMessageBox.warning(
                 self,
                 "Cambios sin guardar",
@@ -721,14 +725,18 @@ class MainWindow(QMainWindow):
         self.data_manager.set_source_csv(csv_path)
         
         loaded = self.data_manager.load_from_calendar_dir(calendar_dir)
+        
         if loaded:
-            QMessageBox.information(self, "CSV cargado", f"Calendario '{calendar}' cargado exitosamente.")
+            # Solo mostrar notificación si el usuario lo solicitó manualmente
+            if not silent:
+                QMessageBox.information(self, "CSV cargado", f"Calendario '{calendar}' cargado exitosamente.")
+            
             if self.tabs.currentIndex() == 1:
                 self.data_tab.load_data()
             
             # Cargar las previsualizaciones asociadas
             self._load_preview_images_from_csv()
-        else:
+        elif not silent:
             QMessageBox.information(self, "Sin CSV", f"No se encontró CSV para el calendario '{calendar}'.")
 
     def _load_preview_images_from_csv(self):
@@ -868,7 +876,8 @@ class MainWindow(QMainWindow):
         self.btn_select_file.setEnabled(False)
         self.btn_clear_files.setEnabled(False)
         self.btn_remove_file.setEnabled(False)
-        self.progress_bar.setMaximum(len(files))
+        #self.progress_bar.setMaximum(len(files))
+        self.progress_bar.setMaximum(100)  # Usaremos porcentaje
         self.progress_bar.setValue(0)
         self.progress_bar.setVisible(True)
         self.results_list.clear()
@@ -933,7 +942,7 @@ class MainWindow(QMainWindow):
         # Actualizar tabla de datos
         calendar = self.calendar_combo.currentText()
         try:
-            self.load_calendar_data(calendar)
+            self.load_calendar_data(calendar, silent=True)
         except:
             if self.tabs.currentIndex() == 1:
                 self.data_tab.load_data()
