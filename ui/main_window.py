@@ -30,7 +30,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        self.setWindowTitle("REDOCNIZER - Gestión de Contratos CUCEI")
+        self.setWindowTitle("REDOCNIZER - Gestión de Contratos CUCEI    V.1.0.1")
         screen = QApplication.primaryScreen().geometry()
         width = screen.width() * 0.65  
         height = screen.height() * 0.52
@@ -722,7 +722,7 @@ class MainWindow(QMainWindow):
         
         loaded = self.data_manager.load_from_calendar_dir(calendar_dir)
         if loaded:
-            QMessageBox.information(self, "CSV cargado", f"CSV del calendario '{calendar}' cargado en la vista de datos.")
+            QMessageBox.information(self, "CSV cargado", f"Calendario '{calendar}' cargado exitosamente.")
             if self.tabs.currentIndex() == 1:
                 self.data_tab.load_data()
             
@@ -939,7 +939,7 @@ class MainWindow(QMainWindow):
                 self.data_tab.load_data()
 
     def handle_worker_error(self, error_msg):
-        QMessageBox.critical(self, "Error de Sistema Paralelo", error_msg)
+        QMessageBox.critical(self, "Error en el procesamiento", error_msg)
         self.progress_bar.setVisible(False)
         self.btn_process.setEnabled(True)
         self._update_process_state()
@@ -967,7 +967,7 @@ class MainWindow(QMainWindow):
                 msg_box = QMessageBox(self)
                 msg_box.setIcon(QMessageBox.Question)
                 msg_box.setWindowTitle("Cambio de Calendario")
-                msg_box.setText("¿Deseas eliminar las imágenes de vista previa del calendario anterior?")
+                msg_box.setText("¿Desea vaciar el caché de imágenes del calendario anterior?")
                 msg_box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
                 msg_box.setDefaultButton(QMessageBox.No)
                 
