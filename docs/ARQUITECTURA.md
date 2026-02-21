@@ -236,7 +236,7 @@ redocnizer/
 │ services.ocr_service.ocr_hybrid()      │
 │                                        │
 │ ┌──────────────────────────────────┐  │
-│ │ 1. Tesseract OCR (Fast)          │  │
+│ │ 1. Easy  OCR (Fast)          │  │
 │ │    ├─ Extrae texto               │  │
 │ │    └─ Calcula confianza          │  │
 │ └──────────────────────────────────┘  │
