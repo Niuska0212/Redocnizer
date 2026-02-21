@@ -106,6 +106,7 @@ logs/
 
 # ========== ARCHIVOS ESPECÍFICOS A IGNORAR ==========
 2324725\ 5648990\ ASIG\ 2018B.pdf
+\data\ *.pdf
 
 # ========== MODELOS GRANDES (DESCOMENTA SI NECESITAS) ==========
 # models/*.h5
