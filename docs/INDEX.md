@@ -175,7 +175,7 @@ Para la presentación ante el comité evaluador, consulta:
 - [Modelos ML](../models/)
 
 ### Enlaces Externos
-- [GitHub](https://github.com/CUCEI-proyectos/redocnizer)
+- [GitHub](https://github.com/Niuska0212/Redocnizer)
 - [University of Guadalajara](https://www.udg.mx/)
 - [CUCEI](https://www.cucei.udg.mx/)
 
@@ -196,13 +196,13 @@ Para la presentación ante el comité evaluador, consulta:
 3. Busca en [CHANGELOG.md](CHANGELOG.md) cambios recientes
 
 ### Soporte
-- **Bugs**: Abre un [Issue](https://github.com/CUCEI-proyectos/redocnizer/issues)
-- **Preguntas**: Usa [Discussions](https://github.com/CUCEI-proyectos/redocnizer/discussions)
-- **Seguridad**: Email a `seguridad@cucei.mx`
+- **Bugs**: Abre un [Issue](https://github.com/Niuska0212/Redocnizer/issues)
+- **Preguntas**: Usa [Discussions](https://github.com/Niuska0212/Redocnizer/discussions)
+- **Seguridad**: Email a `niuska.gonzalez5462@alumnos.udg.mx' o 'luis.uribe0840@alumnos.udg.mx`
 
 ### Contacto del Equipo
-- General: desarrollo@cucei.mx
-- Académico: proyectos@cucei.mx
+- General: niuska.hgonzalez5462@alumnos.udg.mx y luis.uribe0840@alumnos.udg.mx
+- Académicos: emmanuel.flopezvelarde@academicos.udg.mx y ramiro.lupercio3413@academicos.udg.mx
 
 ---
 
@@ -245,6 +245,6 @@ Para diferentes roles:
 ---
 
 **Última actualización**: 16 de febrero de 2026  
-**Versión de documentación**: 1.0  
+**Versión de documentación**: 1.1.1
 **Estado**: Completa y actualizada
 

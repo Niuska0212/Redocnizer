@@ -190,7 +190,7 @@ Para reportar problemas o sugerencias:
 
 ---
 
-**Versión**: 5.0  
+**Versión**: 1.1.1
 **Última actualización**: 16 de febrero de 2026  
 **Estado**: En desarrollo activo
 

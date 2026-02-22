@@ -24,7 +24,7 @@ Gracias por tu interés en contribuir a REDOCNIZER. Este documento te guiará so
 
 ### Cómo reportar
 
-Abre un [Issue](https://github.com/CUCEI-proyectos/redocnizer/issues) con:
+Abre un [Issue](https://github.com/Niuska0212/Redocnizer/issues) con:
 
 ```markdown
 **Descripción**: 
@@ -397,7 +397,7 @@ R: Típicamente 1-3 días, dependiendo de complejidad.
 R: Para cambios pequeños, no. Para features grandes, es recomendado.
 
 ### P: ¿Cómo reporto una vulnerabilidad de seguridad?
-R: NO abras un issue. Email a: seguridad@cucei.mx
+R: NO abras un issue. Email a: niuska.gonzalez5462@alumnos.udg.mx o luis.uribe0840@alumnos.udg.mx
 
 ---
 
@@ -420,6 +420,6 @@ R: NO abras un issue. Email a: seguridad@cucei.mx
 
 **Gracias por contribuir a REDOCNIZER** 🙌
 
-Versión: 5.0  
+Versión: 1.1.1  
 Última actualización: 16 de febrero de 2026
 
