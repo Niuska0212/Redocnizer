@@ -4,8 +4,9 @@
 
 # 📄 REDOCNIZER - Gestión Inteligente de Contratos
 
+[![GitHub release](https://img.shields.io/github/v/release/Niuska0212/Redocnizer?style=flat-square)](https://github.com/Niuska0212/Redocnizer/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/Python-3.8%2B-blue)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](https://www.python.org/)
 [![PySide6](https://img.shields.io/badge/PySide6-6.0%2B-green)](https://doc.qt.io/qtforpython-6/)
 
 **REDOCNIZER** es un sistema inteligente de gestión de contratos para la Universidad de Guadalajara - CUCEI. Utiliza **Visión Artificial con OCR Híbrido** y **Redes Neuronales CRNN** para automatizar la extracción y clasificación de información de documentos contractuales.
@@ -14,7 +15,7 @@
 
 Si deseas utilizar la herramienta sin configurar el entorno de desarrollo, puedes descargar la última versión estable del ejecutable para Windows aquí:
 
-[**➔ Descargar REDOCNIZER (.exe)**](https://github.com/Niuska0212/Redocnizer/releases/latest)
+[**➔ Descargar REDOCNIZER V1.1.1 (.exe)**](https://github.com/Niuska0212/Redocnizer/releases/latest)
 
 ---
 
@@ -32,7 +33,7 @@ Si deseas utilizar la herramienta sin configurar el entorno de desarrollo, puede
 ## 📋 Requisitos del Sistema (Para Desarrolladores)
 
 ### Software
-- **Python**: 3.8 o superior
+- **Python**: 3.10 o inferior
 - **Sistema Operativo**: Window
 - **Memoria**: 8GB mínimo (recomendado 12GB)
 - **Espacio en disco**: 10GB para modelos y datos
