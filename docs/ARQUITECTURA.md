@@ -118,9 +118,7 @@ redocnizer/
 │   ├── csv_service.py              # Lectura/Escritura CSV
 │   ├── file_service.py             # Gestión de archivos
 │   ├── concurrent_worker.py        # Gestion de hilos
-│   ├── data_manager.py             # Gestor de datos central
 │   ├── google_drive_service.py     # Integración Google Drive
-│   ├── api_server.py               # Servidor API REST
 │   └── __pycache__/
 │
 ├── 📁 models/                      # Modelos ML entrenados

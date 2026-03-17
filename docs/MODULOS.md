@@ -728,15 +728,24 @@ Confusión frecuente:
 Documento de 1 página:
 - Conversión PDF → Imagen: 120ms
 - Segmentación: 85ms
-- OCR Tesseract: 150ms
+- OCREasy: 150ms
 - OCR CRNN: 320ms
 - Extracción de campos: 45ms
 - Validación: 30ms
 ----------------------------------
-Total: 750ms (< 1 segundo) ✅
+Documento de 1 página (modelo CRNN actualizado + multihilos (x2) en paralelo de inferencia):
+- Conversión PDF → Imagen: 120ms
+- Segmentación: 85ms
+- OCREasy: 150ms
+- OCR CRNN (modelo más pesado): 10,000ms
+- Extracción de campos: 45ms
+- Validación: 30ms
+----------------------------------
+Total: 10,430ms (~10.43 segundos)
 
-Lote de 10 documentos: 7.5 segundos
-Lote de 50 documentos: 37.5 segundos (✅ < 60s)
+Efectivo con multihilos (2 workers, procesamiento casi paralelo):
+Lote de 10 documentos: ~52.15 segundos (5 rondas × 10.43s) (✅ < 60s)
+Lote de 50 documentos: ~260.75 segundos (~4.34 minutos) (❌ > 60s)
 ```
 
 ---
