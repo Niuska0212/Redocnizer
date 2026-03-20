@@ -118,9 +118,7 @@ redocnizer/
 │   ├── csv_service.py              # Lectura/Escritura CSV
 │   ├── file_service.py             # Gestión de archivos
 │   ├── concurrent_worker.py        # Gestion de hilos
-│   ├── data_manager.py             # Gestor de datos central
 │   ├── google_drive_service.py     # Integración Google Drive
-│   ├── api_server.py               # Servidor API REST
 │   └── __pycache__/
 │
 ├── 📁 models/                      # Modelos ML entrenados
@@ -236,7 +234,7 @@ redocnizer/
 │ services.ocr_service.ocr_hybrid()      │
 │                                        │
 │ ┌──────────────────────────────────┐  │
-│ │ 1. Tesseract OCR (Fast)          │  │
+│ │ 1. Easy  OCR (Fast)          │  │
 │ │    ├─ Extrae texto               │  │
 │ │    └─ Calcula confianza          │  │
 │ └──────────────────────────────────┘  │
@@ -658,6 +656,6 @@ redocnizer-1.0.0-setup.exe
 
 ---
 
-**Arquitectura versión**: 5.0  
+**Arquitectura versión**: 1.1.1  
 **Última actualización**: 16 de febrero de 2026
 

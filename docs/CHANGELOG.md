@@ -199,7 +199,7 @@ Todos los cambios notables en este proyecto serán documentados en este archivo.
 - Este proyecto está en desarrollo activo
 - Para bugs o features, abre un Issue
 - Para preguntas, usa Discussions
-- Para vulnerabilidades, email a seguridad@cucei.mx
+- Para vulnerabilidades, email a niuska.gonzalez5462@alumnos.udg.mx o luis.uribe0840@alumnos.udg.mx
 
 ### Contribuciones
 Agradecemos a todos los contribuyentes que han hecho posible este proyecto.

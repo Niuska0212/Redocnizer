@@ -1,10 +1,24 @@
+<p align="center">
+  <img src="ui/assets/logo_redocnizer.png" alt="REDOCNIZER Logo" width="200">
+</p>
+
 # 📄 REDOCNIZER - Gestión Inteligente de Contratos
 
+[![GitHub release](https://img.shields.io/github/v/release/Niuska0212/Redocnizer?style=flat-square)](https://github.com/Niuska0212/Redocnizer/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/Python-3.8%2B-blue)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](https://www.python.org/)
 [![PySide6](https://img.shields.io/badge/PySide6-6.0%2B-green)](https://doc.qt.io/qtforpython-6/)
 
 **REDOCNIZER** es un sistema inteligente de gestión de contratos para la Universidad de Guadalajara - CUCEI. Utiliza **Visión Artificial con OCR Híbrido** y **Redes Neuronales CRNN** para automatizar la extracción y clasificación de información de documentos contractuales.
+
+## 📥 Descargar Aplicación
+
+Si deseas utilizar la herramienta sin configurar el entorno de desarrollo, puedes descargar la última versión estable del ejecutable para Windows aquí:
+
+[**➔ Descargar REDOCNIZER V1.1.1 (.exe)**](https://github.com/Niuska0212/Redocnizer/releases/latest)
+
+---
+
 
 ## 🎯 Características Principales
 
@@ -16,13 +30,13 @@
 - **🔐 Credenciales de Red**: Soporte para acceso a depósitos compartidos en red
 - **🎨 Interfaz Intuitiva**: Aplicación de escritorio con PySide6 (Qt)
 
-## 📋 Requisitos del Sistema
+## 📋 Requisitos del Sistema (Para Desarrolladores)
 
 ### Software
-- **Python**: 3.8 o superior
-- **Sistema Operativo**: Windows, macOS, Linux
-- **Memoria**: 4GB mínimo (recomendado 8GB)
-- **Espacio en disco**: 2GB para modelos y datos
+- **Python**: 3.10 o inferior
+- **Sistema Operativo**: Window
+- **Memoria**: 8GB mínimo (recomendado 12GB)
+- **Espacio en disco**: 10GB para modelos y datos
 
 ### Dependencias Principales
 Ver [requirements.txt](requirements.txt) para la lista completa.
@@ -165,13 +179,10 @@ Ver [ARQUITECTURA.md](docs/ARQUITECTURA.md) para entrenar modelos propios.
 
 ## 🤝 Contribuciones
 
-Las contribuciones son bienvenidas. Por favor:
-
-1. Fork el proyecto
-2. Crea una rama para tu feature (`git checkout -b feature/AmazingFeature`)
-3. Commit tus cambios (`git commit -m 'Add some AmazingFeature'`)
-4. Push a la rama (`git push origin feature/AmazingFeature`)
-5. Abre un Pull Request
+Este es un proyecto académico de titulación y, por el momento, 
+no se aceptan contribuciones externas ni cambios en el código base 
+por parte de terceros para mantener la integridad de la entrega institucional.
+ Agradecemos su comprensión.
 
 ## 📝 Licencia
 
@@ -185,12 +196,12 @@ Este proyecto está bajo la Licencia MIT - ver archivo [LICENSE](LICENSE) para d
 ## 📞 Soporte
 
 Para reportar problemas o sugerencias:
-- Abre un [Issue](https://github.com/Niuska0212/Redocnizer/issue)
+- Abre un [Issue](https://github.com/Niuska0212/Redocnizer/issues)
 - Contacta con el equipo de desarrollo
 
 ---
 
-**Versión**: 5.0  
+**Versión**: 1.1.1
 **Última actualización**: 16 de febrero de 2026  
 **Estado**: En desarrollo activo
 
