@@ -20,18 +20,20 @@ class ConcurrentOCRWorker(QThread):
     all_finished = Signal(int, int, list)  # (exitosos, fallidos, lista_total)
     error = Signal(str)                    # Mensaje de error crítico
 
-    def __init__(self, file_paths, calendar, controller):
+    def __init__(self, file_paths, calendar, controller, drive_service=None):
         """
         Inicializa el trabajador con la carga de archivos.
         
         file_paths: Lista de rutas de archivos a procesar.
         calendar: Nombre del calendario activo (ej. 2024A).
         controller: Instancia de ContractController (Entidad de Control).
+        drive_service: (Opcional) Instancia de GoogleDriveService para subida en background.
         """
         super().__init__()
         self.file_paths = file_paths
         self.calendar = calendar
         self.controller = controller
+        self.drive_service = drive_service
         self._is_running = True
         
         # Punto 3.1.4: Gestión de recursos de hardware
@@ -60,6 +62,40 @@ class ConcurrentOCRWorker(QThread):
                 )
                 
                 final_path = res.get("final_path", "N/A")
+                
+                # Subida en background a Drive (si está disponible)
+                if self.drive_service and final_path and final_path != "N/A":
+                    try:
+                        # Obtener nombre completo del maestro
+                        data = res.get("data", {})
+                        paterno = data.get("PATERNO", "")
+                        materno = data.get("MATERNO", "")
+                        nombre_s = data.get("NOMBRE_S", "")
+                        nombre_maestro = f"{paterno} {materno} {nombre_s}".strip().replace("  ", " ")
+                        if not nombre_maestro.strip():
+                            nombre_maestro = self.calendar
+                        # Subir contratos a /Redocnizer/nombre_maestro y CSV a /Redocnizer/calendario
+                        nombre_archivo = os.path.basename(final_path).lower()
+
+                        if nombre_archivo == "contratos.csv":
+                            # Subir CSV a /Redocnizer/calendario/nombre_calendario/contratos.csv
+                            self.drive_service.upload_to_path(
+                                final_path, 
+                                drive_root='Redocnizer', 
+                                calendar=self.calendar, 
+                                subfolder_path=""
+                                )
+                        else:
+                            # Subir contratos a /Redocnizer/maestros/nombre_maestro/[subcarpetas]
+                            subfolder = nombre_maestro
+                            self.drive_service.upload_to_path(
+                                final_path,
+                                drive_root='Redocnizer',
+                                calendar='',
+                                subfolder_path=subfolder
+                                )
+                    except Exception as e:
+                        print(f"Advertencia: no se pudo subir a Drive {final_path}: {e}")
                 
                 return {
                     "status": "success",

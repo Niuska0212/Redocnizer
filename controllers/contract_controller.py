@@ -74,7 +74,7 @@ class ContractController:
         # -----------------------------------
 
         calendar_dir = self.file_service.get_calendar_dir(calendar)
-        update_calendar_csv(calendar_dir, data)
+        update_calendar_csv(calendar_dir, data, calendar)
 
         return {
             "data": data,

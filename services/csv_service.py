@@ -2,12 +2,12 @@
 import pandas as pd
 import os
 
-def update_calendar_csv(calendar_dir, data):
+def update_calendar_csv(calendar_dir, data, calendar_name):
     """Actualiza el CSV del calendario, creando la carpeta si no existe."""
     # Asegurar que la carpeta existe
     os.makedirs(calendar_dir, exist_ok=True)
     
-    csv_path = os.path.join(calendar_dir, "contratos.csv")
+    csv_path = os.path.join(calendar_dir, f"{calendar_name}.csv")
 
     if os.path.exists(csv_path):
         # Leer con encoding UTF-8 explícitamente

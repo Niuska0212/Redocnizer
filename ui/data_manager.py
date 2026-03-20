@@ -125,9 +125,9 @@ class DataManager(QObject):
         self.set_source_csv(csv_path)
         return True
 
-    def load_from_calendar_dir(self, calendar_dir: str):
+    def load_from_calendar_dir(self, calendar_dir: str, calendar_name: str):
         """Apunta al 'contratos.csv' dentro de la carpeta de un calendario."""
-        csv_path = os.path.join(calendar_dir, 'contratos.csv')
+        csv_path = os.path.join(calendar_dir, f"{calendar_name}.csv")
         return self.load_from_csv(csv_path)
     
     def export_to_csv(self, filepath):
