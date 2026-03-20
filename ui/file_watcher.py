@@ -61,3 +61,51 @@ class FileWatcher(QObject):
         
         except Exception as e:
             print(f"Error en file watcher: {e}")
+
+
+class DirectoryWatcher(QObject):
+    """Monitorea un directorio (recursivamente) y emite nuevas rutas encontradas."""
+
+    new_files = Signal(list)  # lista de rutas absolutas nuevas
+
+    def __init__(self, dir_path: str = None, check_interval: int = 3000):
+        super().__init__()
+        self.dir_path = dir_path
+        self.check_interval = check_interval
+        self.timer = QTimer()
+        self.timer.timeout.connect(self._scan)
+        self._seen = set()
+        self.enabled = False
+
+    def set_dir(self, dir_path: str):
+        self.dir_path = dir_path
+        self._seen = set()
+        if os.path.exists(dir_path):
+            for root, dirs, files in os.walk(dir_path):
+                for f in files:
+                    self._seen.add(os.path.join(root, f))
+
+    def start(self):
+        if self.dir_path and os.path.exists(self.dir_path):
+            self.enabled = True
+            self.timer.start(self.check_interval)
+
+    def stop(self):
+        self.enabled = False
+        self.timer.stop()
+
+    def _scan(self):
+        if not self.enabled or not self.dir_path or not os.path.exists(self.dir_path):
+            return
+        new = []
+        try:
+            for root, dirs, files in os.walk(self.dir_path):
+                for f in files:
+                    path = os.path.join(root, f)
+                    if path not in self._seen:
+                        self._seen.add(path)
+                        new.append(path)
+            if new:
+                self.new_files.emit(new)
+        except Exception as e:
+            print(f"Error en DirectoryWatcher: {e}")

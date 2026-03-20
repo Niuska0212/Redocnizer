@@ -10,7 +10,7 @@ from PySide6.QtCore import Qt, QTimer, QPoint, QSize
 from PySide6.QtGui import QPixmap, QColor, QBrush, QWheelEvent, QMouseEvent
 
 from ui.history_manager import HistoryManager
-#from ui.edit_record_dialog import EditRecordDialog
+# from ui.edit_record_dialog import EditRecordDialog
 from ui.file_watcher import FileWatcher
 
 class ImagePreviewDialog(QDialog):

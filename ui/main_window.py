@@ -250,6 +250,10 @@ class MainWindow(QMainWindow):
         # Conectar cambio de pestaña para actualizar datos
         self.tabs.currentChanged.connect(self.on_tab_changed)
         
+        # permitir que otras partes de la ventana accedan fácilmente a la pestaña de respaldo
+        # (ya que el constructor pasa "self" a DriveSyncTab)
+        self.drive_sync_tab = self.drive_sync_tab
+        
         self.setCentralWidget(self.tabs)
     
     def _build_processing_tab(self):
@@ -870,7 +874,6 @@ class MainWindow(QMainWindow):
 
         calendar = self.calendar_combo.currentText()
         files = list(self.selected_files)
-        
         # 2. Configuración visual inicial
         self.btn_process.setEnabled(False)
         self.btn_select_file.setEnabled(False)
@@ -883,10 +886,16 @@ class MainWindow(QMainWindow):
         self.results_list.clear()
 
         # 3. CREAR EL TRABAJADOR (HILO)     
+        # Pasar drive_service si está disponible para subida automática en background
+        drive_service = None
+        if hasattr(self, 'drive_sync_tab') and self.drive_sync_tab and self.drive_sync_tab.drive_service:
+            drive_service = self.drive_sync_tab.drive_service
+        
         self.worker = ConcurrentOCRWorker(
             file_paths=files, 
             calendar=calendar, 
-            controller=self.controller
+            controller=self.controller,
+            drive_service=drive_service
         )
 
         # 4. CONECTAR LAS SEÑALES (Protocolo de comunicación interna)
