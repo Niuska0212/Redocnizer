@@ -985,19 +985,33 @@ class MainWindow(QMainWindow):
         
         QMessageBox.information(self, "Resultado", msg)
         
-        # Limpieza final
+        # 1. Limpieza visual
         self.clear_files()
+        self.selected_files.clear() # Limpia el set interno
+        self.results_list.clear()   # Limpia la lista visual
         self.progress_bar.setVisible(False)
         
+        # 2. Rehabilitar botones
         self.btn_process.setEnabled(True)
         self.btn_select_file.setEnabled(True)
+        self.btn_clear_files.setEnabled(True)
+        self.btn_remove_file.setEnabled(True)
         
-        # Actualizar tabla de datos
+        # 3. CARGA AUTOMÁTICA (La parte importante)
         calendar = self.calendar_combo.currentText()
         try:
-            self.load_calendar_data(calendar, silent=True)
-        except:
-            if self.tabs.currentIndex() == 1:
+            print(f"🔄 Refrescando base de datos automáticamente: {calendar}")
+            # Usamos load_calendar_file que es la que ya tiene corregida la ruta local
+            self.load_calendar_file(calendar=calendar, silent=True)
+            
+            # 4. Cambiar a la pestaña de datos automáticamente (opcional)
+            # Descomenta la siguiente línea si quieres que te lleve directo a la tabla
+            # self.tabs.setCurrentIndex(1)
+            
+        except Exception as e:
+            print(f"❌ Error al refrescar tabla tras procesamiento: {e}")
+            # Fallback: intentar cargar la pestaña de datos directamente
+            if hasattr(self, 'data_tab'):
                 self.data_tab.load_data()
 
     def handle_worker_error(self, error_msg):
