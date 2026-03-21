@@ -44,18 +44,17 @@ class ConcurrentOCRWorker(QThread):
     def process_single_file(self, fp):
         """
         Ejecuta el proceso pesado de un solo archivo.
-        Este método es ejecutado por el ThreadPoolExecutor.
+        Actualizado para manejar nombres de CSV dinámicos (Ej: 2024A.csv).
         """
         if not self._is_running:
             return None
 
-        nombre_archivo = os.path.basename(fp)
+        # Nombre del archivo original que se está procesando (el PDF)
+        nombre_original = os.path.basename(fp)
 
-        # El semáforo limita cuántas instancias de la IA corren simultáneamente
         with self._semaphore:
             try:
-                # Invocación de la lógica de negocio (Entidad de Control)
-                # Este es el punto de mayor carga computacional del sistema
+                # Invocación de la lógica de negocio
                 res = self.controller.process_uploaded_file(
                     file_path=fp, 
                     calendar=self.calendar
@@ -63,50 +62,52 @@ class ConcurrentOCRWorker(QThread):
                 
                 final_path = res.get("final_path", "N/A")
                 
-                # Subida en background a Drive (si está disponible)
+                # Subida en background a Drive
                 if self.drive_service and final_path and final_path != "N/A":
                     try:
-                        # Obtener nombre completo del maestro
                         data = res.get("data", {})
                         paterno = data.get("PATERNO", "")
                         materno = data.get("MATERNO", "")
                         nombre_s = data.get("NOMBRE_S", "")
                         nombre_maestro = f"{paterno} {materno} {nombre_s}".strip().replace("  ", " ")
+                        
                         if not nombre_maestro.strip():
-                            nombre_maestro = self.calendar
-                        # Subir contratos a /Redocnizer/nombre_maestro y CSV a /Redocnizer/calendario
-                        nombre_archivo = os.path.basename(final_path).lower()
+                            nombre_maestro = "Sin_Nombre"
 
-                        if nombre_archivo == "contratos.csv":
-                            # Subir CSV a /Redocnizer/calendario/nombre_calendario/contratos.csv
+                        # --- CORRECCIÓN AQUÍ ---
+                        # Obtenemos el nombre real del archivo generado (ej: '2024A.csv')
+                        nombre_generado = os.path.basename(final_path).lower()
+
+                        # En lugar de comparar contra "contratos.csv", revisamos si es el CSV del calendario
+                        if nombre_generado.endswith('.csv'):
+                            # Subir la base de datos a la raíz del proyecto en Drive
                             self.drive_service.upload_to_path(
                                 final_path, 
                                 drive_root='Redocnizer', 
-                                calendar=self.calendar, 
+                                calendar=self.calendar, # Esto asegura que use el nombre del ciclo
                                 subfolder_path=""
-                                )
+                            )
                         else:
-                            # Subir contratos a /Redocnizer/maestros/nombre_maestro/[subcarpetas]
-                            subfolder = nombre_maestro
+                            # Subir el contrato PDF a la carpeta del maestro
                             self.drive_service.upload_to_path(
                                 final_path,
                                 drive_root='Redocnizer',
                                 calendar='',
-                                subfolder_path=subfolder
-                                )
+                                subfolder_path=f"maestros/{nombre_maestro}"
+                            )
                     except Exception as e:
                         print(f"Advertencia: no se pudo subir a Drive {final_path}: {e}")
                 
                 return {
                     "status": "success",
-                    "file": nombre_archivo,
+                    "file": nombre_original,
                     "path": final_path,
                     "data": res.get("data")
                 }
             except Exception as e:
                 return {
                     "status": "error",
-                    "file": nombre_archivo,
+                    "file": nombre_original,
                     "error": str(e)
                 }
 

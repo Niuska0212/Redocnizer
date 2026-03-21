@@ -35,16 +35,18 @@ class FileService:
         # Permitimos espacios para los nombres de carpetas de profesores
         return "".join(c for c in value if c.isalnum() or c in (" ", "_", "-")).strip().upper()
 
-    def get_calendar_dir(self, calendar: str) -> str:
+    def get_calendar_dir(self, calendar: str = None) -> str:
         """
-        Retorna la carpeta donde se guardan los CSVs de cada calendario.
-        Se guarda en la raíz del PROYECTO, no en la raíz de contratos del usuario.
-        Estructura: PROYECTO_RAIZ / CALENDARIOS / {CALENDARIO} /
+        Retorna SIEMPRE la carpeta CALENDARIOS dentro de la carpeta del software.
+        Ignora el root_dir de los expedientes para la base de datos.
         """
-        # Obtener la ruta raíz del proyecto (2 niveles arriba de services/)
+        # Esto obtiene la ruta de 'n:/Proyecto-modular' independientemente de N:/000_Archivo
         project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        calendar_path = os.path.join(project_root, "CALENDARIOS", calendar)
-        os.makedirs(calendar_path, exist_ok=True)
+        calendar_path = os.path.normpath(os.path.join(project_root, "CALENDARIOS"))
+        
+        if not os.path.exists(calendar_path):
+            os.makedirs(calendar_path, exist_ok=True)
+            
         return calendar_path
 
     def get_full_professor_path(self, data: dict) -> str:

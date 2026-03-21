@@ -695,8 +695,8 @@ class MainWindow(QMainWindow):
 
     def load_calendar_data(self, calendar: str = None, silent: bool = False):
         """
-        Carga el CSV del calendario seleccionado.
-        :param silent: Si es True, no muestra mensajes de éxito ni advertencias de cambios.
+        Carga el CSV del calendario seleccionado desde la carpeta CALENDARIOS.
+        Ruta: {root_dir}/CALENDARIOS/{calendar}.csv
         """
         if not self.controller:
             if not silent:
@@ -716,32 +716,42 @@ class MainWindow(QMainWindow):
             if reply == QMessageBox.Save:
                 self.data_tab.save_all_to_manager()
             elif reply == QMessageBox.Cancel:
-                # El usuario canceló la operación, volver al calendario anterior
                 return
 
+        # Determinar qué calendario cargar
         if calendar is None:
             calendar = self.calendar_combo.currentText()
 
-        calendar_dir = self.controller.file_service.get_calendar_dir(calendar)
+        # --- CORRECCIÓN DE RUTA Y ARCHIVO ---
+        # 1. Apuntar a la carpeta CALENDARIOS dentro de la raíz
+        calendarios_dir = os.path.join(self.root_dir, "CALENDARIOS")
         
-        # Establecer el CSV source para que se guarden cambios allí
-        csv_path = os.path.join(calendar_dir, 'contratos.csv')
+        # 2. Construir la ruta exacta: CALENDARIOS/2024A.csv
+        csv_path = os.path.join(calendarios_dir, f"{calendar}.csv")
+        
+        print(f"📂 Intentando cargar: {csv_path}")
+
+        # 3. Establecer el CSV source en el DataManager
         self.data_manager.set_source_csv(csv_path)
         
-        loaded = self.data_manager.load_from_calendar_dir(calendar_dir)
+        # 4. Cargar los datos (load_from_csv se encarga de leerlo si existe)
+        loaded = self.data_manager.load_from_csv(csv_path)
         
         if loaded:
-            # Solo mostrar notificación si el usuario lo solicitó manualmente
             if not silent:
                 QMessageBox.information(self, "CSV cargado", f"Calendario '{calendar}' cargado exitosamente.")
             
+            # Refrescar la tabla si el usuario está viendo la pestaña de datos
             if self.tabs.currentIndex() == 1:
                 self.data_tab.load_data()
             
             # Cargar las previsualizaciones asociadas
             self._load_preview_images_from_csv()
+            
         elif not silent:
-            QMessageBox.information(self, "Sin CSV", f"No se encontró CSV para el calendario '{calendar}'.")
+            # Si load_from_csv devolvió False o el archivo no existe
+            if not os.path.exists(csv_path):
+                QMessageBox.information(self, "Sin datos", f"Aún no existen registros para el calendario '{calendar}'.")
 
     def _load_preview_images_from_csv(self):
         """Carga las imágenes de preview basadas en los datos del CSV"""
@@ -789,74 +799,108 @@ class MainWindow(QMainWindow):
             print(f"Error cargando imágenes de preview: {e}")
 
     def open_calendar_folder(self):
-        """Abre la carpeta del calendario en el explorador de archivos."""
+        """Abre la carpeta del calendario en el explorador."""
         if not self.controller:
-            QMessageBox.warning(self, "Sin directorio raíz", "Primero seleccione el directorio raíz.")
             return
         calendar = self.calendar_combo.currentText()
         calendar_dir = self.controller.file_service.get_calendar_dir(calendar)
-        try:
-            os.startfile(calendar_dir)
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"No se pudo abrir la carpeta: {e}")
+        
+        if not os.path.exists(calendar_dir):
+            os.makedirs(calendar_dir, exist_ok=True)
+            
+        os.startfile(calendar_dir)
 
     def open_calendar_excel(self):
-        """Abre el CSV del calendario en Excel (solo abre, no carga datos)."""
+        """Abre el archivo {Calendario}.csv en el programa predeterminado (Excel)."""
         if not self.controller:
             QMessageBox.warning(self, "Sin directorio raíz", "Primero seleccione el directorio raíz.")
             return
+            
         calendar = self.calendar_combo.currentText()
         calendar_dir = self.controller.file_service.get_calendar_dir(calendar)
-        csv_path = os.path.join(calendar_dir, 'contratos.csv')
+        csv_path = os.path.join(calendar_dir, f"{calendar}.csv")
+        
         if os.path.exists(csv_path):
             try:
                 os.startfile(csv_path)
-                QMessageBox.information(self, "Archivo abierto", f"Se abrió el archivo de calendario en Excel.")
             except Exception as e:
-                QMessageBox.critical(self, "Error", f"No se pudo abrir el archivo en Excel: {e}")
+                QMessageBox.critical(self, "Error", f"No se pudo abrir el archivo: {e}")
         else:
-            QMessageBox.information(self, "Sin CSV", f"No existe el archivo '{csv_path}'")
+            QMessageBox.information(self, "Archivo no encontrado", 
+                                f"Aún no se ha creado el registro para el calendario {calendar}.")
 
-    def load_calendar_file(self):
-        """Carga el CSV del calendario en la vista de datos (sin abrir Excel)."""
+    def load_calendar_file(self, calendar=None, silent: bool = False):
+        """
+        Carga el CSV específico del calendario desde la carpeta central CALENDARIOS del proyecto.
+        """
         if not self.controller:
-            QMessageBox.warning(self, "Sin directorio raíz", "Primero seleccione el directorio raíz.")
+            if not silent:
+                QMessageBox.warning(self, "Sin directorio raíz", "Primero seleccione el directorio raíz.")
             return
-        calendar = self.calendar_combo.currentText()
-        
-        # Verificar si hay cambios sin guardar
-        if hasattr(self, 'data_tab') and self.data_tab.has_unsaved_changes():
+
+        # 1. Validar cambios pendientes
+        if not silent and hasattr(self, 'data_tab') and self.data_tab.has_unsaved_changes():
             reply = QMessageBox.warning(
-                self,
-                "Cambios sin guardar",
-                "⚠️ Tienes cambios sin guardar en los datos actuales.\n\n¿Deseas guardarlos antes de cargar otro calendario?",
-                QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
-                QMessageBox.Save
+                self, "Cambios sin guardar",
+                "⚠️ Tienes cambios sin guardar.\n¿Deseas guardarlos?",
+                QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel
             )
-            
             if reply == QMessageBox.Save:
                 self.data_tab.save_all_to_manager()
             elif reply == QMessageBox.Cancel:
                 return
+
+        # --- LIMPIEZA DE ARGUMENTOS ---
+        if isinstance(calendar, bool) or calendar is None:
+            calendar = self.calendar_combo.currentText()
         
-        calendar_dir = self.controller.file_service.get_calendar_dir(calendar)
-        csv_path = os.path.join(calendar_dir, 'contratos.csv')
-        
-        if not os.path.exists(csv_path):
-            QMessageBox.warning(self, "Sin CSV", f"No existe el archivo de calendario en:\n{csv_path}")
+        if not calendar or not isinstance(calendar, str):
             return
-        
-        # Establecer el CSV source para que se guarden cambios allí
-        self.data_manager.set_source_csv(csv_path)
-        
-        # Cargar datos
-        loaded = self.data_manager.load_from_calendar_dir(calendar_dir)
-        if loaded:
-            QMessageBox.information(self, "Datos cargados", f"✅ Datos del calendario '{calendar}' cargados correctamente.")
-            # Cambiar a pestaña de datos para mostrar los datos cargados
-            self.tabs.setCurrentIndex(1)
-        else:
-            QMessageBox.warning(self, "Error", f"No se pudieron cargar los datos del calendario.")
+
+        try:
+            # 2. OBTENER RUTA DEL PROYECTO (Donde está el .py)
+            # Usamos el servicio pero garantizamos que sea la ruta local
+            calendar_dir = self.controller.file_service.get_calendar_dir()
+            
+            # Forzamos que la ruta sea absoluta y normalizada para Windows
+            csv_path = os.path.normpath(os.path.join(calendar_dir, f"{calendar}.csv"))
+            
+            print(f"📍 Buscando base de datos en RUTA LOCAL: {csv_path}")
+
+            # 3. VERIFICACIÓN FÍSICA
+            if not os.path.exists(csv_path):
+                print(f"✨ No existe {csv_path}. Se creará al procesar.")
+                # Avisar al data_manager dónde deberá guardar después
+                self.data_manager.set_source_csv(csv_path) 
+                
+                if not silent:
+                    QMessageBox.information(
+                        self, "Calendario Nuevo", 
+                        f"No existe base de datos para '{calendar}'.\nSe iniciará una nueva cuando proceses archivos."
+                    )
+                
+                # Limpiar la tabla visual
+                if hasattr(self, 'data_tab'):
+                    self.data_tab.load_data()
+                return 
+
+            # 4. CARGA SI EL ARCHIVO EXISTE
+            self.data_manager.set_source_csv(csv_path)
+            loaded = self.data_manager.load_from_csv(csv_path)
+            
+            if loaded:
+                if not silent and not self.data_manager.data.empty:
+                    QMessageBox.information(self, "Carga Exitosa", f"Se cargaron los datos de {calendar}")
+                
+                if self.tabs.currentIndex() == 1:
+                    self.data_tab.load_data()
+                
+                self._load_preview_images_from_csv()
+                    
+        except Exception as e:
+            print(f"❌ Error crítico en load_calendar_file: {e}")
+            if not silent:
+                QMessageBox.critical(self, "Error", f"No se pudo cargar el calendario: {e}")
 
 
     # =========================================================
@@ -970,14 +1014,18 @@ class MainWindow(QMainWindow):
         return
     
     def _on_calendar_changed(self):
-        """Cuando se cambia el calendario seleccionado."""
-        # 1. Obtener el dato del calendario actual
-        current_data = self.calendar_combo.currentData()
+        """
+        Cuando se cambia el calendario seleccionado.
+        Apunta a: {root_dir}\CALENDARIOS\{calendar_name}.csv
+        Ejemplo: N:\Proyecto-modular\CALENDARIOS\2024A.csv
+        """
+        # 1. Obtener el nombre del calendario actual (ej. "2024A")
         calendar_name = self.calendar_combo.currentText()
+        current_data = self.calendar_combo.currentData()
         
-        # --- LÓGICA DE LIMPIEZA CON CHECKBOX (Mantener igual) ---
+        # --- LÓGICA DE LIMPIEZA DE CACHÉ (Se mantiene igual) ---
         if self.controller:
-            settings = QSettings("MiEmpresa", "Redocnizer")
+            settings = QSettings("Redocnizer", "RedocnizerApp")
             skip_prompt = settings.value("skip_preview_cleanup_prompt", False, type=bool)
             last_answer = settings.value("last_preview_cleanup_answer", QMessageBox.No, type=int)
 
@@ -985,56 +1033,54 @@ class MainWindow(QMainWindow):
                 msg_box = QMessageBox(self)
                 msg_box.setIcon(QMessageBox.Question)
                 msg_box.setWindowTitle("Cambio de Calendario")
-                msg_box.setText("¿Desea vaciar el caché de imágenes del calendario anterior?")
+                msg_box.setText(f"Has cambiado al calendario {calendar_name}.\n\n¿Deseas vaciar el caché de imágenes de vista previa?")
                 msg_box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
                 msg_box.setDefaultButton(QMessageBox.No)
                 
-                # Añadir el checkbox
-                cb = QCheckBox("No volver a preguntar (recordar mi elección)")
-                # ... (tu estilo css del checkbox se mantiene igual)
+                cb = QCheckBox("No volver a preguntar")
                 msg_box.setCheckBox(cb)
-                msg_box.setStyleSheet("QLabel{ color: #0b2545; font-size: 13px; } QPushButton{ width: 80px; }")
+                msg_box.setStyleSheet("QLabel{ color: #0b2545; }")
                 
                 resultado = msg_box.exec()
-                
-                # Guardar preferencia si el checkbox está marcado
                 if cb.isChecked():
                     settings.setValue("skip_preview_cleanup_prompt", True)
                     settings.setValue("last_preview_cleanup_answer", resultado)
-                
                 respuesta = resultado
             else:
-                # Si ya pidió no preguntar, usamos la última respuesta guardada
                 respuesta = last_answer
 
-            # Ejecutar la limpieza si la respuesta fue SI
             if respuesta == QMessageBox.Yes:
                 self.controller.limpiar_previews()
                 if hasattr(self, 'data_tab'):
                     self.data_tab.preview_img_label.clear()
-                    self.data_tab.preview_img_label.setText("Carpeta de previews vaciada automáticamente.")
-        
-        # 2. Cambiar el contexto del DataManager al nuevo calendario
-        # para que el cambio de calendario actualice automáticamente la pestaña de datos sin necesidad de recargar manualmente
+
+        # --- LÓGICA DE DIRECCIÓN CORREGIDA (RUTA PLANA EN CALENDARIOS) ---
         if self.root_dir:
-            # 1. Construimos la ruta al archivo CSV del nuevo calendario
-            new_csv_path = os.path.join(self.root_dir, calendar_name, "contratos.csv")
+            # 1. Construir la ruta: Raíz + "CALENDARIOS" + "2024A.csv"
+            calendarios_dir = os.path.join(self.root_dir, "CALENDARIOS")
+            new_csv_path = os.path.join(calendarios_dir, f"{calendar_name}.csv")
             
-            # 2. Actualizamos el DataManager (esto cambia el "puntero" del archivo)
+            # Asegurar que la carpeta CALENDARIOS existe (por si acaso)
+            if not os.path.exists(calendarios_dir):
+                os.makedirs(calendarios_dir, exist_ok=True)
+
             print(f"🔄 Cambiando base de datos a: {new_csv_path}")
+            
+            # 2. Informar al DataManager de la nueva ruta exacta
             self.data_manager.set_source_csv(new_csv_path)
             
-            # 3. ACCIÓN AUTOMÁTICA: Forzar la carga de datos en la pestaña de la tabla
-            # Esto evita que la tabla aparezca vacía al cambiar de calendario
+            # 3. Cargar los datos
+            # Nota: usamos directamente load_from_csv porque ya tenemos la ruta completa
+            self.data_manager.load_from_csv(new_csv_path)
+            
+            # 4. Actualizar la interfaz visual en la pestaña de la tabla
             if hasattr(self, 'data_tab'):
                 self.data_tab.load_data()
-                print(f"📥 Datos de {calendar_name} cargados automáticamente.")
+                print(f"📥 Tabla actualizada con: {calendar_name}.csv")
 
-        # Debug logs finales
-        if current_data and hasattr(current_data, 'nombre'):
-            print(f"✅ Contexto listo: {current_data.nombre}")
-        else:
-            print(f"✅ Contexto listo: {calendar_name}")
+        # Debug final
+        contexto = current_data.nombre if (current_data and hasattr(current_data, 'nombre')) else calendar_name
+        print(f"✅ Contexto listo: {contexto}")
             
     def _on_search_query_changed(self, text):
         """Lógica para filtrar los datos del DataTab desde la barra de búsqueda"""

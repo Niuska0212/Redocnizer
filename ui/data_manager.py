@@ -1,5 +1,6 @@
 # !/usr/bin/env python3
 # -*- coding: utf-8 -*-
+#ui/data_manager.py
 """Módulo para manejar operaciones de datos (carga, guardado, actualización)."""
 import os
 import pandas as pd
@@ -9,14 +10,14 @@ from PySide6.QtCore import Signal, QObject
 class DataManager(QObject):
     """
     Manejador de datos estricto. 
-    Solo opera sobre el archivo 'contratos.csv' del calendario seleccionado.
+    Solo opera sobre el archivo '[calendario].csv' del calendario seleccionado.
     """
     data_updated = Signal()
 
     def __init__(self):
         super().__init__()
         self.data = pd.DataFrame()
-        self.source_csv_file = None  # Ruta absoluta al contratos.csv activo
+        self.source_csv_file = None  
 
     def set_source_csv(self, csv_path: str):
         """
@@ -71,9 +72,10 @@ class DataManager(QObject):
             for col in preferred_columns:
                 if col not in self.data.columns:
                     self.data[col] = ""
-
-            # Asegurar que existan las carpetas (ej: CALENDARIOS/2024A/)
-            os.makedirs(os.path.dirname(self.source_csv_file), exist_ok=True)
+                    
+            folder = os.path.dirname(self.source_csv_file)
+            if folder and not os.path.exists(folder):
+                os.makedirs(folder, exist_ok=True)
             
             # Reordenar columnas para mantener consistencia: Preferidas + El resto
             other_cols = [c for c in self.data.columns if c not in preferred_columns]
@@ -126,7 +128,7 @@ class DataManager(QObject):
         return True
 
     def load_from_calendar_dir(self, calendar_dir: str, calendar_name: str):
-        """Apunta al 'contratos.csv' dentro de la carpeta de un calendario."""
+        """Apunta al '[calendario].csv' dentro de la carpeta de CALENDARIO."""
         csv_path = os.path.join(calendar_dir, f"{calendar_name}.csv")
         return self.load_from_csv(csv_path)
     

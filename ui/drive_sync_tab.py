@@ -199,19 +199,27 @@ class DriveSyncTab(QWidget):
         if not self.drive_service:
             return
         calendar = self.main_window.calendar_combo.currentText()
-        cal_dir = self.main_window.controller.file_service.get_calendar_dir(calendar)
-        csv_path = os.path.join(cal_dir, 'contratos.csv')
+        
+        cal_dir = self.main_window.controller.file_service.get_calendar_dir("")
+        csv_path = os.path.join(cal_dir, f"{calendar}.csv")
+        
         if not os.path.exists(csv_path):
-            QMessageBox.information(self, "Sin CSV",
-                                    "No se encontró el archivo 'contratos.csv' para el calendario seleccionado.")
+            QMessageBox.information(self, "Archivo no encontrado",
+                f"No se encontró el archivo '{calendar}.csv' en la carpeta de calendarios.")
             return
         try:
-            # subir dentro de la carpeta "Redocnizer/<calendar>" en Drive
-            self.drive_service.upload_or_replace(csv_path, drive_root='Redocnizer', subfolder=calendar)
+            # Subir directamente a la raíz de 'Redocnizer' en Drive
+            # Pasamos calendar para que el servicio de Drive sepa el nombre final
+            self.drive_service.upload_to_path(
+                csv_path, 
+                drive_root='Redocnizer', 
+                calendar=calendar, 
+                subfolder_path=""
+            )
             QMessageBox.information(self, "Respaldo completado",
-                                    "El CSV ha sido subido/actualizado en Google Drive.")
+                f"El archivo {calendar}.csv ha sido actualizado en Google Drive.")
         except Exception as e:
-            QMessageBox.critical(self, "Error de subida", f"{e}")
+            QMessageBox.critical(self, "Error de subida", f"Error: {e}")
 
     def _manual_backup_contracts(self):
         """Permite elegir uno o varios PDFs para subir; los duplicados se omiten."""

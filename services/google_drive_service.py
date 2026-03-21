@@ -169,11 +169,9 @@ class GoogleDriveService:
     def upload_folder(self, local_folder: str, drive_root: str = 'Redocnizer', subfolder: str | None = None) -> Dict:
         """Sube una carpeta local completa recursivamente a Drive bajo `drive_root/subfolder`.
 
-        Comportamiento:
-        - Crea la estructura de carpetas equivalente en Drive usando `_ensure_folder`.
-        - Para cada archivo: si su nombre es 'contratos.csv' usa `upload_or_replace`,
-          en otro caso usa `upload_if_not_exists` (para omitir duplicados).
-        Retorna un resumen con contadores.
+        Comportamiento Actualizado:
+        - Si el archivo es un CSV (ej. 2024A.csv), usa `upload_or_replace` para no duplicar la base de datos.
+        - Para otros archivos (PDFs, imágenes), usa `upload_if_not_exists`.
         """
         summary = {'uploaded': 0, 'skipped': 0, 'errors': 0}
         if not os.path.exists(local_folder) or not os.path.isdir(local_folder):
@@ -183,49 +181,54 @@ class GoogleDriveService:
         root_id = None
         if drive_root:
             root_id = self._ensure_folder(drive_root, parent_id=None)
+        
         target_parent = root_id
         if root_id and subfolder:
             target_parent = self._ensure_folder(subfolder, parent_id=root_id)
 
         def _recurse(local_dir: str, parent_drive_id: str | None):
             try:
-                # asegurarnos que parent_drive_id exista (si no se resolvió, crear root)
                 if parent_drive_id is None and drive_root:
                     parent_drive_id = self._ensure_folder(drive_root, parent_id=None)
 
                 for entry in os.listdir(local_dir):
                     path = os.path.join(local_dir, entry)
                     if os.path.isdir(path):
-                        # crear subcarpeta en Drive
+                        # Crear subcarpeta en Drive
                         child_id = None
                         if parent_drive_id:
                             child_id = self._ensure_folder(entry, parent_id=parent_drive_id)
                         _recurse(path, child_id)
                     else:
-                        # archivo: decidir método
+                        # --- CAMBIO AQUÍ ---
+                        # Antes buscaba 'contratos.csv'. 
+                        # Ahora: si termina en .csv, asumimos que es una base de datos de calendario
                         try:
-                            if entry.lower() == 'contratos.csv':
+                            if entry.lower().endswith('.csv'):
+                                # Usamos el método que reemplaza si ya existe
                                 self.upload_or_replace(path, folder_id=parent_drive_id, drive_root=None)
                                 summary['uploaded'] += 1
                             else:
+                                # Para el resto (PDFs, etc), solo subir si no existe
                                 fid = self.upload_if_not_exists(path, folder_id=parent_drive_id, drive_root=None)
                                 if fid:
                                     summary['uploaded'] += 1
                                 else:
                                     summary['skipped'] += 1
-                        except Exception:
+                        except Exception as e:
+                            print(f"Error subiendo archivo {entry}: {e}")
                             summary['errors'] += 1
-            except Exception:
+            except Exception as e:
+                print(f"Error en recursión: {e}")
                 summary['errors'] += 1
 
-        # Crear carpeta base con el nombre de la carpeta local seleccionada
+        # Lógica para determinar la carpeta base en Drive
         base_name = os.path.basename(os.path.normpath(local_folder))
         base_drive_id = None
         try:
             if target_parent:
                 base_drive_id = self._ensure_folder(base_name, parent_id=target_parent)
             else:
-                # crear bajo root/drive_root
                 if drive_root:
                     root_id = self._ensure_folder(drive_root, parent_id=None)
                     base_drive_id = self._ensure_folder(base_name, parent_id=root_id)
@@ -234,7 +237,6 @@ class GoogleDriveService:
         except Exception:
             base_drive_id = target_parent
 
-        # arrancar la recursión desde la carpeta base (para que la estructura incluya el nombre de la carpeta)
         _recurse(local_folder, base_drive_id)
         summary['base_drive_id'] = base_drive_id
         return summary
