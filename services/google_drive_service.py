@@ -254,20 +254,30 @@ class GoogleDriveService:
         except Exception:
             return {'nombre': 'Desconectado', 'email': '', 'foto': ''}
 
-    def get_storage_info(self) -> Dict:
-        """Retorna el estado del almacenamiento en GB para el reporte de distribución."""
+    def get_storage_info(self) -> dict:
+        """Obtiene la cuota de almacenamiento en GB y porcentaje."""
         try:
-            about = self.service.about().get(fields='storageQuota').execute()
+            # Importante: Requiere el scope 'https://www.googleapis.com/auth/drive.metadata.readonly'
+            about = self.service.about().get(fields="storageQuota").execute()
             quota = about.get('storageQuota', {})
-            used = int(quota.get('usedBytes', 0)) / (1024**3)
-            total = int(quota.get('quotaBytes', 0)) / (1024**3)
+            
+            total = int(quota.get('limit', 0))
+            usado = int(quota.get('usage', 0))
+            
+            # Convertir bytes a GB (1024^3)
+            total_gb = total / (1024**3) if total > 0 else 0
+            usado_gb = usado / (1024**3)
+            
+            porcentaje = (usado / total * 100) if total > 0 else 0
+            
             return {
-                'usado_gb': round(used, 2),
-                'total_gb': round(total, 2),
-                'porcentaje': round((used / total) * 100, 1) if total > 0 else 0
+                'total_gb': f"{total_gb:.2f}",
+                'usado_gb': f"{usado_gb:.2f}",
+                'porcentaje': porcentaje
             }
-        except Exception:
-            return {'usado_gb': 0, 'total_gb': 0, 'porcentaje': 0}
+        except Exception as e:
+            print(f"Error al obtener cuota: {e}")
+            return {'total_gb': '0', 'usado_gb': '0', 'porcentaje': 0}
 
     def upload_to_path(self, file_path: str, drive_root: str = 'REDOCNIZER', calendar: str = '', subfolder_path: str = '') -> str | None:
         """

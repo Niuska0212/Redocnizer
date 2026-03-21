@@ -150,36 +150,49 @@ class DriveSyncTab(QWidget):
         layout.addStretch()
 
     def _handle_login(self):
-        """Intenta conectar con el servicio de Google Drive."""
+        self.btn_login.setText("⌛ Conectando...")
+        QApplication.processEvents() # Forzar que se vea el cambio de texto
+        
         try:
             from services.google_drive_service import GoogleDriveService
             self.drive_service = GoogleDriveService()
-            self._update_ui_logged_in()
-            QMessageBox.information(self, "Éxito", "Conexión con Google Cloud establecida.\nLos respaldos automáticos están habilitados.")
-        except FileNotFoundError:
-            QMessageBox.critical(self, "Error", "No se encontró el archivo 'credentials.json'.\nPor favor, agrégalo a la carpeta raíz.")
+            if self.drive_service.service:
+                self._update_ui_logged_in()
+                QMessageBox.information(self, "Éxito", "Conexión establecida con éxito.")
+            else:
+                raise Exception("No se pudo inicializar el servicio.")
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Error de autenticación: {str(e)}")
+            self.btn_login.setText("🔑 Conectar Google Drive")
+            QMessageBox.critical(self, "Error", f"Error: {str(e)}")
 
     def _update_ui_logged_in(self):
         """Actualiza la interfaz con la información del usuario."""
-        if not self.drive_service:
+        if not self.drive_service or not self.drive_service.service:
             return
             
-        user = self.drive_service.get_user_info()
-        storage = self.drive_service.get_storage_info()
-        
-        self.user_label.setText(f"Bienvenido, {user['nombre']}")
-        self.email_label.setText(user['email'])
-        self.btn_login.setText("✅ Cuenta Vinculada")
-        self.btn_login.setEnabled(False)
-        
-        self.progress_storage.setValue(int(storage['porcentaje']))
-        self.storage_label.setText(f"{storage['usado_gb']} GB usados de {storage['total_gb']} GB")
-        self.storage_group.setVisible(True)
-        # habilitar controles manuales también
-        self.manual_group.setVisible(True)
-
+        try:
+            # Obtener datos del servicio
+            user = self.drive_service.get_user_info()
+            storage = self.drive_service.get_storage_info()
+            
+            # Actualizar labels
+            self.user_label.setText(f"Bienvenido, {user['nombre']}")
+            self.email_label.setText(user['email'])
+            self.btn_login.setText("✅ Cuenta Vinculada")
+            self.btn_login.setEnabled(False)
+            
+            # Actualizar barra de almacenamiento
+            self.progress_storage.setValue(int(storage['porcentaje']))
+            self.storage_label.setText(f"{storage['usado_gb']} GB usados de {storage['total_gb']} GB")
+            
+            # Hacer visibles los grupos
+            self.storage_group.setVisible(True)
+            self.manual_group.setVisible(True)
+            
+        except Exception as e:
+            print(f"Error al actualizar UI de Drive: {e}")
+            
+            
     def upload_backup(self, file_path):
         """Método para ser llamado desde la ventana principal tras procesar un archivo."""
         if not self.drive_service:
