@@ -93,7 +93,7 @@ class ConcurrentOCRWorker(QThread):
                                 final_path,
                                 drive_root='Redocnizer',
                                 calendar='',
-                                subfolder_path=f"maestros/{nombre_maestro}"
+                                subfolder_path=f"{self.calendar}/{nombre_maestro}"
                             )
                     except Exception as e:
                         print(f"Advertencia: no se pudo subir a Drive {final_path}: {e}")
