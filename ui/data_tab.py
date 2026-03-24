@@ -484,6 +484,12 @@ class DataTab(QWidget):
             self.btn_redo.setEnabled(False)
             
             self.info_label.setText("✅ Cambios guardados y monitor sincronizado")
+            
+            main_win = self.window() 
+            if hasattr(main_win, 'sync_data_to_supabase'):
+                # Llamamos a la sincronización
+                main_win.sync_data_to_supabase()
+            
             QTimer.singleShot(3000, lambda: self.info_label.setText(f"{len(self.original_df)} registros"))
             
         except Exception as e:

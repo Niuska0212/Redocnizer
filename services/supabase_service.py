@@ -1,14 +1,49 @@
+#services/supabase_service.py
+
 import os
+import socket
 from dotenv import load_dotenv
 from supabase import create_client, Client
 
 load_dotenv()
 
+
+# --- SOLUCIÓN AL ERROR DE CARGA ---
+# Buscamos la ruta absoluta de la raíz del proyecto para encontrar el archivo
+basedir = os.path.abspath(os.path.dirname(__file__)) 
+# Asumiendo que este archivo está en 'services/', subimos un nivel para llegar a la raíz
+dotenv_path = os.path.join(basedir, "..", "credentials_supa.env")
+
+if os.path.exists(dotenv_path):
+    load_dotenv(dotenv_path)
+    print(f"✅ Archivo de credenciales cargado: {dotenv_path}")
+else:
+    # Si no existe en la raíz, intentamos cargarlo de forma genérica
+    load_dotenv("credentials_supa.env")
+# ----------------------------------
+
 class SupabaseManager:
     def __init__(self):
-        url = os.getenv("SUPABASE_URL")
-        key = os.getenv("SUPABASE_KEY")
-        self.supabase: Client = create_client(url, key)
+        # Cargamos directo. Si no existen, el error se capturará en el bloque try.
+        self.url = os.getenv("SUPABASE_URL")
+        self.key = os.getenv("SUPABASE_KEY")
+        
+        try:
+            self.supabase: Client = create_client(self.url, self.key)
+            # Mantenemos enabled solo para que MainWindow sepa si puede llamar a los métodos
+            self.enabled = True 
+            print("✅ Supabase: Cliente inicializado.")
+        except Exception as e:
+            self.enabled = False
+            print(f"❌ Supabase: Error crítico al conectar: {e}")
+
+    def check_connection(self):
+        """Verifica si hay internet."""
+        try:
+            socket.create_connection(("8.8.8.8", 53), timeout=3)
+            return True
+        except OSError:
+            return False
 
     # UPDATE PK (Cambia las PK y propagar los cambios)
     def actualizar_pk(self, tabla, pk_columna, valor_viejo, valor_nuevo):
@@ -144,3 +179,16 @@ class SupabaseManager:
         except Exception as e:
             print(f"Error en upsert_full_record: {e}")
             raise
+        
+    def sync_calendar_dataframe(self, df):
+        """Sincroniza el DataFrame si hay internet."""
+        if not self.check_connection():
+            return False
+
+        try:
+            for _, row in df.iterrows():
+                self.upsert_full_record(row)
+            return True
+        except Exception as e:
+            print(f"❌ Error en sincronización: {e}")
+            return False

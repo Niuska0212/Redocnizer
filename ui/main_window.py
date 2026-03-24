@@ -24,6 +24,7 @@ from ui.drive_sync_tab import DriveSyncTab
 from ui.network_credentials_dialog import NetworkCredentialsDialog
 
 from services.concurrent_worker import ConcurrentOCRWorker
+from services.supabase_service import SupabaseManager
 
 
 class MainWindow(QMainWindow):
@@ -71,6 +72,16 @@ class MainWindow(QMainWindow):
         
         self.controller = None
         self.selected_files = []
+        
+        # -----------------------------------------
+        # Reloj para reintentar sincronización cada 5 minutos
+        # -----------------------------------------
+        self.supabase_manager = SupabaseManager()
+        
+        self.sync_timer = QTimer()
+        self.sync_timer.timeout.connect(self.sync_data_to_supabase)
+        self.sync_timer.start(300000) # 300,000 milisegundos = 5 minutos
+        
         # -----------------------------------------
         # UI PRINCIPAL
         # -----------------------------------------
@@ -982,6 +993,7 @@ class MainWindow(QMainWindow):
         
         if successful > 0:
             msg += "<p>Los datos se han guardado en la pestaña 'Ver/Editar Datos'</p>"
+            self.sync_data_to_supabase()
         
         QMessageBox.information(self, "Resultado", msg)
         
@@ -1182,3 +1194,24 @@ class MainWindow(QMainWindow):
             self._update_process_state()
         else:
             print("⚠️ No hay ruta guardada o la carpeta ya no existe.")
+            
+            
+    # =========================================================
+    # SINCRONIZACIÓN CON SUPABASE
+    # =========================================================
+    
+    def sync_data_to_supabase(self):
+        """Esta es la función que el Timer busca cada 5 minutos."""
+        # Si el manager falló al iniciar, no hacemos nada
+        if not self.supabase_manager.enabled:
+            return
+
+        # Si hay internet, subimos los datos
+        df_actual = self.data_manager.get_dataframe()
+        exito = self.supabase_manager.sync_calendar_dataframe(df_actual)
+
+        if exito:
+            self.statusBar().showMessage("☁️ Sincronización automática completada", 3000)
+        else:
+            # Si falló (probablemente por internet)
+            self.statusBar().showMessage("📡 Trabajando local (Sin conexión a la nube)", 3000)
