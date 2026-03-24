@@ -38,6 +38,8 @@ class MainWindow(QMainWindow):
         self.resize(int(width), int(height))
         self.move((screen.width() - width) / 2, (screen.height() - height) / 2)
         
+        QTimer.singleShot(0, self.centrar_en_pantalla)
+        
         # --------------------------------------
         #LOGO EN LA VENTANA de la aplicacion
         # --------------------------------------
@@ -237,10 +239,28 @@ class MainWindow(QMainWindow):
                 padding: 8px;
             }
         """)
-
     # =========================================================
     # UI
     # =========================================================
+
+    def centrar_en_pantalla(self):
+        """Metodo de centrado forzado tras carga de estilos"""
+        # 1. Obtenemos la geometria disponible (sin barra de tareas)
+        screen_geo = self.screen().availableGeometry()
+        
+        # 2. Obtenemos el rectangulo de nuestra ventana incluyendo el marco real
+        frame_geo = self.frameGeometry()
+        
+        # 3. Calculamos el centro exacto del monitor
+        centro_pantalla = screen_geo.center()
+        
+        # 4. Movemos el centro de nuestro marco al centro de la pantalla
+        frame_geo.moveCenter(centro_pantalla)
+        
+        # 5. Aplicamos el movimiento final
+        self.move(frame_geo.topLeft())
+
+    
 
     def _build_ui(self):
         # Widget principal con pestañas
