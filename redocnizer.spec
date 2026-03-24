@@ -41,6 +41,9 @@ if os.path.exists(os.path.join(root, 'credentials.json')):
 if os.path.exists(os.path.join(root, 'firebase_credentials.json')):
     datas.append((os.path.join(root, 'firebase_credentials.json'), '.'))
 
+if os.path.exists(os.path.join(root, '.env')):
+    datas.append((os.path.join(root, '.env'), '.'))
+
 block_cipher = None
 
 a = Analysis(
@@ -49,6 +52,10 @@ a = Analysis(
     binaries=[],
     datas=datas,
     hiddenimports=[
+        'dotenv',        # Añadido por seguridad
+        'supabase',      # Añadido por seguridad
+        'postgrest',     # Dependencia interna de supabase que a veces se pierde
+        'gotrue',        # Dependencia interna de supabase
         'PySide6',
         'tensorflow',
         'keras',
@@ -113,5 +120,5 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name='REDOCNIZER_DIST'
+    name='REDOCNIZER_V 1.2.1'
 )
