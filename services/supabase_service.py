@@ -71,7 +71,7 @@ class SupabaseManager:
         try:
             codigo = clean_int(row.get("CODIGO"))
             num = clean_int(row.get("NUM"))
-            nombre_materia = clean_str(row.get("NOMBRE_MATERIA"))
+            nombre_materia = clean_str(row.get("MATERIA"))
             crn = clean_int(row.get("CRN"))
 
             if not codigo or not num:
@@ -221,7 +221,7 @@ class SupabaseManager:
                     "IMSS": maestro.get("imss"),
                     "TELEFONO": maestro.get("telefono"),
                     "CRN": materia.get("crn"),
-                    "NOMBRE_MATERIA": materia.get("nombre"),
+                    "MATERIA": materia.get("nombre"),
                     "DESDE": item.get("desde"),
                     "HASTA": item.get("hasta"),
                     "HRS_TOTALES": item.get("hrs_totales"),
