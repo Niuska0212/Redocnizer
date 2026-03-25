@@ -38,11 +38,8 @@ if os.path.exists(os.path.join(root, 'calendarios.db')):
 if os.path.exists(os.path.join(root, 'credentials.json')):
     datas.append((os.path.join(root, 'credentials.json'), '.'))
 
-if os.path.exists(os.path.join(root, 'firebase_credentials.json')):
-    datas.append((os.path.join(root, 'firebase_credentials.json'), '.'))
-
-if os.path.exists(os.path.join(root, '.env')):
-    datas.append((os.path.join(root, '.env'), '.'))
+if os.path.exists(os.path.join(root, 'credentials_supa.env')):
+    datas.append((os.path.join(root, 'credentials_supa.env'), '.'))
 
 block_cipher = None
 
@@ -73,7 +70,7 @@ a = Analysis(
         'core.CRNN_inference',
         'services.ocr_service',
         'services.pdf_service',
-        'services.firebase_service',
+        'services.supabase_service',
         'services.google_drive_service',
         'ui.main_window',
         'ui.app_menu',
@@ -84,7 +81,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludedimports=['matplotlib', 'scipy', 'numpy.random._utils'],
+    excludedimports=['matplotlib', 'scipy', 'numpy.random._utils', 'tkinter'],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
@@ -120,5 +117,5 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name='REDOCNIZER_V 1.2.1'
+    name='REDOCNIZER_V 2.0.1'
 )

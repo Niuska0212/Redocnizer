@@ -7,25 +7,40 @@ from PySide6.QtCore import Qt, QThread, Signal
 # Importamos el Splash Screen primero por ser ligero
 from ui.splash_screen import SplashScreen
 
+def resource_path(relative_path):
+    """ Obtiene la ruta absoluta de los recursos, compatible con PyInstaller """
+    try:
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
+
 class LoadingWorker(QThread):
     """
     Hilo dedicado a cargar las librerías pesadas y la IA
     para no congelar la animación del Splash Screen.
     """
-    finished_loading = Signal(object) # Envía la clase MainWindow cargada
+    finished_loading = Signal(object)
     error = Signal(str)
+
+    def __init__(self, is_first_run):
+        super().__init__()
+        self.is_first_run = is_first_run
 
     def run(self):
         try:
-            # Movemos las importaciones pesadas dentro del hilo
             import tensorflow as tf
+            import easyocr
             # Configuración para evitar que TF use toda la memoria al inicio
             os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
             
+            # 1. Forzar a EasyOCR a revisar modelos
+            # Al crear el Reader aquí, si no existen los modelos, los descarga.
+            reader = easyocr.Reader(['es', 'en'], gpu=False) 
+            
+            # 2. Importar tu ventana
             from ui.main_window import MainWindow
             
-            # Si necesitas precargar el modelo de IA aquí podrías hacerlo
-            # pero por ahora devolvemos la clase lista para instanciarse
             self.finished_loading.emit(MainWindow)
         except Exception as e:
             self.error.emit(str(e))
