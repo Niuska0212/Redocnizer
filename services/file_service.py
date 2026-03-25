@@ -34,6 +34,28 @@ class FileService:
             return ""
         # Permitimos espacios para los nombres de carpetas de profesores
         return "".join(c for c in value if c.isalnum() or c in (" ", "_", "-")).strip().upper()
+    
+    def calcular_calendario_udg(self, fecha_desde_str: str) -> str:
+        """
+        Analiza la fecha 'DESDE' extraída por el OCR y determina el ciclo.
+        Ejemplo: 16/01/2024 -> 2024A | 16/07/2024 -> 2024B
+        """
+        try:
+            if not fecha_desde_str or "/" not in str(fecha_desde_str):
+                return None
+            
+            # Limpiar posibles espacios y convertir a objeto fecha
+            fecha_dt = datetime.strptime(fecha_desde_str.strip(), "%d/%m/%Y")
+            anio = fecha_dt.year
+            mes = fecha_dt.month
+
+            # Lógica UDG: Enero a Junio es 'A', Julio en adelante es 'B'
+            ciclo = "A" if mes <= 6 else "B"
+            
+            return f"{anio}{ciclo}"
+        except Exception as e:
+            print(f"⚠️ No se pudo procesar la fecha '{fecha_desde_str}': {e}")
+            return None
 
     def get_calendar_dir(self, calendar: str = None) -> str:
         """
@@ -79,23 +101,19 @@ class FileService:
 
     def save_contract(
         self,
-        calendar: str,
+        calendar: str, # Este será el calendario calculado que le mande el Controller
         data: dict,
         source_file: str
     ) -> str:
-        """
-        Guarda el archivo en la carpeta del profesor con el nombre: {NUM} {CALENDARIO}.pdf
-        """
-        # Obtener la carpeta destino (creándola si no existe)
         dest_dir = self.get_full_professor_path(data)
 
-        # Construir nombre de archivo: "7745924 2024A.pdf"
+        # El nombre ahora usará el calendario real del contrato (ej. 2024B)
         num_contrato = self._sanitize_name(str(data.get("NUM", "SIN_NUM")))
         calendar_str = self._sanitize_name(calendar)
         
         final_name = f"{num_contrato} {calendar_str}.pdf"
         final_path = os.path.join(dest_dir, final_name)
-        # Copiar el archivo (sobrescribe si ya existe)
+
         try:
             shutil.copy2(source_file, final_path)
             return final_path
