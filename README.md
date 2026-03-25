@@ -15,7 +15,7 @@
 
 Si deseas utilizar la herramienta sin configurar el entorno de desarrollo, puedes descargar la última versión estable del ejecutable para Windows aquí:
 
-[**➔ Descargar REDOCNIZER V1.1.1 (.exe)**](https://github.com/Niuska0212/Redocnizer/releases/latest)
+[**➔ Descargar la ultima version de REDOCNIZER(.exe)**](https://github.com/Niuska0212/Redocnizer/releases/latest)
 
 ---
 
