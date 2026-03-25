@@ -117,5 +117,5 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name='REDOCNIZER_V 2.0.1'
+    name='REDOCNIZER_V 2.1.1'
 )

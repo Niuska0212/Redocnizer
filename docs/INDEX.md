@@ -245,6 +245,6 @@ Para diferentes roles:
 ---
 
 **Última actualización**: 24 de febrero de 2026  
-**Versión de documentación**: 2.0.1
+**Versión de documentación**: 2.1.1
 **Estado**: Completa y actualizada
 
