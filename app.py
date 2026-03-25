@@ -1,7 +1,7 @@
 # app.py
 import sys
 import os
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QMessageBox
 from PySide6.QtCore import Qt, QThread, Signal, QSettings
 
 # Importamos el Splash Screen primero por ser ligero
@@ -32,8 +32,7 @@ class LoadingWorker(QThread):
             import easyocr
             
             # 2. Inicializar EasyOCR
-            # Si es la primera vez, esto descargará los modelos (tarda más)
-            # gpu=False para ahorrar RAM en equipos modestos
+            # gpu=False para evitar crasheos por falta de memoria VRAM
             reader = easyocr.Reader(['es', 'en'], gpu=False) 
             
             # 3. Importar ventana principal
@@ -41,19 +40,17 @@ class LoadingWorker(QThread):
             
             self.finished_loading.emit(MainWindow)
         except Exception as e:
+            # Enviamos el error pero NO cerramos aquí
             self.error.emit(str(e))
 
 def main():
-    # 1. Crear la instancia de la aplicación
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     app.setApplicationName("Redocnizer")
 
-    # --- LÓGICA DE PRIMERA EJECUCIÓN ---
     settings = QSettings("Redocnizer", "RedocnizerApp")
     is_first_run = settings.value("first_run_completed", "false") == "false"
     
-    # 2. Mostrar pantalla de carga
     splash = SplashScreen()
     
     if is_first_run:
@@ -64,7 +61,6 @@ def main():
     splash.raise_()
     app.processEvents()
     
-    # 3. Iniciar el trabajador de carga (PASANDO EL ARGUMENTO QUE FALTABA)
     worker = LoadingWorker(is_first_run)
     
     def on_finished(MainWindowClass):
@@ -72,21 +68,31 @@ def main():
             if hasattr(splash, 'status_label'):
                 splash.status_label.setText("Iniciando interfaz principal...")
             
-            # Guardamos que la primera configuración ya terminó
             settings.setValue("first_run_completed", "true")
             
-            window = MainWindowClass()
+            # Guardamos la ventana en una variable global o de app para que no desaparezca
+            app.main_window = MainWindowClass()
             splash.close()
-            window.show()
-            window.raise_()
+            app.main_window.show()
+            app.main_window.raise_()
         except Exception as e:
-            print(f"Error al instanciar ventana: {e}")
-            sys.exit(1)
+            # Si falla la ventana, avisamos pero no matamos el proceso de golpe
+            QMessageBox.critical(None, "Error de Interfaz", f"No se pudo abrir la ventana principal: {e}")
 
     def on_error(msg):
-        print(f"Error crítico de carga: {msg}")
-        splash.close()
-        sys.exit(1)
+        # QUITAMOS sys.exit(1). Ahora solo avisa.
+        print(f"⚠️ Advertencia de carga: {msg}")
+        
+        # Opcional: Mostrar un mensaje al usuario sin cerrar la app
+        # Esto permite que si el error fue por algo no vital (como un log de TF), la app siga.
+        if "MainWindow" not in msg: # Si el error no es que falte la ventana principal
+            splash.status_label.setText("Iniciando con advertencias...")
+            # Intentamos forzar la carga de la ventana de todos modos
+            try:
+                from ui.main_window import MainWindow
+                on_finished(MainWindow)
+            except:
+                QMessageBox.warning(None, "Advertencia de IA", f"La IA podría no funcionar correctamente: {msg}")
 
     worker.finished_loading.connect(on_finished)
     worker.error.connect(on_error)

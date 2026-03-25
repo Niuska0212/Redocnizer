@@ -69,17 +69,18 @@ class SupabaseManager:
 
     def upsert_full_record(self, row):
         try:
+            # 1. Extraer y limpiar datos básicos
             codigo = clean_int(row.get("CODIGO"))
             num = clean_int(row.get("NUM"))
             nombre_materia = clean_str(row.get("MATERIA"))
             crn = clean_int(row.get("CRN"))
 
             if not codigo or not num:
-                print(f"Registro omitido por falta de CODIGO o NUM")
+                print(f"⚠️ Registro omitido: Falta CODIGO ({codigo}) o NUM ({num})")
                 return
 
             # ======================
-            # 1. MAESTRO
+            # 1. MAESTRO (Conflicto en 'codigo')
             # ======================
             maestro_res = self.supabase.table("maestro").upsert({
                 "codigo": codigo,
@@ -90,82 +91,82 @@ class SupabaseManager:
                 "rfc": clean_str(row.get("RFC")),
                 "imss": clean_str(row.get("IMSS")),
                 "curp": clean_str(row.get("CURP"))
-            }, on_conflict="codigo", returning="representation").execute()
+            }, on_conflict="codigo").execute()
 
-            maestro_data = getattr(maestro_res, "data", [])
-            if not maestro_data:
-                raise Exception("Error insertando maestro")
+            # Si no devolvió datos (porque ya existía), lo buscamos por su código UNIQUE
+            if not maestro_res.data:
+                maestro_res = self.supabase.table("maestro").select("id_maestro").eq("codigo", codigo).execute()
             
-            id_maestro = maestro_data[0]["id_maestro"]
+            id_maestro = maestro_res.data[0]["id_maestro"]
 
             # ======================
-            # 2. MATERIA
+            # 2. MATERIA (Conflicto en 'crn')
             # ======================
             id_materia = None
-            if nombre_materia:
+            if crn:
                 mat_res = self.supabase.table("materia").upsert({
-                    "nombre": nombre_materia,
-                    "crn": crn
-                }, on_conflict="nombre").execute()
+                    "crn": crn,
+                    "nombre": nombre_materia
+                }, on_conflict="crn").execute()
 
-                mat_data = getattr(mat_res, "data", [])
-                if mat_data:
-                    id_materia = mat_data[0]["id_materia"]
+                if not mat_res.data:
+                    mat_res = self.supabase.table("materia").select("id_materia").eq("crn", crn).execute()
+                
+                if mat_res.data:
+                    id_materia = mat_res.data[0]["id_materia"]
 
             # ======================
-            # 3. CONTRATO
+            # 3. CONTRATO (Conflicto en 'num')
             # ======================
             contrato_res = self.supabase.table("contrato").upsert({
                 "num": num,
                 "id_maestro": id_maestro,
                 "id_materia": id_materia,
-                "desde": row.get("DESDE"),
-                "hasta": row.get("HASTA"),
-                "hrs_totales": row.get("HRS_TOTALES", 0)
-            }, on_conflict="num", returning="representation").execute()
+                "desde": str(row.get("DESDE", "")),
+                "hasta": str(row.get("HASTA", "")),
+                "hrs_totales": str(row.get("HRS_TOTALES", "0"))
+            }, on_conflict="num").execute()
 
-            contrato_data = getattr(contrato_res, "data", [])
-
-            if not contrato_data:
-                raise Exception("Error insertando contrato")
+            if not contrato_res.data:
+                contrato_res = self.supabase.table("contrato").select("id_contrato").eq("num", num).execute()
             
-            id_contrato = contrato_data[0]["id_contrato"]
+            id_contrato = contrato_res.data[0]["id_contrato"]
 
             # ======================
             # 4. DEPENDENCIAS
             # ======================
-            deps = [
-                row.get("DEPENDENCIA_1"),
-                row.get("DEPENDENCIA_2"),
-                row.get("DEPENDENCIA_3")
-            ]
-
-            self.supabase.table("contrato_dependencia").delete().eq("id_contrato", id_contrato).execute() 
+            deps = [row.get("DEPENDENCIA_1"), row.get("DEPENDENCIA_2"), row.get("DEPENDENCIA_3")]
+            
+            # Borrar relaciones previas para evitar duplicados en la tabla intermedia
+            self.supabase.table("contrato_dependencia").delete().eq("id_contrato", id_contrato).execute()
 
             for dep_nombre in deps:
-                if not dep_nombre or str(dep_nombre).strip() == "":
+                name_clean = clean_str(dep_nombre)
+                if not name_clean or name_clean.lower() in ["none", "nan", ""]:
                     continue
                 
-                # Insertar dependencia si no existe
-                dep_nombre = str(dep_nombre).strip()
-                
+                # Upsert en tabla dependencia (Conflicto en 'nombre' según tu SQL)
                 dep_res = self.supabase.table("dependencia").upsert(
-                    {"nombre": dep_nombre},
+                    {"nombre": name_clean}, 
                     on_conflict="nombre"
                 ).execute()
                 
-                dep_data = getattr(dep_res, "data", [])
-                if dep_data:
-                    dep_id = dep_data[0]["id_dependencia"]
+                if not dep_res.data:
+                    dep_res = self.supabase.table("dependencia").select("id_dependencia").eq("nombre", name_clean).execute()
 
+                if dep_res.data:
+                    dep_id = dep_res.data[0]["id_dependencia"]
+                    # Insertar en tabla intermedia contrato_dependencia
                     self.supabase.table("contrato_dependencia").insert({
                         "id_contrato": id_contrato,
                         "id_dependencia": dep_id
                     }).execute()
 
+            #print(f"✅ Sincronizado correctamente: Num {num}")
+
         except Exception as e:
-            print(f"Error en upsert_full_record: {e}")
-            raise
+            print(f"❌ Error en upsert_full_record (Num {row.get('NUM')}): {e}")
+            # No bloqueamos el bucle completo, permitimos que siga con el siguiente
         
     def sync_calendar_dataframe(self, df):
         """Sincroniza el DataFrame si hay internet."""
