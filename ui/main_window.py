@@ -293,18 +293,6 @@ class MainWindow(QMainWindow):
         tab = QWidget()
         main_layout = QVBoxLayout()
         
-        # -------- Grupo: Gestión y Búsqueda --------
-        config_group = QGroupBox("Gestión y Búsqueda")
-        config_layout = QVBoxLayout()
-        
-        # Barra de búsqueda integrada
-        search_layout = QHBoxLayout()
-        self.search_bar = QLineEdit()
-        self.search_bar.setPlaceholderText("🔍 Buscar contratos por nombre, ID o fecha...")
-        # Conectar con la lógica de filtrado
-        self.search_bar.textChanged.connect(self._on_search_query_changed)
-        search_layout.addWidget(self.search_bar)
-        config_layout.addLayout(search_layout)
         
         # -------- Grupo: Configuración --------
         config_group = QGroupBox("Configuración")
@@ -366,7 +354,7 @@ class MainWindow(QMainWindow):
         self.btn_load_calendar_data.setMaximumWidth(180)
         self.btn_load_calendar_data.clicked.connect(self.load_calendar_file)
 
-        self.btn_open_calendar_folder = QPushButton("Abrir carpeta del calendario")
+        self.btn_open_calendar_folder = QPushButton("Abrir carpeta CVS")
         self.btn_open_calendar_folder.setMaximumWidth(180)
         self.btn_open_calendar_folder.clicked.connect(self.open_calendar_folder)
 
@@ -1129,12 +1117,6 @@ class MainWindow(QMainWindow):
         contexto = current_data.nombre if (current_data and hasattr(current_data, 'nombre')) else calendar_name
         print(f"✅ Contexto listo: {contexto}")
             
-    def _on_search_query_changed(self, text):
-        """Lógica para filtrar los datos del DataTab desde la barra de búsqueda"""
-        if hasattr(self, 'data_tab'):
-            # Actualizar el campo de búsqueda en la pestaña de datos
-            self.data_tab.search_input.setText(text)
-            # Esto activará automáticamente apply_filter
             
     def closeEvent(self, event):
         """Se ejecuta al cerrar la ventana principal"""
