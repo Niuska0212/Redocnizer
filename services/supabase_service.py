@@ -179,4 +179,54 @@ class SupabaseManager:
             print(f"❌ Error en sincronización: {e}")
             return False
         
-    
+
+    def fetch_all_data(self):
+        """Recupera todos los registros de Supabase reconstruyendo la estructura del CSV."""
+        if not self.check_connection():
+            return None
+
+        try:
+            # Consulta con joins para traer info de maestro, materia y dependencias
+            # Nota: Ajusta los nombres de las columnas según tu esquema exacto
+            res = self.supabase.table("contrato").select(
+                "*, maestro(*), materia(*), contrato_dependencia(dependencia(nombre))"
+            ).execute()
+            
+            raw_data = res.data
+            if not raw_data:
+                return []
+
+            formatted_list = []
+            for item in raw_data:
+                maestro = item.get("maestro", {})
+                materia = item.get("materia", {})
+                
+                # Extraer nombres de dependencias
+                deps = [d["dependencia"]["nombre"] for d in item.get("contrato_dependencia", [])]
+                
+                # Reconstruir el diccionario con las llaves que espera DataManager
+                row = {
+                    "NUM": item.get("num"),
+                    "CODIGO": maestro.get("codigo"),
+                    "NOMBRE_S": maestro.get("nombre"),
+                    "PATERNO": maestro.get("paterno"),
+                    "MATERNO": maestro.get("materno"),
+                    "CURP": maestro.get("curp"),
+                    "RFC": maestro.get("rfc"),
+                    "IMSS": maestro.get("imss"),
+                    "TELEFONO": maestro.get("telefono"),
+                    "CRN": materia.get("crn"),
+                    "NOMBRE_MATERIA": materia.get("nombre"),
+                    "DESDE": item.get("desde"),
+                    "HASTA": item.get("hasta"),
+                    "HRS_TOTALES": item.get("hrs_totales"),
+                    "DEPENDENCIA_1": deps[0] if len(deps) > 0 else "",
+                    "DEPENDENCIA_2": deps[1] if len(deps) > 1 else "",
+                    "DEPENDENCIA_3": deps[2] if len(deps) > 2 else ""
+                }
+                formatted_list.append(row)
+                
+            return formatted_list
+        except Exception as e:
+            print(f"❌ Error al recuperar de la nube: {e}")
+            return None

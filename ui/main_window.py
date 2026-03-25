@@ -31,7 +31,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        self.setWindowTitle("REDOCNIZER - Gestión de Contratos CUCEI    V.1.1.1")
+        self.setWindowTitle("REDOCNIZER - Gestión de Contratos CUCEI    V.2.0.0")
         screen = QApplication.primaryScreen().geometry()
         width = screen.width() * 0.65  
         height = screen.height() * 0.52
@@ -60,7 +60,6 @@ class MainWindow(QMainWindow):
         
         # CONFIGURACION DE MEMORIA (QSettings)
         self.settings = QSettings("Redocnizer", "RedocnizerApp")
-        self.setAttribute(Qt.WA_TranslucentBackground)
         
         # -----------------------------------------
         # ESTADO DE LA APLICACIÓN
@@ -100,8 +99,10 @@ class MainWindow(QMainWindow):
         # Se asegura contraste de texto oscuro sobre fondos claros para legibilidad
         self.setStyleSheet("""
             /* Colores base */
-            QMainWindow { background-color: rgba(246, 248, 251, 240);  
-            color: #0b2545; }
+            QMainWindow { 
+                background-color: #f6f8fb;  
+                color: #0b2545; 
+            }
 
             /* Barra de menú */
             QMenuBar { background: #f6f8fb;; color: #0b2545; }
