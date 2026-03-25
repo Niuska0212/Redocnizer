@@ -433,6 +433,6 @@ cat logs/redocnizer.log
 
 ---
 
-**Versión**: 1.1.1
-**Última actualización**: 16 de febrero de 2026
+**Versión**: 2.0.1
+**Última actualización**: 24 de febrero de 2026
 

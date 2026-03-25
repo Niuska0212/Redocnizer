@@ -336,6 +336,12 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
             
             # Restaurar dataframe original
             data_df = data_df_original
+        
+    if 'HRS_TOTALES' not in dynamic_rois or dynamic_rois['HRS_TOTALES'] is None:
+        if 'CRN' in dynamic_rois and 'DESDE' in dynamic_rois:
+            roi_proximidad = get_hours_by_proximity(data_df, dynamic_rois['CRN'], dynamic_rois['DESDE'])
+            if roi_proximidad:
+                dynamic_rois['HRS_TOTALES'] = roi_proximidad
 
     return dynamic_rois
 
@@ -699,4 +705,41 @@ def get_code_by_proximity(df, anchor_roi, horizontal_threshold=35):
             best = real_candidates.sort_values(by='dist').iloc[0]
             return [int(best['top'] - 5), int(best['left'] - 5), 40, int(best['width'] + 10)]
     
+    return None
+
+
+
+def get_hours_by_proximity(df, crn_roi, desde_roi):
+    """
+    Busca el dato de horas que se encuentra físicamente entre CRN y DESDE.
+    """
+    if df.empty or not crn_roi or not desde_roi:
+        return None
+
+    # Coordenadas de las anclas: [y, x, h, w]
+    x_limit_left = crn_roi[1] + crn_roi[3]  # Donde termina CRN
+    x_limit_right = desde_roi[1]             # Donde empieza DESDE
+    y_center_reference = crn_roi[0] + (crn_roi[2] / 2)
+    
+    # Margen de tolerancia vertical (píxeles)
+    v_tolerance = 20 
+
+    # Buscar candidatos en esa "caja" virtual entre ambas etiquetas
+    candidates = df[
+        (df['left'] >= x_limit_left - 10) & 
+        (df['left'] + df['width'] <= x_limit_right + 50) &
+        (df['top'] + (df['height']/2) >= y_center_reference - v_tolerance) &
+        (df['top'] + (df['height']/2) <= y_center_reference + v_tolerance)
+    ].copy()
+
+    if not candidates.empty:
+        # Limpiar y verificar si el texto parece un número (horas)
+        candidates['clean'] = candidates['text'].apply(lambda x: re.sub(r'[^\d\.]', '', str(x)))
+        valid = candidates[candidates['clean'].str.len() > 0]
+        
+        if not valid.empty:
+            # Tomar el que esté más al centro o el primero detectado
+            best = valid.iloc[0]
+            return [int(best['top'] - 5), int(best['left'] - 5), 40, int(best['width'] + 10)]
+            
     return None

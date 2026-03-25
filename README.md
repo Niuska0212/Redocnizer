@@ -107,7 +107,7 @@ redocnizer/
 ├── services/             # Servicios (OCR, PDF, Firebase, Drive)
 │   ├── ocr_service.py
 │   ├── pdf_service.py
-│   ├── firebase_service.py
+│   ├── supabase_service.py
 │   ├── google_drive_service.py
 │   ├── api_server.py
 │   └── ...
@@ -170,8 +170,8 @@ Ver [GUIA_USO.md](docs/GUIA_USO.md) para guía completa.
 Crear archivo `.env` en la raíz:
 ```env
 GOOGLE_DRIVE_CREDENTIALS=path/to/credentials.json
-FIREBASE_URL=https://tu-firebase.firebaseio.com
-FIREBASE_KEY=tu-clave-privada
+SUPABASE_URL=https://tu-firebase.supabase.co
+SUPABASE_KEY=tu-clave-privada
 ```
 
 ### Modelos Personalizados
@@ -201,7 +201,7 @@ Para reportar problemas o sugerencias:
 
 ---
 
-**Versión**: 1.1.1
-**Última actualización**: 16 de febrero de 2026  
+**Versión**: 2.0.1
+**Última actualización**: 24 de febrero de 2026  
 **Estado**: En desarrollo activo
 

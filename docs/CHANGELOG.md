@@ -35,7 +35,7 @@ Todos los cambios notables en este proyecto serán documentados en este archivo.
   - Base de datos SQLite local
 - ☁️ Sincronización en la nube:
   - Integración con Google Drive
-  - Integración con Firebase Realtime Database
+  - Integración con supabase Realtime Database
   - Almacenamiento distribuido
 - 📋 Gestión de datos:
   - Visualización en tabla
@@ -209,5 +209,5 @@ Ver [CONTRIBUYENDO.md](CONTRIBUYENDO.md) para cómo participar.
 ---
 
 **Versionado Semántico**: MAJOR.MINOR.PATCH  
-**Última actualización**: 16 de febrero de 2026
+**Última actualización**: 24 de febrero de 2026
 

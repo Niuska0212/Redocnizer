@@ -119,6 +119,7 @@ redocnizer/
 │   ├── file_service.py             # Gestión de archivos
 │   ├── concurrent_worker.py        # Gestion de hilos
 │   ├── google_drive_service.py     # Integración Google Drive
+│   ├── supabase_service.py         # Integración base de datos
 │   └── __pycache__/
 │
 ├── 📁 models/                      # Modelos ML entrenados
@@ -656,6 +657,6 @@ redocnizer-1.0.0-setup.exe
 
 ---
 
-**Arquitectura versión**: 1.1.1  
-**Última actualización**: 16 de febrero de 2026
+**Arquitectura versión**: 2.0.1
+**Última actualización**: 24 de febrero de 2026
 

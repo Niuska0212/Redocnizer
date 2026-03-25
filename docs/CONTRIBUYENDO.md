@@ -420,6 +420,6 @@ R: NO abras un issue. Email a: niuska.gonzalez5462@alumnos.udg.mx o luis.uribe08
 
 **Gracias por contribuir a REDOCNIZER** 🙌
 
-Versión: 1.1.1  
-Última actualización: 16 de febrero de 2026
+Versión: 2.0.1
+Última actualización: 24 de febrero de 2026
 

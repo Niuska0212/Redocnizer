@@ -5,6 +5,7 @@ import socket
 from dotenv import load_dotenv
 from supabase import create_client, Client
 import math
+import pandas as pd
 
 load_dotenv()
 
@@ -171,8 +172,12 @@ class SupabaseManager:
         if not self.check_connection():
             return False
 
+        # --- AÑADE ESTA LÍNEA AQUÍ ---
+        # Reemplaza NaN por None (que sí es compatible con JSON/Null)
+        df_sync = df.where(pd.notnull(df), None) 
+
         try:
-            for _, row in df.iterrows():
+            for _, row in df_sync.iterrows(): # Usa el nuevo df_sync
                 self.upsert_full_record(row)
             return True
         except Exception as e:
