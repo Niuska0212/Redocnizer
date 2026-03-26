@@ -24,7 +24,7 @@ class ConcurrentOCRWorker(QThread):
     all_finished = Signal(int, int, list)  # (exitosos, fallidos, lista_total)
     error = Signal(str)                    # Mensaje de error crítico
 
-    def __init__(self, file_paths, calendar, controller, drive_service=None):
+    def __init__(self, file_paths, calendar, controller, drive_service=None, supabase_manager=None):
         """
         Inicializa el trabajador con la carga de archivos.
         
@@ -38,7 +38,9 @@ class ConcurrentOCRWorker(QThread):
         self.calendar = calendar
         self.controller = controller
         self.drive_service = drive_service
+        self.supabase_manager = supabase_manager # <--- NUEVO
         self._is_running = True
+        self._semaphore = threading.Semaphore(4)
         
         # Punto 3.1.4: Gestión de recursos de hardware
         # Limitamos a 4 hilos para no saturar la memoria VRAM/RAM con modelos de IA
@@ -60,51 +62,62 @@ class ConcurrentOCRWorker(QThread):
     def process_single_file(self, fp):
         """
         Ejecuta el proceso pesado de un solo archivo.
-        Actualizado para manejar nombres de CSV dinámicos (Ej: 2024A.csv).
+        Actualizado para subir a Supabase en tiempo real según el calendario detectado.
         """
         if not self._is_running:
             return None
 
-        # Nombre del archivo original que se está procesando (el PDF)
         nombre_original = os.path.basename(fp)
 
         with self._semaphore:
             try:
-                # Invocación de la lógica de negocio
+                # 1. Invocación de la lógica de negocio (OCR y detección de calendario)
                 res = self.controller.process_uploaded_file(
                     file_path=fp, 
                     calendar=self.calendar
                 )
                 
                 final_path = res.get("final_path", "N/A")
-                
-                # Subida en background a Drive
+                data_detectada = res.get("data", {}) # Datos del contrato (NUM, CODIGO, etc.)
+
+                # =========================================================
+                # NUEVO: SINCRONIZACIÓN CON SUPABASE (EN TIEMPO REAL)
+                # =========================================================
+                # Accedemos al manager que debería estar en el controller o pasado al worker
+                if self.supabase_manager and self.supabase_manager.enabled:
+                    if data_detectada and data_detectada.get("NUM"):
+                        try:
+                            # Subimos directamente el registro detectado
+                            self.supabase_manager.upsert_full_record(data_detectada)
+                            print(f"☁️ Supabase: Contrato {data_detectada.get('NUM')} subido con éxito.")
+                        except Exception as e_supa:
+                            print(f"⚠️ Error al subir a Supabase: {e_supa}")
+
+                # =========================================================
+                # SUBIDA A DRIVE (TU CÓDIGO ACTUAL MEJORADO)
+                # =========================================================
                 if self.drive_service and final_path and final_path != "N/A":
                     try:
-                        data = res.get("data", {})
-                        paterno = data.get("PATERNO", "")
-                        materno = data.get("MATERNO", "")
-                        nombre_s = data.get("NOMBRE_S", "")
+                        paterno = data_detectada.get("PATERNO", "")
+                        materno = data_detectada.get("MATERNO", "")
+                        nombre_s = data_detectada.get("NOMBRE_S", "")
                         nombre_maestro = f"{paterno} {materno} {nombre_s}".strip().replace("  ", " ")
                         
                         if not nombre_maestro.strip():
                             nombre_maestro = "Sin_Nombre"
 
-                        # --- CORRECCIÓN AQUÍ ---
-                        # Obtenemos el nombre real del archivo generado (ej: '2024A.csv')
                         nombre_generado = os.path.basename(final_path).lower()
 
-                        # En lugar de comparar contra "contratos.csv", revisamos si es el CSV del calendario
                         if nombre_generado.endswith('.csv'):
-                            # Subir la base de datos a la raíz del proyecto en Drive
+                            # Subir el CSV de la base de datos local
                             self.drive_service.upload_to_path(
                                 final_path, 
                                 drive_root='Redocnizer', 
-                                calendar=self.calendar, # Esto asegura que use el nombre del ciclo
+                                calendar=self.calendar, 
                                 subfolder_path=""
                             )
                         else:
-                            # Subir el contrato PDF a la carpeta del maestro
+                            # Subir el PDF procesado
                             self.drive_service.upload_to_path(
                                 final_path,
                                 drive_root='Redocnizer',
@@ -112,15 +125,20 @@ class ConcurrentOCRWorker(QThread):
                                 subfolder_path=f"Maestros/{nombre_maestro}"
                             )
                     except Exception as e:
-                        print(f"Advertencia: no se pudo subir a Drive {final_path}: {e}")
-                gc.collect()  # Liberar memoria después de cada archivo procesado
+                        print(f"Advertencia Drive: no se pudo subir {final_path}: {e}")
+
+                import gc
+                gc.collect()  # Mantener los 16GB de RAM limpios
+                
                 return {
                     "status": "success",
                     "file": nombre_original,
                     "path": final_path,
-                    "data": res.get("data")
+                    "data": data_detectada
                 }
+
             except Exception as e:
+                print(f"❌ Error crítico en archivo {nombre_original}: {e}")
                 return {
                     "status": "error",
                     "file": nombre_original,

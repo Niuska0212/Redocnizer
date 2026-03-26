@@ -100,37 +100,61 @@ class SupabaseManager:
             id_maestro = maestro_res.data[0]["id_maestro"]
 
             # ======================
-            # 2. MATERIA (Conflicto en 'crn')
+            # 1. MAESTRO 
+            # ======================
+            maestro_data = {
+                "codigo": codigo,
+                "nombre": clean_str(row.get("NOMBRE_S")),
+                "paterno": clean_str(row.get("PATERNO")),
+                "materno": clean_str(row.get("MATERNO")),
+                "telefono": clean_str(row.get("TELEFONO")),
+                "rfc": clean_str(row.get("RFC")),
+                "imss": clean_str(row.get("IMSS")),
+                "curp": clean_str(row.get("CURP"))
+            }
+            # IMPORTANTE: on_conflict debe ser la columna con el UNIQUE
+            res = self.supabase.table("maestro").upsert(maestro_data, on_conflict="codigo").execute()
+            
+            # PROTECCIÓN: Si no devuelve data, lo buscamos manualmente
+            if not res.data:
+                res = self.supabase.table("maestro").select("id_maestro").eq("codigo", codigo).execute()
+            
+            if not res.data: return # Si sigue sin haber nada, algo falló grave
+            id_maestro = res.data[0]["id_maestro"]
+
+            # ======================
+            # 2. MATERIA
             # ======================
             id_materia = None
             if crn:
-                mat_res = self.supabase.table("materia").upsert({
+                res_mat = self.supabase.table("materia").upsert({
                     "crn": crn,
                     "nombre": nombre_materia
                 }, on_conflict="crn").execute()
-
-                if not mat_res.data:
-                    mat_res = self.supabase.table("materia").select("id_materia").eq("crn", crn).execute()
                 
-                if mat_res.data:
-                    id_materia = mat_res.data[0]["id_materia"]
+                if not res_mat.data:
+                    res_mat = self.supabase.table("materia").select("id_materia").eq("crn", crn).execute()
+                
+                if res_mat.data:
+                    id_materia = res_mat.data[0]["id_materia"]
 
             # ======================
-            # 3. CONTRATO (Conflicto en 'num')
+            # 3. CONTRATO
             # ======================
-            contrato_res = self.supabase.table("contrato").upsert({
+            contrato_data = {
                 "num": num,
                 "id_maestro": id_maestro,
                 "id_materia": id_materia,
                 "desde": str(row.get("DESDE", "")),
                 "hasta": str(row.get("HASTA", "")),
                 "hrs_totales": str(row.get("HRS_TOTALES", "0"))
-            }, on_conflict="num").execute()
-
-            if not contrato_res.data:
-                contrato_res = self.supabase.table("contrato").select("id_contrato").eq("num", num).execute()
+            }
+            res_con = self.supabase.table("contrato").upsert(contrato_data, on_conflict="num").execute()
             
-            id_contrato = contrato_res.data[0]["id_contrato"]
+            if not res_con.data:
+                res_con = self.supabase.table("contrato").select("id_contrato").eq("num", num).execute()
+            
+            id_contrato = res_con.data[0]["id_contrato"]
 
             # ======================
             # 4. DEPENDENCIAS

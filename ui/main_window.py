@@ -959,7 +959,8 @@ class MainWindow(QMainWindow):
             file_paths=files, 
             calendar=calendar, 
             controller=self.controller,
-            drive_service=drive_service
+            drive_service=drive_service,
+            supabase_manager=self.supabase_manager
         )
 
         # 4. CONECTAR LAS SEÑALES (Protocolo de comunicación interna)
