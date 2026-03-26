@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout, QLineEdit, QProgressBar, QListWidget, 
     QListWidgetItem, QApplication, QTabWidget, QTableWidget,
     QTableWidgetItem, QHeaderView, QAbstractItemView, QStyleFactory,
-    QTextEdit, QGroupBox, QSpinBox, QCheckBox, QSplitter, QDialog
+    QTextEdit, QGroupBox, QSpinBox, QCheckBox, QSplitter, QDialog, QScrollArea, QFrame
 )
 from PySide6.QtCore import Qt, QTimer, Signal, QObject, QSettings
 from PySide6.QtGui import QPixmap, QFont, QColor, QBrush, QIcon
@@ -264,6 +264,16 @@ class MainWindow(QMainWindow):
     
 
     def _build_ui(self):
+        # 1. Creamos el Scroll Area
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True) # Importante: para que se estire con la ventana
+        self.scroll_area.setFrameShape(QFrame.NoFrame) # Para que no se vea un borde extra feo
+
+        # 2. Creamos el Widget que contendrá todo (el "lienzo")
+        self.container_widget = QWidget()
+        self.container_layout = QVBoxLayout(self.container_widget)
+        self.container_layout.setContentsMargins(0, 0, 0, 0)
+        
         # Widget principal con pestañas
         self.tabs = QTabWidget()
         
