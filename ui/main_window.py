@@ -1218,3 +1218,11 @@ class MainWindow(QMainWindow):
         else:
             # Si falló (probablemente por internet)
             self.statusBar().showMessage("📡 Trabajando local (Sin conexión a la nube)", 3000)
+            
+            
+            
+            
+            
+            
+            
+#

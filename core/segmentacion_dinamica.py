@@ -7,7 +7,7 @@ import pandas as pd
 import re
 import numpy as np
 import easyocr
-from tensorflow.keras import backend as K 
+#from tensorflow.keras import backend as K 
 from difflib import SequenceMatcher # Necesario para calcular la similitud (Levenshtein)
 from PIL import Image, ImageDraw, ImageFont
 

@@ -28,7 +28,7 @@ class LoadingWorker(QThread):
             # 1. Configuración de entorno
             os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
             
-            import tensorflow as tf
+            #import tensorflow as tf
             import easyocr
             
             # 2. Inicializar EasyOCR

@@ -7,11 +7,11 @@ import pandas as pd
 import re
 import numpy as np
 import easyocr
-from tensorflow.keras import backend as K 
+#from tensorflow.keras import backend as K 
 from difflib import SequenceMatcher # Necesario para calcular la similitud (Levenshtein)
 from PIL import Image, ImageDraw, ImageFont
 from .segmentacion_dinamica import get_dynamic_rois, clean_data_by_field, clean_border_chars, validate_field_format, clean_name_specific, procesar_bloque_dependencias, EMPTY_DATA_PLACEHOLDER
-from .CRNN_inference import load_inference_model
+#from .CRNN_inference import load_inference_model
 from .preprocessing import prepare_roi_for_ocr, invert_image_color, rotate_image, enhance_for_easyocr
 from PySide6.QtCore import QSettings
 
@@ -32,17 +32,17 @@ RUTA_SALIDA_CSV = os.path.join(BASE_DIR, "datos_extraidos_contratos.csv")
 # === FUNCIÓN DE DECODIFICACIÓN (Local para evitar errores de importación) ===
 # =========================================================================
 
-def decode_batch_predictions(y_pred_probs, index_to_char, output_sequence_length):
-    """Decodifica las predicciones del modelo usando CTC."""
-    input_len = np.full(y_pred_probs.shape[0], output_sequence_length)
-    # K.ctc_decode requiere la importación 'import tensorflow.keras.backend as K'
-    results = K.ctc_decode(y_pred_probs, input_length=input_len, greedy=True)[0][0]
+# def decode_batch_predictions(y_pred_probs, index_to_char, output_sequence_length):
+#     """Decodifica las predicciones del modelo usando CTC."""
+#     input_len = np.full(y_pred_probs.shape[0], output_sequence_length)
+#     # K.ctc_decode requiere la importación 'import tensorflow.keras.backend as K'
+#     results = K.ctc_decode(y_pred_probs, input_length=input_len, greedy=True)[0][0]
     
-    decoded_words = []
-    for seq in K.get_value(results):
-        word = "".join([index_to_char[idx] for idx in seq if idx != -1])
-        decoded_words.append(word.strip())
-    return decoded_words
+#     decoded_words = []
+#     for seq in K.get_value(results):
+#         word = "".join([index_to_char[idx] for idx in seq if idx != -1])
+#         decoded_words.append(word.strip())
+#     return decoded_words
 
 
 
@@ -163,167 +163,96 @@ def read_with_easyocr(roi_image: np.ndarray) -> str:
         return ""
 
 
-def extract_data_from_image(image_path, modelo_inferencia, index_to_char, output_sequence_length, output_dir_preview):
+def extract_data_from_image(image_path, output_dir_preview):
     """
-    Coordina la extracción de datos usando el CRNN y EasyOCR con validación híbrida.
-    Implementa lógica de reintento: 0. Original -> 1. Invertida -> 2. Rotada
+    Versión Ágil: Extrae datos usando exclusivamente EasyOCR con lógica de 
+    pre-procesamiento dinámico y reintentos.
     """
     
     img_full_original = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
     if img_full_original is None:
-        return {'Archivo': os.path.basename(image_path)}, f"Error: No se pudo cargar la imagen {os.path.basename(image_path)}"
+        return {'Archivo': os.path.basename(image_path)}, f"Error: No se pudo cargar la imagen"
 
-    extracted_data_list = []
-    
-    # Parámetros de la lógica de reintento
+    # Parámetros de control
     MIN_REQUIRED_FIELDS = 10 
+    best_attempt_data = None
+    max_score = -1
     
-    current_img = img_full_original
-    
-    # Bucle de 3 intentos: 0: Original, 1: Invertida, 2: Rotada
-    for attempt in range(3): 
+    # Bucle de intentos: 0: Original, 1: Invertida, 2: Rotada
+    for attempt in range(3):
+        current_img = img_full_original.copy()
         
-        # Lógica de pre-procesamiento por intento
+        # --- PRE-PROCESAMIENTO POR INTENTO ---
         if attempt == 1:
-            if extracted_data_list and len([v for v in extracted_data_list[0].values() if v and str(v) != EMPTY_DATA_PLACEHOLDER]) >= MIN_REQUIRED_FIELDS:
-                break
-            print(f"  [REINTENTO 1] Imagen invertida para {os.path.basename(image_path)}")
-            current_img = invert_image_color(img_full_original)
-        
+            current_img = cv2.bitwise_not(current_img) # Invertir colores
         elif attempt == 2:
-            if extracted_data_list and len([v for v in extracted_data_list[0].values() if v and str(v) != EMPTY_DATA_PLACEHOLDER]) >= MIN_REQUIRED_FIELDS:
-                break
-            print(f"  [REINTENTO 2] Imagen rotada 2 grados para {os.path.basename(image_path)}")
+            # Rotación ligera para corregir desalineación del escáner
             current_img = rotate_image(img_full_original, 2.0) 
 
-        # --- PRE-PROCESAMIENTO DE REGIONES DE INTERÉS (ROIS) ---
+        # --- LOCALIZACIÓN DE REGIONES (ROIs) ---
         rois_dinamicas = get_dynamic_rois(current_img)
         img_height, img_width = current_img.shape[:2]
         
-        # --- VISUALIZACIÓN (Solo con el primer intento exitoso de ROI) ---
-        if attempt == 0 and output_dir_preview:
-            img_color = cv2.cvtColor(current_img, cv2.COLOR_GRAY2BGR)
-            COLORS = {'NOMBRE_COMPLETO_RAW': (0, 0, 255), 'DEPENDENCIA': (255, 0, 0), 'SIMPLE_FIELD': (0, 255, 0)}
-            
-            for field_name, (y, x, h, w) in rois_dinamicas.items():
-                color = COLORS.get(field_name, COLORS['SIMPLE_FIELD'])
-                if 'DEPENDENCIA' in field_name: color = COLORS['DEPENDENCIA']
-                cv2.rectangle(img_color, (int(x), int(y)), (int(x + w), int(y + h)), color, 2)
-                cv2.putText(img_color, field_name, (int(x), max(0, int(y) - 5)), cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
-
-            save_path = os.path.join(output_dir_preview, "Viz_" + os.path.basename(image_path))
-            cv2.imwrite(save_path, img_color)
-        
-        # --- EXTRACCIÓN OCR POR ROI ---
         all_extracted_data = {}
+        
+        # --- EXTRACCIÓN CON EASYOCR ---
         for field_name, roi_data in rois_dinamicas.items():
-            if not isinstance(roi_data, (list, tuple)) or len(roi_data) != 4:
-                all_extracted_data[field_name] = ""
-                continue
-
             y, x, h, w = roi_data
-            y_start, x_start = max(0, int(y)), max(0, int(x))
-            y_end, x_end = min(img_height, int(y + h)), min(img_width, int(x + w))
+            # Ajuste de coordenadas de seguridad
+            y_s, x_s = max(0, int(y)), max(0, int(x))
+            y_e, x_e = min(img_height, int(y + h)), min(img_width, int(x + w))
 
-            # Ajuste de márgenes para campos específicos
-            if 'DEPENDENCIA' in field_name or field_name in ['CURP', 'RFC', 'IMSS']:
-                min_w, min_h = 150, 25
-            else:
-                min_w, min_h = 12, 12
-                
-            if (x_end - x_start) < min_w:
-                extra = (min_w - (x_end - x_start)) // 2 + 5
-                x_start, x_end = max(0, x_start - extra), min(img_width, x_end + extra)
-            if (y_end - y_start) < min_h:
-                extra = (min_h - (y_end - y_start)) // 2 + 5
-                y_start, y_end = max(0, y_start - extra), min(img_height, y_end + extra)
-
-            roi_image = current_img[y_start:y_end, x_start:x_end]
+            roi_image = current_img[y_s:y_e, x_s:x_e]
             if roi_image.size == 0:
                 all_extracted_data[field_name] = ""
                 continue
             
-            # --- Lógica de Lectura ---
-            if 'DEPENDENCIA' in field_name or field_name in ['CURP', 'RFC', 'IMSS']:
-                try:
-                    roi_for_easy = enhance_for_easyocr(roi_image)
-                    final_result = read_with_easyocr(roi_for_easy).upper().strip()
-                except: final_result = ""
-            else:
-                # Híbrido CRNN + EasyOCR
-                ocr_result_base = ""
-                try:
-                    X_input = prepare_roi_for_ocr(roi_image)
-                    y_pred_probs = modelo_inferencia.predict(X_input, verbose=0)
-                    pred_words_crnn = decode_batch_predictions(y_pred_probs, index_to_char, output_sequence_length)
-                    ocr_result_base = pred_words_crnn[0].upper().strip() if pred_words_crnn else ""
-                except: ocr_result_base = ""
+            # Mejora de imagen específica para EasyOCR (Filtros rápidos)
+            roi_prepared = enhance_for_easyocr(roi_image)
+            
+            # LECTURA DIRECTA (Se eliminó modelo_inferencia.predict y decode_batch)
+            try:
+                # Leemos y pasamos a mayúsculas
+                raw_text = read_with_easyocr(roi_prepared).upper().strip()
+            except:
+                raw_text = ""
 
-                try:
-                    roi_for_easy = enhance_for_easyocr(roi_image) 
-                    ocr_result_refuerzo = read_with_easyocr(roi_for_easy).upper().strip()
-                except: ocr_result_refuerzo = ""
-
-                # Selección
-                final_result = ocr_result_base or ocr_result_refuerzo
-                if ocr_result_base and ocr_result_refuerzo:
-                    if SequenceMatcher(None, ocr_result_base, ocr_result_refuerzo).ratio() < 0.60:
-                        final_result = ocr_result_refuerzo
-
-            # Limpieza y Validación individual
-            final_result = clean_border_chars(final_result)
-            cleaned_value = clean_data_by_field(field_name, final_result)
+            # Limpieza y Validación
+            cleaned_value = clean_data_by_field(field_name, clean_border_chars(raw_text))
             all_extracted_data[field_name] = validate_field_format(field_name, cleaned_value)
 
-        # --- POSTPROCESAMIENTO DE RESULTADOS ---
+        # --- CONSOLIDACIÓN DE RESULTADOS ---
         extracted_data = {'Archivo': os.path.basename(image_path)}
         
-        # 1. Bloque de dependencias
-        solo_deps_raw = {k: all_extracted_data.get(k, "") for k in ["DEPENDENCIA_1", "DEPENDENCIA_2", "DEPENDENCIA_3"]}
-        deps_corregidas = procesar_bloque_dependencias(solo_deps_raw)
+        # Procesar bloques complejos (Dependencias y Nombres)
+        solo_deps = {k: all_extracted_data.get(k, "") for k in ["DEPENDENCIA_1", "DEPENDENCIA_2", "DEPENDENCIA_3"]}
+        deps_corregidas = procesar_bloque_dependencias(solo_deps)
         
-        # 2. Mapeo final
         for key, value in all_extracted_data.items():
             if key.startswith('DEPENDENCIA'):
                 extracted_data[key] = deps_corregidas.get(key, value)
             elif key == 'NOMBRE_COMPLETO_RAW':
                 name_parts = split_full_name(value)
-                for nk in name_parts: name_parts[nk] = clean_name_specific(name_parts[nk])
-                extracted_data.update(name_parts)
+                extracted_data.update({nk: clean_name_specific(nv) for nk, nv in name_parts.items()})
             else:
                 extracted_data[key] = value
 
-        # Asegurar campos básicos de nombre
-        for k in ['PATERNO', 'MATERNO', 'NOMBRE_S']:
-            if k not in extracted_data: extracted_data[k] = ''
-        
-        extracted_data_list.append(extracted_data)
+        # --- EVALUACIÓN RÁPIDA ---
+        # Contamos cuántos campos tienen información real
+        score = sum(1 for k, v in extracted_data.items() 
+                if v and str(v).strip() and str(v) != EMPTY_DATA_PLACEHOLDER 
+                and k not in ['Archivo', 'PATERNO', 'MATERNO', 'NOMBRE_S', 'NOMBRE_COMPLETO_RAW'])
 
-        # --- EVALUACIÓN DEL INTENTO ---
-        score = 0
-        for k, v in extracted_data.items():
-            if k in ['Archivo', 'PATERNO', 'MATERNO', 'NOMBRE_S', 'NOMBRE_COMPLETO_RAW']: continue
-            if v and str(v).strip() and str(v) != EMPTY_DATA_PLACEHOLDER:
-                if k == 'NUM':
-                    if len(re.sub(r'[^0-9]', '', str(v))) == 7: score += 1
-                else: score += 1
-
-        print(f"  Intento {attempt + 1}: {score} campos válidos.")
+        # Si el resultado es muy bueno, retornamos de inmediato (Early Exit)
         if score >= MIN_REQUIRED_FIELDS:
             return extracted_data, None
-            
-    # Si no se llegó al mínimo, elegir el mejor intento
-    if extracted_data_list:
-        best_idx = 0
-        max_score = -1
-        for idx, data in enumerate(extracted_data_list):
-            current_score = sum(1 for k, v in data.items() if v and str(v).strip() and str(v) != EMPTY_DATA_PLACEHOLDER)
-            if current_score > max_score:
-                max_score = current_score
-                best_idx = idx
-        return extracted_data_list[best_idx], None
-    
-    return {'Archivo': os.path.basename(image_path)}, "No se detectaron datos."
+        
+        # Si no, guardamos el mejor hasta ahora para comparar con el siguiente reintento
+        if score > max_score:
+            max_score = score
+            best_attempt_data = extracted_data
+
+    return best_attempt_data if best_attempt_data else ({'Archivo': os.path.basename(image_path)}, "No se detectaron datos.")
 
 
 
@@ -338,59 +267,59 @@ def clean_and_recreate_directory(dir_path):
 # === FUNCIÓN PRINCIPAL ===
 # =========================================================================
 
-def main():
-    # Cargar el modelo CRNN (Tu base de conocimiento)
-    modelo_inferencia, index_to_char, output_sequence_length = load_inference_model()
-    if modelo_inferencia is None:
-        print("\nEl programa no puede continuar sin el modelo de inferencia.")
-        return
+# def main():
+#     # Cargar el modelo CRNN (Tu base de conocimiento)
+#     modelo_inferencia, index_to_char, output_sequence_length = load_inference_model()
+#     if modelo_inferencia is None:
+#         print("\nEl programa no puede continuar sin el modelo de inferencia.")
+#         return
     
-    clean_and_recreate_directory(RUTA_PREVIEW)
+#     clean_and_recreate_directory(RUTA_PREVIEW)
 
-    # Preparar el proceso de extracción
-    all_files = [f for f in os.listdir(RUTA_IMAGENES) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+#     # Preparar el proceso de extracción
+#     all_files = [f for f in os.listdir(RUTA_IMAGENES) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
 
-    if len(all_files) > 50:
-        all_files = random.sample(all_files, 50)  # Para pruebas, limitar a 100 imágenes
-    all_data = []
+#     if len(all_files) > 50:
+#         all_files = random.sample(all_files, 50)  # Para pruebas, limitar a 100 imágenes
+#     all_data = []
 
-    print(f"\nIniciando extracción híbrida de datos de {len(all_files)} documentos...")
+#     print(f"\nIniciando extracción híbrida de datos de {len(all_files)} documentos...")
 
-    for i, file_name in enumerate(all_files):
-        image_path = os.path.join(RUTA_IMAGENES, file_name)
+#     for i, file_name in enumerate(all_files):
+#         image_path = os.path.join(RUTA_IMAGENES, file_name)
         
-        data, error = extract_data_from_image(
-            image_path, 
-            modelo_inferencia, 
-            index_to_char, 
-            output_sequence_length,
-            RUTA_PREVIEW
-        )
+#         data, error = extract_data_from_image(
+#             image_path, 
+#             modelo_inferencia, 
+#             index_to_char, 
+#             output_sequence_length,
+#             RUTA_PREVIEW
+#         )
 
-        if data:
-            all_data.append(data)
+#         if data:
+#             all_data.append(data)
         
-        if error:
-            print(f"Error procesando {file_name}: {error}")
+#         if error:
+#             print(f"Error procesando {file_name}: {error}")
 
-        if (i + 1) % 50 == 0 or (i + 1) == len(all_files):
-            print(f"-> {i + 1}/{len(all_files)} documentos procesados.")
+#         if (i + 1) % 50 == 0 or (i + 1) == len(all_files):
+#             print(f"-> {i + 1}/{len(all_files)} documentos procesados.")
 
-    # Guardar los resultados
-    if all_data:
-        df = pd.DataFrame(all_data)
+#     # Guardar los resultados
+#     if all_data:
+#         df = pd.DataFrame(all_data)
 
-        # Orden Exacto de las columnas en el CSV
-        columnas_ordenadas = ['Archivo', 'PATERNO', 'MATERNO', 'NOMBRE_S', 'NUM', 'CODIGO', 'RFC', 'IMSS', 'CURP', 'TELEFONO', 'CRN', 'HORAS', 'MATERIA' , 'DESDE', 'HASTA', 'DEPENDENCIA_1', 'DEPENDENCIA_2', 'DEPENDENCIA_3']
-        # 2. Reorganizamos el DataFrame, asegurando las columas que puedan faltar en 'all_data'
-        existing_columns = [col for col in columnas_ordenadas if col in df.columns]
-        df = df[existing_columns]
+#         # Orden Exacto de las columnas en el CSV
+#         columnas_ordenadas = ['Archivo', 'PATERNO', 'MATERNO', 'NOMBRE_S', 'NUM', 'CODIGO', 'RFC', 'IMSS', 'CURP', 'TELEFONO', 'CRN', 'HORAS', 'MATERIA' , 'DESDE', 'HASTA', 'DEPENDENCIA_1', 'DEPENDENCIA_2', 'DEPENDENCIA_3']
+#         # 2. Reorganizamos el DataFrame, asegurando las columas que puedan faltar en 'all_data'
+#         existing_columns = [col for col in columnas_ordenadas if col in df.columns]
+#         df = df[existing_columns]
 
-        # 3. Guardamos el archivo CSV con encoding UTF-8-sig para compatibilidad Excel
-        df.to_csv(RUTA_SALIDA_CSV, index=False, encoding='utf-8-sig')
-        print(f"\n✅ Extracción híbrida completada. Datos guardados en: {RUTA_SALIDA_CSV}")
-    else:
-        print("\n❌ No se extrajeron datos.")
+#         # 3. Guardamos el archivo CSV con encoding UTF-8-sig para compatibilidad Excel
+#         df.to_csv(RUTA_SALIDA_CSV, index=False, encoding='utf-8-sig')
+#         print(f"\n✅ Extracción híbrida completada. Datos guardados en: {RUTA_SALIDA_CSV}")
+#     else:
+#         print("\n❌ No se extrajeron datos.")
 
-if __name__ == "__main__":
-    main()
+# if __name__ == "__main__":
+#     main()
