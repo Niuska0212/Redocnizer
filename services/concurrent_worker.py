@@ -1,11 +1,15 @@
 # !/usr/bin/env python3
 # -*- coding: utf-8 -*-
+# services/concurrent_worker.py
 """Módulo 3.1: Implementación de concurrencia para procesamiento masivo de OCR."""
 
 import os
 import threading
 from PySide6.QtCore import QThread, Signal
 from concurrent.futures import ThreadPoolExecutor
+import psutil 
+import gc
+
 
 class ConcurrentOCRWorker(QThread):
     """
@@ -38,7 +42,19 @@ class ConcurrentOCRWorker(QThread):
         
         # Punto 3.1.4: Gestión de recursos de hardware
         # Limitamos a 4 hilos para no saturar la memoria VRAM/RAM con modelos de IA
-        self.max_workers = 4 
+        # --- OPTIMIZACIÓN DINÁMICA DE HILOS ---
+        # Detectamos la RAM total en GB
+        ram_total = psutil.virtual_memory().total / (1024**3)
+        
+        # Si la RAM es menor a 9GB, usamos solo 1 hilo (Procesamiento secuencial seguro)
+        # Si tiene 16GB o más, usamos 3 para ir rápido sin saturar.
+        if ram_total < 9:
+            self.max_workers = 1
+            print("⚠️ Máquina de 8GB detectada: Procesando de 1 en 1 para evitar cierres.")
+        else:
+            self.max_workers = 4
+            print(f"🚀 Máquina con {ram_total:.1f}GB: Usando {self.max_workers} hilos.")
+            
         self._semaphore = threading.Semaphore(self.max_workers)
 
     def process_single_file(self, fp):
@@ -97,7 +113,7 @@ class ConcurrentOCRWorker(QThread):
                             )
                     except Exception as e:
                         print(f"Advertencia: no se pudo subir a Drive {final_path}: {e}")
-                
+                gc.collect()  # Liberar memoria después de cada archivo procesado
                 return {
                     "status": "success",
                     "file": nombre_original,
@@ -112,53 +128,48 @@ class ConcurrentOCRWorker(QThread):
                 }
 
     def run(self):
-        """
-        Punto 3.5: Distribución de carga en entidades funcionales.
-        Ejecución principal del hilo del Sistema Operativo.
-        """
         try:
             total = len(self.file_paths)
             successful = 0
             failed = 0
             results = []
 
-            # ThreadPoolExecutor permite que el SO gestione los hilos disponibles
+            # Usamos el número de workers calculado dinámicamente
             with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-                # Lanzamos las tareas al pool de forma no bloqueante
                 futures = [executor.submit(self.process_single_file, fp) for fp in self.file_paths]
                 
                 for i, future in enumerate(futures):
                     if not self._is_running:
                         break
                     
-                    # Esperamos el resultado de cada futuro
-                    result_item = future.result()
-                    
-                    if result_item:
-                        if result_item["status"] == "success":
-                            successful += 1
-                            # Texto con ruta de guardado (formato preferido del usuario)
-                            item_text = f"✅ {result_item['file']} -> {result_item['path']}"
-                        else:
-                            failed += 1
-                            item_text = f"❌ {result_item['file']} -> Error: {result_item.get('error')}"
+                    try:
+                        # Añadimos un timeout al resultado para evitar bloqueos infinitos
+                        result_item = future.result(timeout=60) 
                         
-                        # Notificar a la UI el fin de este archivo específico
-                        self.file_finished.emit(item_text, result_item)
-                        results.append(result_item)
-                    
-                    # Punto 3.1.2: Actualización asíncrona de progreso
+                        if result_item:
+                            if result_item["status"] == "success":
+                                successful += 1
+                                item_text = f"✅ {result_item['file']} -> {result_item['path']}"
+                            else:
+                                failed += 1
+                                item_text = f"❌ {result_item['file']} -> Error: {result_item.get('error')}"
+                            
+                            self.file_finished.emit(item_text, result_item)
+                            results.append(result_item)
+                    except Exception as e:
+                        failed += 1
+                        self.file_finished.emit(f"❌ Error crítico: {str(e)}", {})
+
                     progreso_val = int(((i + 1) / total) * 100)
                     self.progress.emit(progreso_val, f"Procesado {i+1} de {total} documentos...")
 
-            # Notificar finalización total al sistema principal
             if self._is_running:
-                self.progress.emit(100, "Proceso completado exitosamente")
+                # Robustez 3.1.5: Captura de errores en hilos secundarios
+                self.progress.emit(100, "Proceso completado")
                 self.all_finished.emit(successful, failed, results)
             
         except Exception as e:
-            # Robustez 3.1.5: Captura de errores en hilos secundarios
-            self.error.emit(f"Error en procesamiento paralelo: {str(e)}")
+            self.error.emit(f"Error en hilos: {str(e)}")
 
     def stop(self):
         """

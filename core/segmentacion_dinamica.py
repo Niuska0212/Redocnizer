@@ -13,8 +13,8 @@ from PIL import Image, ImageDraw, ImageFont
 
 
 # Inicializar el lector (puedes hacerlo global o dentro de la función)
-# 'es' para español, gpu=True si tienes una tarjeta NVIDIA configurada
-reader = easyocr.Reader(['es'], gpu=False)
+
+reader = easyocr.Reader(['es'], download_enabled=False)
 
 # Constantes de estandarización
 PHONE_EMPTY_TOKENS = ["-", "—", "0", "00", "000", "N/A", "NA"] 

@@ -1002,7 +1002,7 @@ class MainWindow(QMainWindow):
         
         if successful > 0:
             msg += "<p>Los datos se han guardado en la pestaña 'Ver/Editar Datos'</p>"
-            self.sync_data_to_supabase()
+            #self.sync_data_to_supabase()
         
         QMessageBox.information(self, "Resultado", msg)
         
@@ -1204,25 +1204,23 @@ class MainWindow(QMainWindow):
     # =========================================================
     
     def sync_data_to_supabase(self):
-        """Esta es la función que el Timer busca cada 5 minutos."""
-        # Si el manager falló al iniciar, no hacemos nada
+        """Sincronización robusta: Si falla el internet, la app sigue viva."""
         if not self.supabase_manager.enabled:
             return
 
-        # Si hay internet, subimos los datos
-        df_actual = self.data_manager.get_dataframe()
-        exito = self.supabase_manager.sync_calendar_dataframe(df_actual)
+        try:
+            # Intentamos la sincronización
+            df_actual = self.data_manager.get_dataframe()
+            exito = self.supabase_manager.sync_calendar_dataframe(df_actual)
 
-        if exito:
-            self.statusBar().showMessage("☁️ Sincronización automática completada", 3000)
-        else:
-            # Si falló (probablemente por internet)
-            self.statusBar().showMessage("📡 Trabajando local (Sin conexión a la nube)", 3000)
+            if exito:
+                self.statusBar().showMessage("☁️ Sincronización en la nube completada", 3000)
+            else:
+                raise Exception("Fallo en la respuesta del servidor")
+                
+        except Exception as e:
+            # En lugar de romperse, solo muestra un mensaje en la barra de estado
+            print(f"📡 Aviso de Red: No se pudo sincronizar con Supabase ({e})")
+            self.statusBar().showMessage("📡 Modo Offline: Error de conexión con la nube", 5000)
+            # Aquí NO relanzamos el error, así la app sigue funcionando localmente
             
-            
-            
-            
-            
-            
-            
-#

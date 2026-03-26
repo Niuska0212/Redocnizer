@@ -5,6 +5,7 @@ Servicio centralizado para conversión de PDFs a imágenes y viceversa.
 import fitz  # PyMuPDF
 import os
 from PIL import Image
+import gc
 
 
 def pdf_to_images(pdf_path, output_dir, limit=None):
@@ -21,25 +22,47 @@ def pdf_to_images(pdf_path, output_dir, limit=None):
         Lista con las rutas de las imágenes generadas
     """
     paths = []
+    pdf = None
     
     try:
+        # 1. Abrimos el documento
         pdf = fitz.open(pdf_path)
-        if len(pdf) > 0:  # si hay al menos una página
-            pagina = pdf[0]  # primera página
-            zoom = 2  # 2x = mejor calidad
+        
+        if len(pdf) > 0:
+            pagina = pdf[0]
+            zoom = 2  # Tu zoom original para no romper coordenadas
             mat = fitz.Matrix(zoom, zoom)
+            
+            # 2. Creamos el pixmap (esto es lo que más RAM consume)
             pix = pagina.get_pixmap(matrix=mat)
             
-            # Usar el nombre del PDF original (sin extensión)
+            # 3. Preparamos la ruta
             base_name = os.path.splitext(os.path.basename(pdf_path))[0]
             out = os.path.join(output_dir, f"{base_name}.jpg")
+            
+            # 4. GUARDAR PRIMERO (Importante: pix.save debe terminar antes de cerrar)
             pix.save(out)
             paths.append(out)
-        
-        pdf.close()
+            
+            # 5. Limpieza de sub-objetos (Solo después de guardar)
+            del pix
+            del pagina
+            
     except Exception as e:
-        print(f"Error al convertir PDF {pdf_path}: {e}")
+        print(f"❌ Error procesando PDF {pdf_path}: {e}")
     
+    finally:
+        # 6. CERRAMOS EL DOCUMENTO AL FINAL DE TODO
+        if pdf:
+            try:
+                pdf.close()
+                del pdf
+            except:
+                pass
+        
+        # 7. Limpieza de RAM para máquinas de 8GB
+        gc.collect() 
+        
     return paths
 
 

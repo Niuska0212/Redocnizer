@@ -7,6 +7,7 @@ import pandas as pd
 import re
 import numpy as np
 import easyocr
+import gc
 #from tensorflow.keras import backend as K 
 from difflib import SequenceMatcher # Necesario para calcular la similitud (Levenshtein)
 from PIL import Image, ImageDraw, ImageFont
@@ -18,7 +19,7 @@ from PySide6.QtCore import QSettings
 # Respectar la preferencia de GPU del usuario (la UI guarda esta opción en QSettings)
 settings = QSettings("CUCEI", "Redocnizer")
 gpu_preference = settings.value("use_gpu_acceleration", False, type=bool)
-reader = easyocr.Reader(['es', 'en'], gpu=gpu_preference)
+reader = easyocr.Reader(['es'], gpu=gpu_preference, download_enabled=False)
 
 # --- CONFIGURACIÓN DE RUTAS ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -163,15 +164,23 @@ def read_with_easyocr(roi_image: np.ndarray) -> str:
         return ""
 
 
+import gc # <--- Asegúrate de tener este import al inicio del archivo
+
 def extract_data_from_image(image_path, output_dir_preview):
     """
-    Versión Ágil: Extrae datos usando exclusivamente EasyOCR con lógica de 
-    pre-procesamiento dinámico y reintentos.
+    Versión Ágil y Optimizada para poca RAM: 
+    Extrae datos usando exclusivamente EasyOCR con control de memoria.
     """
     
     img_full_original = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
     if img_full_original is None:
         return {'Archivo': os.path.basename(image_path)}, f"Error: No se pudo cargar la imagen"
+
+    # --- OPTIMIZACIÓN 1: Redimensionar imágenes gigantes ---
+    h_orig, w_orig = img_full_original.shape[:2]
+    if w_orig > 2200:
+        scale = 2000 / w_orig
+        img_full_original = cv2.resize(img_full_original, (0,0), fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
 
     # Parámetros de control
     MIN_REQUIRED_FIELDS = 10 
@@ -180,25 +189,41 @@ def extract_data_from_image(image_path, output_dir_preview):
     
     # Bucle de intentos: 0: Original, 1: Invertida, 2: Rotada
     for attempt in range(3):
-        current_img = img_full_original.copy()
-        
-        # --- PRE-PROCESAMIENTO POR INTENTO ---
-        if attempt == 1:
-            current_img = cv2.bitwise_not(current_img) # Invertir colores
+        # --- OPTIMIZACIÓN 2: Evitar copias innecesarias si el intento 0 es suficiente ---
+        if attempt == 0:
+            current_img = img_full_original
+        elif attempt == 1:
+            current_img = cv2.bitwise_not(img_full_original)
         elif attempt == 2:
-            # Rotación ligera para corregir desalineación del escáner
             current_img = rotate_image(img_full_original, 2.0) 
 
         # --- LOCALIZACIÓN DE REGIONES (ROIs) ---
         rois_dinamicas = get_dynamic_rois(current_img)
         img_height, img_width = current_img.shape[:2]
-        
+        # >>> BLOQUE AQUÍ PARA LAS PREVIEWS <<<
+        if attempt == 0 and output_dir_preview:
+            # Crear una copia a color para dibujar los rectángulos
+            img_color = cv2.cvtColor(current_img, cv2.COLOR_GRAY2BGR)
+            COLORS = {'NOMBRE_COMPLETO_RAW': (0, 0, 255), 'DEPENDENCIA': (255, 0, 0), 'SIMPLE_FIELD': (0, 255, 0)}
+            
+            for field_name, roi_data in rois_dinamicas.items():
+                if not isinstance(roi_data, (list, tuple)) or len(roi_data) != 4: continue
+                y, x, h, w = roi_data
+                color = COLORS.get(field_name, COLORS['SIMPLE_FIELD'])
+                if 'DEPENDENCIA' in field_name: color = COLORS['DEPENDENCIA']
+                
+                cv2.rectangle(img_color, (int(x), int(y)), (int(x + w), int(y + h)), color, 2)
+                cv2.putText(img_color, field_name, (int(x), max(0, int(y) - 5)), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
+
+            save_path = os.path.join(output_dir_preview, "Viz_" + os.path.basename(image_path))
+            cv2.imwrite(save_path, img_color)
+        # >>> FIN DEL BLOQUE DE PREVIEWS <<<
         all_extracted_data = {}
         
         # --- EXTRACCIÓN CON EASYOCR ---
         for field_name, roi_data in rois_dinamicas.items():
             y, x, h, w = roi_data
-            # Ajuste de coordenadas de seguridad
             y_s, x_s = max(0, int(y)), max(0, int(x))
             y_e, x_e = min(img_height, int(y + h)), min(img_width, int(x + w))
 
@@ -207,24 +232,20 @@ def extract_data_from_image(image_path, output_dir_preview):
                 all_extracted_data[field_name] = ""
                 continue
             
-            # Mejora de imagen específica para EasyOCR (Filtros rápidos)
             roi_prepared = enhance_for_easyocr(roi_image)
             
-            # LECTURA DIRECTA (Se eliminó modelo_inferencia.predict y decode_batch)
             try:
-                # Leemos y pasamos a mayúsculas
+                # Usamos el reader global para no reiniciarlo
                 raw_text = read_with_easyocr(roi_prepared).upper().strip()
             except:
                 raw_text = ""
 
-            # Limpieza y Validación
             cleaned_value = clean_data_by_field(field_name, clean_border_chars(raw_text))
             all_extracted_data[field_name] = validate_field_format(field_name, cleaned_value)
 
         # --- CONSOLIDACIÓN DE RESULTADOS ---
         extracted_data = {'Archivo': os.path.basename(image_path)}
         
-        # Procesar bloques complejos (Dependencias y Nombres)
         solo_deps = {k: all_extracted_data.get(k, "") for k in ["DEPENDENCIA_1", "DEPENDENCIA_2", "DEPENDENCIA_3"]}
         deps_corregidas = procesar_bloque_dependencias(solo_deps)
         
@@ -238,19 +259,24 @@ def extract_data_from_image(image_path, output_dir_preview):
                 extracted_data[key] = value
 
         # --- EVALUACIÓN RÁPIDA ---
-        # Contamos cuántos campos tienen información real
         score = sum(1 for k, v in extracted_data.items() 
                 if v and str(v).strip() and str(v) != EMPTY_DATA_PLACEHOLDER 
                 and k not in ['Archivo', 'PATERNO', 'MATERNO', 'NOMBRE_S', 'NOMBRE_COMPLETO_RAW'])
 
-        # Si el resultado es muy bueno, retornamos de inmediato (Early Exit)
         if score >= MIN_REQUIRED_FIELDS:
+            # --- OPTIMIZACIÓN 3: Limpieza profunda antes de salir ---
+            del img_full_original
+            if attempt > 0: del current_img
+            gc.collect() 
             return extracted_data, None
         
-        # Si no, guardamos el mejor hasta ahora para comparar con el siguiente reintento
         if score > max_score:
             max_score = score
             best_attempt_data = extracted_data
+
+    # --- OPTIMIZACIÓN 4: Limpieza final si agotó los intentos ---
+    del img_full_original
+    gc.collect()
 
     return best_attempt_data if best_attempt_data else ({'Archivo': os.path.basename(image_path)}, "No se detectaron datos.")
 

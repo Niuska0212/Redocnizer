@@ -6,6 +6,7 @@ Permite almacenar copias de seguridad de los contratos procesados en la nube.
 import os
 import json
 import logging
+import socket
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -19,6 +20,8 @@ SCOPES = [
     'https://www.googleapis.com/auth/drive.file',
     'https://www.googleapis.com/auth/drive.metadata.readonly'
 ]
+
+socket.setdefaulttimeout(20)
 
 class GoogleDriveService:
     """Servicio simplificado para respaldo de contratos en la nube."""
@@ -281,65 +284,75 @@ class GoogleDriveService:
 
     def upload_to_path(self, file_path: str, drive_root: str = 'REDOCNIZER', calendar: str = '', subfolder_path: str = '') -> str | None:
         """
-        Sube el archivo directamente a la carpeta principal de REDOCNIZER 
-        renombrándolo como <calendario>.csv.
+        Versión Ultra-Segura: Sincroniza con Drive sin riesgo de cerrar la aplicación.
+        Diseñada para redes inestables y máquinas de 8GB RAM.
         """
-        try:
-            subfolder_path = subfolder_path.replace("\\","/")
+        # Verificación de existencia local antes de empezar
+        if not os.path.exists(file_path):
+            return None
 
+        try:
+            # 1. Limpieza de ruta y normalización
+            subfolder_path = subfolder_path.replace("\\", "/")
             if calendar and calendar in subfolder_path:
                 subfolder_path = subfolder_path.split(calendar)[0].strip("/")
 
-            # 1. Obtener el ID de la carpeta principal 'REDOCNIZER' (sin crear carpetas de calendario)
-            root_id = self._ensure_folder(drive_root, parent_id=None)
-            if not root_id:
-                return None
+            # 2. Conexión a la carpeta raíz (Con escudo de error)
+            try:
+                root_id = self._ensure_folder(drive_root, parent_id=None)
+                if not root_id: return None
+                parent_id = root_id
+            except Exception:
+                return None # Fallo silencioso: Drive no está disponible
 
-            parent_id = root_id
-
-            # 2. Si hay subfolder, crearlo
+            # 3. Gestión de subcarpetas
             if subfolder_path:
-                partes = subfolder_path.split("/")
-
-                for carpeta in partes:
+                for carpeta in subfolder_path.split("/"):
                     if carpeta.strip():
                         parent_id = self._ensure_folder(carpeta.strip(), parent_id=parent_id)
 
-            # 3. Nombre Final 
+            # 4. Configuración del nombre del archivo
             nombre_local = os.path.basename(file_path)
+            nombre_en_drive = f"{calendar}.csv" if (nombre_local.lower().endswith('.csv') and calendar) else nombre_local
 
-            if nombre_local.lower().endswith('.csv') and calendar:
-                nombre_en_drive = f"{calendar}.csv"
-            else:
-                nombre_en_drive = nombre_local
-
-            # 4. Evitar duplicados: Buscar si ya existe un archivo con ESE nombre en Drive
+            # 5. Búsqueda de archivo existente
             existing_file = self._find_file(nombre_en_drive, parent_id)
             
-            media = MediaFileUpload(file_path, resumable=True)
+            # --- PROTECCIÓN DE MEMORIA Y RED ---
+            # chunksize=256KB: No satura la RAM de 8GB ni el ancho de banda
+            media = MediaFileUpload(file_path, resumable=True, chunksize=256*1024)
 
-            if existing_file:
-                # Si existe, actualizamos su contenido (reemplazar)
-                self.service.files().update(
-                    fileId=existing_file['id'],
-                    media_body=media
-                ).execute()
-                print(f"🔄 Archivo actualizado en Drive: {nombre_en_drive}")
-                return existing_file['id']
-            else:
-                # Si no existe, lo creamos de cero con el nombre del calendario
-                file_metadata = {
-                    'name': nombre_en_drive,
-                    'parents': [parent_id]
-                }
-                file = self.service.files().create(
-                    body=file_metadata,
-                    media_body=media,
-                    fields='id'
-                ).execute()
-                print(f"📤 Archivo creado en Drive: {nombre_en_drive}")
-                return file.get('id')
+            try:
+                if existing_file:
+                    # num_retries=5: Muy paciente con el internet lento
+                    request = self.service.files().update(
+                        fileId=existing_file['id'],
+                        media_body=media
+                    )
+                else:
+                    file_metadata = {'name': nombre_en_drive, 'parents': [parent_id]}
+                    request = self.service.files().create(
+                        body=file_metadata,
+                        media_body=media,
+                        fields='id'
+                    )
+                
+                # Ejecución final con reintentos automáticos de Google
+                response = request.execute(num_retries=5)
+                print(f"✅ Drive: {nombre_en_drive} sincronizado.")
+                return response.get('id')
 
-        except Exception as e:
-            logging.error(f"Error crítico en upload_to_path: {e}")
+            except Exception as e_red:
+                # Si falla aquí, imprimimos pero NO lanzamos el error
+                # Esto evita que el hilo principal se entere del fallo de red
+                print(f"📡 Aviso: Sincronización pendiente (Red ocupada/lenta).")
+                return None
+
+        except Exception as e_total:
+            # Escudo final contra cualquier crash inesperado
+            print(f"⚠️ Drive Service: Operación omitida por estabilidad del sistema.")
             return None
+        finally:
+            # Forzamos limpieza de memoria después de cada intento de subida
+            import gc
+            gc.collect()
