@@ -134,41 +134,59 @@ class ConcurrentOCRWorker(QThread):
             failed = 0
             results = []
 
-            # Usamos el número de workers calculado dinámicamente
-            with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-                futures = [executor.submit(self.process_single_file, fp) for fp in self.file_paths]
+            # Recomendación: Aunque tengas 16GB, no pases de 4 workers si usas OCR
+            # para evitar que TensorFlow choque con los hilos de red.
+            num_workers = min(self.max_workers, 4) 
+
+            with ThreadPoolExecutor(max_workers=num_workers) as executor:
+                # 1. Lanzamos las tareas
+                futures = {executor.submit(self.process_single_file, fp): fp for fp in self.file_paths}
                 
                 for i, future in enumerate(futures):
                     if not self._is_running:
                         break
                     
+                    file_path = futures[future]
                     try:
-                        # Añadimos un timeout al resultado para evitar bloqueos infinitos
+                        # 2. Timeout de 60s por archivo. Si Drive/Supa se traban, 
+                        # este hilo "suelta" el proceso para que la app no muera.
                         result_item = future.result(timeout=60) 
                         
                         if result_item:
-                            if result_item["status"] == "success":
+                            if result_item.get("status") == "success":
                                 successful += 1
                                 item_text = f"✅ {result_item['file']} -> {result_item['path']}"
                             else:
                                 failed += 1
                                 item_text = f"❌ {result_item['file']} -> Error: {result_item.get('error')}"
                             
+                            # Enviamos señal a la UI
                             self.file_finished.emit(item_text, result_item)
                             results.append(result_item)
-                    except Exception as e:
-                        failed += 1
-                        self.file_finished.emit(f"❌ Error crítico: {str(e)}", {})
 
+                    except Exception as e:
+                        # Este bloque atrapa el "Timeout" o errores de red
+                        failed += 1
+                        print(f"⚠️ Error procesando {file_path}: {e}")
+                        self.file_finished.emit(f"❌ Error en archivo: {os.path.basename(file_path)}", {})
+                    
+                    # 3. Limpieza de memoria tras cada archivo (Vital para estabilidad)
+                    import gc
+                    gc.collect()
+
+                    # 4. Actualizar barra de progreso
                     progreso_val = int(((i + 1) / total) * 100)
                     self.progress.emit(progreso_val, f"Procesado {i+1} de {total} documentos...")
 
+            # Al finalizar el bucle
             if self._is_running:
-                # Robustez 3.1.5: Captura de errores en hilos secundarios
                 self.progress.emit(100, "Proceso completado")
                 self.all_finished.emit(successful, failed, results)
             
         except Exception as e:
+            # Si algo explota a nivel general, lo mandamos a la barra de estado
+            # pero no cerramos la app.
+            print(f"🔥 Error Crítico en Worker: {e}")
             self.error.emit(f"Error en hilos: {str(e)}")
 
     def stop(self):

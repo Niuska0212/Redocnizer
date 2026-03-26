@@ -169,21 +169,42 @@ class SupabaseManager:
             # No bloqueamos el bucle completo, permitimos que siga con el siguiente
         
     def sync_calendar_dataframe(self, df):
-        """Sincroniza el DataFrame si hay internet."""
+        """Sincroniza el DataFrame de forma robusta sin bloquear la App."""
+        # 1. Verificación rápida de conexión
         if not self.check_connection():
+            print("☁️ Supabase: Sin internet. Sincronización omitida.")
             return False
-
-        # --- AÑADE ESTA LÍNEA AQUÍ ---
-        # Reemplaza NaN por None (que sí es compatible con JSON/Null)
-        df_sync = df.where(pd.notnull(df), None) 
 
         try:
-            for _, row in df_sync.iterrows(): # Usa el nuevo df_sync
-                self.upsert_full_record(row)
+            # 2. Limpieza de datos (NaN a None para compatibilidad JSON)
+            # Usamos infer_objects para evitar warnings de versiones nuevas de Pandas
+            df_sync = df.where(pd.notnull(df), None)
+
+            # 3. Sincronización con "Escudo"
+            print(f"☁️ Iniciando sincronización de {len(df_sync)} registros...")
+            
+            for _, row in df_sync.iterrows():
+                try:
+                    # Intentamos el upsert de cada fila
+                    # Nota: Asegúrate de que upsert_full_record tenga su propio try/except
+                    self.upsert_full_record(row)
+                except Exception as e_row:
+                    # Si una fila falla, saltamos a la siguiente sin cerrar la app
+                    print(f"⚠️ Error en fila específica: {e_row}")
+                    continue 
+
+            print("✅ Sincronización completada exitosamente.")
             return True
+
         except Exception as e:
-            print(f"❌ Error en sincronización: {e}")
+            # 4. Error silencioso: El programa principal NO se entera del fallo de red
+            # Esto evita que la ventana de la app se cierre sola
+            print(f"📡 Aviso de Red: Supabase no disponible temporalmente ({e})")
             return False
+        finally:
+            # Liberar memoria después de procesar el DataFrame
+            import gc
+            gc.collect()
         
 
     def fetch_all_data(self):

@@ -1002,7 +1002,7 @@ class MainWindow(QMainWindow):
         
         if successful > 0:
             msg += "<p>Los datos se han guardado en la pestaña 'Ver/Editar Datos'</p>"
-            #self.sync_data_to_supabase()
+            self.sync_data_to_supabase()
         
         QMessageBox.information(self, "Resultado", msg)
         
