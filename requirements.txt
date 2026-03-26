@@ -22,6 +22,7 @@ easyocr>=1.7.2
 # Procesamiento de PDF
 PyPDF2>=3.0.0
 pdf2image>=1.16.0
+PyMuPDF >=1.23.0
 
 # Procesamiento de Datos
 pandas>=2.0.0
