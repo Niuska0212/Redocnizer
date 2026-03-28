@@ -7,14 +7,13 @@ from PyInstaller.utils.hooks import collect_submodules, collect_data_files
 root = SPECPATH
 
 # 1. Recopilar archivos de datos de las dependencias pesadas
-tensorflow_datas = collect_data_files('tensorflow')
-keras_datas = collect_data_files('keras')
 pyside6_datas = collect_data_files('PySide6')
 
 # 2. Definir archivos de datos locales a incluir
 datas = [
     (os.path.join(root, 'ui', 'assets'), 'ui/assets'),
-] + tensorflow_datas + keras_datas + pyside6_datas
+    (os.path.join(root, 'models'), 'models'),
+] + pyside6_datas
 
 # --- NUEVOS ARCHIVOS DE DOCUMENTACIÓN Y RAÍZ ---
 
@@ -54,8 +53,6 @@ a = Analysis(
         'postgrest',     # Dependencia interna de supabase que a veces se pierde
         'gotrue',        # Dependencia interna de supabase
         'PySide6',
-        'tensorflow',
-        'keras',
         'cv2',
         'easyocr',
         'pdf2image',
