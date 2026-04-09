@@ -1,14 +1,11 @@
-# preprocessing.py
+# core/preprocessing.py
 
 import cv2
 import numpy as np
-import tensorflow as tf
 
-try:
-    from .CRNN_inference import IMG_HEIGHT, IMG_WIDTH
-except ImportError:
-    IMG_HEIGHT = 32
-    IMG_WIDTH = 256
+
+IMG_HEIGHT = 32
+IMG_WIDTH = 256
 
 def enhance_for_easyocr(img: np.ndarray) -> np.ndarray:
     """

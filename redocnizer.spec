@@ -6,39 +6,26 @@ from PyInstaller.utils.hooks import collect_submodules, collect_data_files
 # Rutas base
 root = SPECPATH
 
-# 1. Recopilar archivos de datos de las dependencias pesadas
+# 1. Recopilar archivos de datos de PySide6 y EasyOCR
+# EasyOCR a veces necesita sus archivos de configuración internos
 pyside6_datas = collect_data_files('PySide6')
+easyocr_datas = collect_data_files('easyocr')
 
-# 2. Definir archivos de datos locales a incluir
+# 2. Definir archivos de datos locales
 datas = [
     (os.path.join(root, 'ui', 'assets'), 'ui/assets'),
-    (os.path.join(root, 'models'), 'models'),
-] + pyside6_datas
+    (os.path.join(root, 'models'), 'models'), # Carpeta con los .pth de EasyOCR
+] + pyside6_datas + easyocr_datas
 
-# --- NUEVOS ARCHIVOS DE DOCUMENTACIÓN Y RAÍZ ---
-
-# Agregar README y LICENSE si existen en la raíz
-for extra_file in ['README.md', 'LICENSE', 'README.txt']:
+# --- ARCHIVOS DE RAÍZ Y CONFIGURACIÓN ---
+for extra_file in ['README.md', 'LICENSE', 'calendarios.db', 'credentials.json', 'credentials_supa.env']:
     file_path = os.path.join(root, extra_file)
     if os.path.exists(file_path):
-        datas.append((file_path, '.')) # El '.' significa que se copia a la raíz del EXE
+        datas.append((file_path, '.'))
 
-# Agregar carpeta de documentación completa (docs/)
-docs_path = os.path.join(root, 'docs')
-if os.path.exists(docs_path):
-    # (Ruta_Origen, Nombre_Carpeta_Destino)
-    datas.append((docs_path, 'docs'))
-
-# --- ARCHIVOS DE CONFIGURACIÓN Y BASES DE DATOS ---
-
-if os.path.exists(os.path.join(root, 'calendarios.db')):
-    datas.append((os.path.join(root, 'calendarios.db'), '.'))
-
-if os.path.exists(os.path.join(root, 'credentials.json')):
-    datas.append((os.path.join(root, 'credentials.json'), '.'))
-
-if os.path.exists(os.path.join(root, 'credentials_supa.env')):
-    datas.append((os.path.join(root, 'credentials_supa.env'), '.'))
+# Agregar carpeta de documentación
+if os.path.exists(os.path.join(root, 'docs')):
+    datas.append((os.path.join(root, 'docs'), 'docs'))
 
 block_cipher = None
 
@@ -48,37 +35,33 @@ a = Analysis(
     binaries=[],
     datas=datas,
     hiddenimports=[
-        'dotenv',        # Añadido por seguridad
-        'supabase',      # Añadido por seguridad
-        'postgrest',     # Dependencia interna de supabase que a veces se pierde
-        'gotrue',        # Dependencia interna de supabase
+        'dotenv',
+        'supabase',
+        'postgrest',
+        'gotrue',
         'PySide6',
         'cv2',
         'easyocr',
+        'torch',          # REQUERIDO: EasyOCR depende de torch
+        'torchvision',    # REQUERIDO: EasyOCR depende de torchvision
         'pdf2image',
+        'PIL.ImageResampling', # A veces Pillow pierde este import en el EXE
         'google.auth',
         'google.oauth2',
         'firebase_admin',
-        'googleapiclient.discovery',
-        'googleapiclient.http',
-        'google_auth_oauthlib.flow',
-        'controllers.contract_controller',
         'core.document_extractor',
-        'core.CRNN_inference',
+        'core.segmentacion_dinamica',
+        'core.preprocessing',
         'services.ocr_service',
         'services.pdf_service',
-        'services.supabase_service',
-        'services.google_drive_service',
         'ui.main_window',
-        'ui.app_menu',
-        'ui.data_tab',
-        'ui.data_manager',
-        'ui.calendar_db',
+        'ui.splash_screen',
     ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludedimports=['matplotlib', 'scipy', 'numpy.random._utils', 'tkinter'],
+    # EXCLUIMOS TENSORFLOW y otras librerías pesadas que ya no usas
+    excludedimports=['tensorflow', 'tensorboard', 'keras', 'matplotlib', 'scipy', 'tkinter'],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
@@ -95,14 +78,9 @@ exe = EXE(
     name='REDOCNIZER',
     debug=False,
     bootloader_ignore_signals=False,
-    strip=False,
-    upx=True,
+    strip=True,     # Activamos strip para reducir tamaño
+    upx=True,       # Comprime el EXE final
     console=False, 
-    disable_windowed_traceback=False,
-    argv_emulation=False,
-    target_arch=None,
-    codesign_identity=None,
-    entitlements_file=None,
     icon=os.path.join(root, 'ui', 'assets', 'logo_redocnizer.png'),
 )
 
@@ -113,6 +91,5 @@ coll = COLLECT(
     a.datas,
     strip=False,
     upx=True,
-    upx_exclude=[],
-    name='REDOCNIZER_V 2.1.1'
+    name='REDOCNIZER_V2.2.0'
 )

@@ -1,8 +1,7 @@
 # core/segmentacion_dinamica.py
-import random
 import cv2
 import os
-import shutil
+import sys
 import pandas as pd
 import re
 import numpy as np
@@ -10,16 +9,15 @@ import easyocr
 #from tensorflow.keras import backend as K 
 from difflib import SequenceMatcher # Necesario para calcular la similitud (Levenshtein)
 from PIL import Image, ImageDraw, ImageFont
+from PySide6.QtCore import QSettings 
+from PySide6.QtWidgets import QApplication
 
 
-# Inicializar el lector (puedes hacerlo global o dentro de la función)
 
-reader = easyocr.Reader(['es'], download_enabled=False)
 
-# Constantes de estandarización
+# --- CONSTANTES DE ESTANDARIZACIÓN ---
 PHONE_EMPTY_TOKENS = ["-", "—", "0", "00", "000", "N/A", "NA"] 
 EMPTY_DATA_PLACEHOLDER = "NO_INFO_DOC"
-
 
 "constantes de DIccionario por niveles de departamentos"
 CATALOGO_DEPENDENCIAS = {
@@ -53,6 +51,8 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
     Identifica dinámicamente las regiones de interés (ROIs) basándose en etiquetas 
     detectadas por OCR, priorizando CODIGO, CRN, MATERIA, HRS_TOTALES y FECHAS.
     """
+    from .document_extractor import get_shared_reader
+    
     if img_full is None: return {}
     
     H, W = img_full.shape[:2]
@@ -83,6 +83,7 @@ def get_dynamic_rois(img_full: np.ndarray) -> dict:
         img_gray = enhance_image_aggressive(img_gray)
     
     # Ejecución de EasyOCR
+    reader = get_shared_reader()
     results = reader.readtext(img_gray.astype(np.uint8))
     
     rows = []

@@ -1,33 +1,69 @@
-# document_extractor.py
-import random
+# core/document_extractor.py
 import cv2
 import os
+import sys 
 import shutil
 import pandas as pd 
 import re
 import numpy as np
 import easyocr
 import gc
-#from tensorflow.keras import backend as K 
-from difflib import SequenceMatcher # Necesario para calcular la similitud (Levenshtein)
+from difflib import SequenceMatcher 
 from PIL import Image, ImageDraw, ImageFont
 from .segmentacion_dinamica import get_dynamic_rois, clean_data_by_field, clean_border_chars, validate_field_format, clean_name_specific, procesar_bloque_dependencias, EMPTY_DATA_PLACEHOLDER
-#from .CRNN_inference import load_inference_model
 from .preprocessing import prepare_roi_for_ocr, invert_image_color, rotate_image, enhance_for_easyocr
 from PySide6.QtCore import QSettings
+from PySide6.QtWidgets import QApplication # <--- IMPORTANTE
 
-# Respectar la preferencia de GPU del usuario (la UI guarda esta opción en QSettings)
-settings = QSettings("CUCEI", "Redocnizer")
-gpu_preference = settings.value("use_gpu_acceleration", False, type=bool)
-reader = easyocr.Reader(['es'], gpu=gpu_preference, download_enabled=False)
+# =========================================================
+# === GESTIÓN DE RUTAS Y CARGA PEREZOSA (LAZY LOADING) ===
+# =========================================================
 
-# --- CONFIGURACIÓN DE RUTAS ---
+_READER_INSTANCE = None  # Variable privada que guardará el motor una vez cargado
+
+def get_resource_path(relative_path):
+    if hasattr(sys, '_MEIPASS'):
+        return os.path.join(sys._MEIPASS, relative_path)
+    base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base_path, relative_path)
+
+def get_shared_reader():
+    """ 
+    Carga EasyOCR solo la primera vez que se solicita.
+    Esto hace que la App abra instantáneamente.
+    """
+    global _READER_INSTANCE
+    
+    if _READER_INSTANCE is None:
+        print("🚀 Inicializando motor de IA por primera vez...")
+        
+        # 1. Configurar rutas de modelos
+        model_dir = get_resource_path("models")
+        
+        # 2. Obtener preferencias de GPU
+        settings = QSettings("Redocnizer", "RedocnizerApp")
+        gpu_pref = settings.value("use_gpu_acceleration", False, type=bool)
+        
+        # 3. Crear la instancia (Offline)
+        try:
+            _READER_INSTANCE = easyocr.Reader(
+                ['es'], 
+                gpu=gpu_pref, 
+                model_storage_directory=model_dir, 
+                download_enabled=False
+            )
+            print(f"✅ Motor IA listo (GPU={gpu_pref})")
+        except Exception as e:
+            print(f"⚠️ Error cargando modelos locales: {e}. Intentando carga estándar...")
+            _READER_INSTANCE = easyocr.Reader(['es'], gpu=gpu_pref)
+            
+    return _READER_INSTANCE
+
+# --- CONFIGURACIÓN DE RUTAS DE DATOS ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RUTA_IMAGENES = os.path.join(BASE_DIR, "..", "data", "data", "contratos", "imagenes_jpg")
 RUTA_PREVIEW = os.path.join(BASE_DIR, "..", "data", "data", "contratos", "preview")
 RUTA_SALIDA_CSV = os.path.join(BASE_DIR, "datos_extraidos_contratos.csv")
-# Si necesitas las constantes de imagen:
-# from crnn_inference import IMG_HEIGHT, IMG_WIDTH # Descomenta si las necesitas en este script
 
 # =========================================================================
 # === FUNCIÓN DE DECODIFICACIÓN (Local para evitar errores de importación) ===
@@ -156,6 +192,8 @@ def read_with_easyocr(roi_image: np.ndarray) -> str:
     """Lee el texto usando EasyOCR """
     try:
         # EasyOCR funciona mejor con imágenes en color o gris sin tanto threshold agresivo
+        reader = get_shared_reader()
+        
         results = reader.readtext(roi_image, detail=0) # detail=0 devuelve solo el texto
         text = " ".join(results)
         return text.strip()
@@ -164,7 +202,7 @@ def read_with_easyocr(roi_image: np.ndarray) -> str:
         return ""
 
 
-import gc # <--- Asegúrate de tener este import al inicio del archivo
+
 
 def extract_data_from_image(image_path, output_dir_preview):
     """
