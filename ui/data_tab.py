@@ -6,14 +6,14 @@ from datetime import datetime
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTableWidget,
     QTableWidgetItem, QHeaderView, QLineEdit, QFileDialog, QMessageBox,
-    QAbstractItemView
+    QAbstractItemView, QComboBox
 )
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QPixmap, QColor, QBrush, QWheelEvent
 
 from services.pdf_service import pdf_to_images
-from ui.history_manager import HistoryManager
-#from ui.edit_record_dialog import EditRecordDialog
+from ui.history_manager import HistoryManager 
+from ui.calendar_db import CalendarDB#from ui.edit_record_dialog import EditRecordDialog
 from ui.file_watcher import FileWatcher
 try:
     from ui.image_preview_dialog import ImagePreviewDialog
@@ -45,6 +45,32 @@ class DataTab(QWidget):
         self.file_watcher.file_changed.connect(self._on_external_file_changed)
         self.current_preview_pixmap = None  # Para almacenar la imagen de vista previa actual
         self.setup_ui()
+
+        # Configuración del calendario
+        self.cal_db = CalendarDB()
+        cals = self.cal_db.get_all_calendars()
+        if cals:
+            for cal in cals:
+                self.calendar_combo.addItem(cal.nombre, cal)
+            self.calendar_combo.setCurrentIndex(0)
+        else:
+            self.calendar_combo.addItems([
+                "2024A", "2024B",
+                "2025A", "2025B",
+                "2026A", "2026B",
+                "2027A", "2027B",
+                "2028A", "2028B",
+                "2029A", "2029B",
+                "2030A", "2030B",
+                "2031A", "2031B"
+            ])
+            self.calendar_combo.setCurrentText("2024A")
+        
+        self.calendar_combo.currentIndexChanged.connect(self._on_calendar_changed)
+        
+        # Cargar datos iniciales del calendario
+        self.current_calendar_index = self.calendar_combo.currentIndex()
+        self._on_calendar_changed()
 
         # Conectar señal de actualización
         self.data_manager.data_updated.connect(self.load_data)
@@ -160,6 +186,31 @@ class DataTab(QWidget):
 
         # -------- Ensamblar layout --------
         layout.addLayout(controls_layout)
+        
+        # -------- Calendario y controles --------
+        calendar_layout = QHBoxLayout()
+        self.calendar_combo = QComboBox()
+        # Forzar estilo del popup del combo: fondo blanco y texto oscuro
+        self.calendar_combo.setStyleSheet(
+            "QComboBox QAbstractItemView { background-color: #ffffff; color: #0b2545; "
+            "selection-background-color: #e3f2fd; selection-color: #0b2545; }"
+        )
+        calendar_layout.addWidget(QLabel("Calendario:"))
+        calendar_layout.addWidget(self.calendar_combo)
+        # Botones rápidos para abrir CSV y carpeta del calendario
+        self.btn_open_calendar_excel = QPushButton("📊 Abrir Excel del calendario")
+        self.btn_open_calendar_excel.setMaximumWidth(180)
+        self.btn_open_calendar_excel.clicked.connect(self.open_calendar_excel)
+        
+        self.btn_open_calendar_folder = QPushButton("Abrir carpeta CVS")
+        self.btn_open_calendar_folder.setMaximumWidth(180)
+        self.btn_open_calendar_folder.clicked.connect(self.open_calendar_folder)
+        
+        calendar_layout.addWidget(self.btn_open_calendar_excel)
+        calendar_layout.addWidget(self.btn_open_calendar_folder)
+        calendar_layout.addStretch()
+        layout.addLayout(calendar_layout)
+        
         layout.addLayout(table_preview_layout)
         self.setLayout(layout)
         
@@ -562,8 +613,87 @@ class DataTab(QWidget):
         self.btn_undo.setEnabled(self.history.can_undo())
         self.btn_redo.setEnabled(self.history.can_redo())
 
+    def _on_calendar_changed(self):
+        """Maneja el cambio de calendario con validación de cambios pendientes."""
+        
+        # Verificar si hay cambios sin guardar
+        if self.has_unsaved_changes():
+            msg_box = QMessageBox(self)
+            msg_box.setIcon(QMessageBox.Question)
+            msg_box.setWindowTitle("Cambios sin guardar")
+            msg_box.setText(f"Hay cambios pendientes en el calendario actual.")
+            msg_box.setInformativeText("¿Deseas guardar los cambios antes de cambiar de calendario?")
+            
+            # Botones: Guardar, Descartar (No guardar) y Cancelar (No cambiar de pestaña)
+            btn_save = msg_box.addButton("Guardar", QMessageBox.ActionRole)
+            btn_discard = msg_box.addButton("Descartar", QMessageBox.DestructiveRole)
+            btn_cancel = msg_box.addButton("Cancelar", QMessageBox.RejectRole)
+            
+            msg_box.setDefaultButton(btn_save)
+            msg_box.exec()
+            
+            clicked_button = msg_box.clickedButton()
+
+            if clicked_button == btn_save:
+                self.save_all_to_manager()
+                # Después de guardar, permitimos que continúe la carga
+            elif clicked_button == btn_discard:
+                # No guardamos nada, simplemente permitimos que continúe la carga
+                pass
+            else:
+                # Si eligió Cancelar, regresamos el ComboBox a su estado anterior
+                self.calendar_combo.blockSignals(True)
+                self.calendar_combo.setCurrentIndex(self.current_calendar_index)
+                self.calendar_combo.blockSignals(False)
+                return
+
+        # Si llegamos aquí, procedemos a cargar el nuevo calendario
+        self.current_calendar_index = self.calendar_combo.currentIndex()
+        self.load_calendar_data()
+
+    def load_calendar_data(self):
+        """Carga los datos del calendario seleccionado."""
+        calendar_name = self.calendar_combo.currentText()
+        file_path = os.path.join("CALENDARIOS", f"{calendar_name}.csv")
+        if os.path.exists(file_path):
+            self.data_manager.load_from_csv(file_path)
+            self.load_data()
+        else:
+            QMessageBox.warning(self, "Archivo no encontrado", f"No se encontró el archivo CSV para {calendar_name}")
+
+    def open_calendar_excel(self):
+        """Abre el archivo CSV del calendario seleccionado (se abre en Excel por defecto)."""
+        calendar_name = self.calendar_combo.currentText()
+        file_path = os.path.join("CALENDARIOS", f"{calendar_name}.csv")
+        if os.path.exists(file_path):
+            os.startfile(file_path)
+        else:
+            QMessageBox.information(self, "Archivo no encontrado", f"No se encontró el archivo CSV para {calendar_name}")
+
+    def open_calendar_folder(self):
+        """Abre la carpeta CALENDARIOS."""
+        if os.path.exists("CALENDARIOS"):
+            os.startfile("CALENDARIOS")
+        else:
+            QMessageBox.warning(self, "Carpeta no encontrada", "No se encontró la carpeta CALENDARIOS")
+
     def _on_external_file_changed(self):
-        """Recarga automática y silenciosa cuando el CSV externo cambia."""
+        """Maneja cambios externos en el CSV con validación de cambios pendientes."""
+        if self.has_unsaved_changes():
+            reply = QMessageBox.question(
+                self,
+                "Cambios sin guardar",
+                "Se detectaron cambios externos en el archivo CSV.\n\nTienes cambios sin guardar en la tabla.\n¿Deseas guardarlos antes de recargar?",
+                QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
+                QMessageBox.Save
+            )
+            if reply == QMessageBox.Save:
+                self.save_all_to_manager()
+            elif reply == QMessageBox.Cancel:
+                return  # No recargar
+            # Si Discard, continúa y recarga sin guardar
+        
+        # Recargar datos
         self.load_data()
         self.info_label.setText("🔄 Sincronizado con archivo externo")
         QTimer.singleShot(3000, lambda: self.info_label.setText(f"{len(self.original_df)} registros"))

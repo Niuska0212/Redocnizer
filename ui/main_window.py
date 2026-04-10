@@ -320,60 +320,6 @@ class MainWindow(QMainWindow):
         root_layout.addWidget(btn_root)
         config_layout.addLayout(root_layout)
         
-        # Calendario
-        calendar_layout = QHBoxLayout()
-        self.calendar_combo = QComboBox()
-        # Forzar estilo del popup del combo: fondo blanco y texto oscuro
-        # Esto asegura legibilidad independientemente del tema del sistema
-        self.calendar_combo.setStyleSheet(
-            "QComboBox QAbstractItemView { background-color: #ffffff; color: #0b2545; "
-            "selection-background-color: #e3f2fd; selection-color: #0b2545; }"
-        )
-        # Cargar calendarios desde la BD
-        self.cal_db = CalendarDB()
-        cals = self.cal_db.get_all_calendars()
-        if cals:
-            for cal in cals:
-                self.calendar_combo.addItem(cal.nombre, cal)
-            self.calendar_combo.setCurrentIndex(0)
-        else:
-            # Si no hay, cargar opciones default (legacy)
-            self.calendar_combo.addItems([
-                "2024A", "2024B",
-                "2025A", "2025B",
-                "2026A", "2026B",
-                "2027A", "2027B",
-                "2028A", "2028B",
-                "2029A", "2029B",
-                "2030A", "2030B",
-                "2031A", "2031B"
-            ])
-            self.calendar_combo.setCurrentText("2024A")
-        
-        # Conectar cambio de calendario
-        self.calendar_combo.currentIndexChanged.connect(self._on_calendar_changed)
-        
-        calendar_layout.addWidget(QLabel("Calendario:"))
-        calendar_layout.addWidget(self.calendar_combo)
-        # Botones rápidos para abrir CSV y carpeta del calendario
-        self.btn_open_calendar_excel = QPushButton("📊 Abrir Excel del calendario")
-        self.btn_open_calendar_excel.setMaximumWidth(180)
-        self.btn_open_calendar_excel.clicked.connect(self.open_calendar_excel)
-
-        self.btn_load_calendar_data = QPushButton("📥 Cargar datos del calendario")
-        self.btn_load_calendar_data.setMaximumWidth(180)
-        self.btn_load_calendar_data.clicked.connect(self.load_calendar_file)
-
-        self.btn_open_calendar_folder = QPushButton("Abrir carpeta CVS")
-        self.btn_open_calendar_folder.setMaximumWidth(180)
-        self.btn_open_calendar_folder.clicked.connect(self.open_calendar_folder)
-
-        calendar_layout.addWidget(self.btn_open_calendar_excel)
-        calendar_layout.addWidget(self.btn_load_calendar_data)
-        calendar_layout.addWidget(self.btn_open_calendar_folder)
-        calendar_layout.addStretch()
-        config_layout.addLayout(calendar_layout)
-        
         config_group.setLayout(config_layout)
         
         # -------- Grupo: Archivos --------
@@ -723,6 +669,12 @@ class MainWindow(QMainWindow):
             count = len(self.selected_files)
             self.btn_process.setText(f"🚀 Procesar {count} Contrato(s)")
 
+    def _get_current_calendar(self):
+        """Devuelve el calendario seleccionado en DataTab si existe."""
+        if hasattr(self, 'data_tab') and hasattr(self.data_tab, 'calendar_combo'):
+            return self.data_tab.calendar_combo.currentText()
+        return None
+
     def load_calendar_data(self, calendar: str = None, silent: bool = False):
         """
         Carga el CSV del calendario seleccionado desde la carpeta CALENDARIOS.
@@ -750,7 +702,12 @@ class MainWindow(QMainWindow):
 
         # Determinar qué calendario cargar
         if calendar is None:
-            calendar = self.calendar_combo.currentText()
+            calendar = self._get_current_calendar()
+
+        if not calendar:
+            if not silent:
+                QMessageBox.warning(self, "Calendario no válido", "No se encontró un calendario seleccionado.")
+            return
 
         # --- CORRECCIÓN DE RUTA Y ARCHIVO ---
         # 1. Apuntar a la carpeta CALENDARIOS dentro de la raíz
@@ -832,7 +789,10 @@ class MainWindow(QMainWindow):
         """Abre la carpeta del calendario en el explorador."""
         if not self.controller:
             return
-        calendar = self.calendar_combo.currentText()
+        calendar = self._get_current_calendar()
+        if not calendar:
+            QMessageBox.warning(self, "Calendario no válido", "No se encontró un calendario seleccionado.")
+            return
         calendar_dir = self.controller.file_service.get_calendar_dir(calendar)
         
         if not os.path.exists(calendar_dir):
@@ -846,7 +806,10 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Sin directorio raíz", "Primero seleccione el directorio raíz.")
             return
             
-        calendar = self.calendar_combo.currentText()
+        calendar = self._get_current_calendar()
+        if not calendar:
+            QMessageBox.warning(self, "Calendario no válido", "No se encontró un calendario seleccionado.")
+            return
         calendar_dir = self.controller.file_service.get_calendar_dir(calendar)
         csv_path = os.path.join(calendar_dir, f"{calendar}.csv")
         
@@ -882,7 +845,7 @@ class MainWindow(QMainWindow):
 
         # --- LIMPIEZA DE ARGUMENTOS ---
         if isinstance(calendar, bool) or calendar is None:
-            calendar = self.calendar_combo.currentText()
+            calendar = self._get_current_calendar()
         
         if not calendar or not isinstance(calendar, str):
             return
@@ -946,7 +909,7 @@ class MainWindow(QMainWindow):
         if not self.selected_files:
             return
 
-        calendar = self.calendar_combo.currentText()
+        calendar = None  # El calendario se calcula automáticamente por cada archivo
         files = list(self.selected_files)
         # 2. Configuración visual inicial
         self.btn_process.setEnabled(False)
@@ -1030,21 +993,23 @@ class MainWindow(QMainWindow):
         self.btn_remove_file.setEnabled(True)
         
         # 3. CARGA AUTOMÁTICA (La parte importante)
-        calendar = self.calendar_combo.currentText()
-        try:
-            print(f"🔄 Refrescando base de datos automáticamente: {calendar}")
-            # Usamos load_calendar_file que es la que ya tiene corregida la ruta local
-            self.load_calendar_file(calendar=calendar, silent=True)
-            
-            # 4. Cambiar a la pestaña de datos automáticamente (opcional)
-            # Descomenta la siguiente línea si quieres que te lleve directo a la tabla
-            # self.tabs.setCurrentIndex(1)
-            
-        except Exception as e:
-            print(f"❌ Error al refrescar tabla tras procesamiento: {e}")
-            # Fallback: intentar cargar la pestaña de datos directamente
+        calendar = self._get_current_calendar()
+        if calendar:
+            try:
+                print(f"🔄 Refrescando base de datos automáticamente: {calendar}")
+                # Usamos load_calendar_file que es la que ya tiene corregida la ruta local
+                self.load_calendar_file(calendar=calendar, silent=True)
+            except Exception as e:
+                print(f"❌ Error al refrescar tabla tras procesamiento: {e}")
+                if hasattr(self, 'data_tab'):
+                    self.data_tab.load_data()
+        else:
             if hasattr(self, 'data_tab'):
                 self.data_tab.load_data()
+
+        # 4. Cambiar a la pestaña de datos automáticamente (opcional)
+        # Descomenta la siguiente línea si quieres que te lleve directo a la tabla
+        # self.tabs.setCurrentIndex(1)
 
     def handle_worker_error(self, error_msg):
         QMessageBox.critical(self, "Error en el procesamiento", error_msg)
@@ -1066,8 +1031,10 @@ class MainWindow(QMainWindow):
         Ejemplo: N:\Proyecto-modular\CALENDARIOS\2024A.csv
         """
         # 1. Obtener el nombre del calendario actual (ej. "2024A")
-        calendar_name = self.calendar_combo.currentText()
-        current_data = self.calendar_combo.currentData()
+        calendar_name = self._get_current_calendar()
+        current_data = None
+        if hasattr(self, 'data_tab') and hasattr(self.data_tab, 'calendar_combo'):
+            current_data = self.data_tab.calendar_combo.currentData()
         
         # --- LÓGICA DE LIMPIEZA DE CACHÉ (Se mantiene igual) ---
         if self.controller:
