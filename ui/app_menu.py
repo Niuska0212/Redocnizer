@@ -190,7 +190,7 @@ def on_about(window):
     QMessageBox.about(
         window, 
         "Acerca de REDOCNIZER",
-        "<h3>REDOCNIZER v2.1.2</h3>"
+        "<h3>REDOCNIZER v2.2.1</h3>"
         "<p><b>Sistema Inteligente de Gestión de Contratos</b></p>"
         "<p>Herramienta avanzada para la extracción y procesamiento automático de información "
         "de documentos PDF mediante OCR híbrido y redes neuronales CRNN.</p>"
