@@ -81,7 +81,7 @@ exe = EXE(
     strip=True,     # Activamos strip para reducir tamaño
     upx=True,       # Comprime el EXE final
     console=False, 
-    icon=os.path.join(root, 'ui', 'assets', 'logo_redocnizer.png'),
+    icon=os.path.join(root, 'ui', 'assets', 'logo_redocnizer.ico'),
 )
 
 coll = COLLECT(
