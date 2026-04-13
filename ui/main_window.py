@@ -20,18 +20,18 @@ from ui.app_menu import create_app_menu
 from ui.calendar_db import CalendarDB
 from ui.data_manager import DataManager
 from ui.data_tab import DataTab
-from ui.drive_sync_tab import DriveSyncTab
+#from ui.drive_sync_tab import DriveSyncTab
 from ui.network_credentials_dialog import NetworkCredentialsDialog
 
 from services.concurrent_worker import ConcurrentOCRWorker
-from services.supabase_service import SupabaseManager
+#from services.supabase_service import SupabaseManager
 
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        self.setWindowTitle("REDOCNIZER - Gestión de Contratos CUCEI    V.2.2.1")
+        self.setWindowTitle("REDOCNIZER - Gestión de Contratos CUCEI    V.2.2.2")
         screen = QApplication.primaryScreen().geometry()
         width = screen.width() * 0.65  
         height = screen.height() * 0.52
@@ -76,12 +76,12 @@ class MainWindow(QMainWindow):
         
         # -----------------------------------------
         # Reloj para reintentar sincronización cada 5 minutos
-        # -----------------------------------------
-        self.supabase_manager = SupabaseManager()
+        # -------- DESHABILITADO: Versión sin nube ---------
+        #self.supabase_manager = SupabaseManager()
         
-        self.sync_timer = QTimer()
-        self.sync_timer.timeout.connect(self.sync_data_to_supabase)
-        self.sync_timer.start(300000) # 300,000 milisegundos = 5 minutos
+        #self.sync_timer = QTimer()
+        #self.sync_timer.timeout.connect(self.sync_data_to_supabase)
+        #self.sync_timer.start(300000) # 300,000 milisegundos = 5 minutos
         
         # -----------------------------------------
         # UI PRINCIPAL
@@ -286,15 +286,15 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.data_tab, "📊 Ver/Editar Datos")
         
         # Pestaña 3: Google Drive (Módulo 3)
-        self.drive_sync_tab = DriveSyncTab(self)
-        self.tabs.addTab(self.drive_sync_tab, "☁️ Cloud")
+        #self.drive_sync_tab = DriveSyncTab(self)
+        #self.tabs.addTab(self.drive_sync_tab, "☁️ Cloud")
         
         # Conectar cambio de pestaña para actualizar datos
         self.tabs.currentChanged.connect(self.on_tab_changed)
         
         # permitir que otras partes de la ventana accedan fácilmente a la pestaña de respaldo
         # (ya que el constructor pasa "self" a DriveSyncTab)
-        self.drive_sync_tab = self.drive_sync_tab
+        #self.drive_sync_tab = self.drive_sync_tab
         
         self.setCentralWidget(self.tabs)
     
@@ -923,17 +923,12 @@ class MainWindow(QMainWindow):
         self.results_list.clear()
 
         # 3. CREAR EL TRABAJADOR (HILO)     
-        # Pasar drive_service si está disponible para subida automática en background
-        drive_service = None
-        if hasattr(self, 'drive_sync_tab') and self.drive_sync_tab and self.drive_sync_tab.drive_service:
-            drive_service = self.drive_sync_tab.drive_service
+        # Versión sin nube: Solo OCR local sin sincronización en la nube
         
         self.worker = ConcurrentOCRWorker(
             file_paths=files, 
             calendar=calendar, 
-            controller=self.controller,
-            drive_service=drive_service,
-            supabase_manager=self.supabase_manager
+            controller=self.controller
         )
 
         # 4. CONECTAR LAS SEÑALES (Protocolo de comunicación interna)
@@ -976,7 +971,7 @@ class MainWindow(QMainWindow):
         
         if successful > 0:
             msg += "<p>Los datos se han guardado en la pestaña 'Ver/Editar Datos'</p>"
-            self.sync_data_to_supabase()
+            #self.sync_data_to_supabase()
         
         QMessageBox.information(self, "Resultado", msg)
         
@@ -1178,27 +1173,28 @@ class MainWindow(QMainWindow):
             
             
     # =========================================================
-    # SINCRONIZACIÓN CON SUPABASE
+    # SINCRONIZACIÓN CON SUPABASE - DESHABILITADA
     # =========================================================
+    # Funcionalidad removida en versión sin nube para optimizar OCR
     
-    def sync_data_to_supabase(self):
-        """Sincronización robusta: Si falla el internet, la app sigue viva."""
-        if not self.supabase_manager.enabled:
-            return
+    # def sync_data_to_supabase(self):
+    #     """Sincronización robusta: Si falla el internet, la app sigue viva."""
+    #     if not self.supabase_manager.enabled:
+    #         return
 
-        try:
-            # Intentamos la sincronización
-            df_actual = self.data_manager.get_dataframe()
-            exito = self.supabase_manager.sync_calendar_dataframe(df_actual)
+    #     try:
+    #         # Intentamos la sincronización
+    #         df_actual = self.data_manager.get_dataframe()
+    #         exito = self.supabase_manager.sync_calendar_dataframe(df_actual)
 
-            if exito:
-                self.statusBar().showMessage("☁️ Sincronización en la nube completada", 3000)
-            else:
-                raise Exception("Fallo en la respuesta del servidor")
+    #         if exito:
+    #             self.statusBar().showMessage("☁️ Sincronización en la nube completada", 3000)
+    #         else:
+    #             raise Exception("Fallo en la respuesta del servidor")
                 
-        except Exception as e:
-            # En lugar de romperse, solo muestra un mensaje en la barra de estado
-            print(f"📡 Aviso de Red: No se pudo sincronizar con Supabase ({e})")
-            self.statusBar().showMessage("📡 Modo Offline: Error de conexión con la nube", 5000)
-            # Aquí NO relanzamos el error, así la app sigue funcionando localmente
+    #     except Exception as e:
+    #         # En lugar de romperse, solo muestra un mensaje en la barra de estado
+    #         print(f"📡 Aviso de Red: No se pudo sincronizar con Supabase ({e})")
+    #         self.statusBar().showMessage("📡 Modo Offline: Error de conexión con la nube", 5000)
+    #         # Aquí NO relanzamos el error, así la app sigue funcionando localmente
             

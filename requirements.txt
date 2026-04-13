@@ -28,18 +28,19 @@ PyMuPDF >=1.23.0
 pandas>=2.0.0
 openpyxl>=3.1.0  # Para manipular archivos Excel
 
+# ========== DESHABILITADO: Versión sin nube para optimizar OCR ==========
 # Google Cloud & Servicios en la Nube (Módulo 3 - Distribución)
-google-auth-oauthlib>=1.1.0
-google-auth-httplib2>=0.2.0
-google-api-python-client>=2.100.0
-google-cloud-storage>=2.10.0
+#google-auth-oauthlib>=1.1.0
+#google-auth-httplib2>=0.2.0
+#google-api-python-client>=2.100.0
+#google-cloud-storage>=2.10.0
 
 # Base De Datos y Entorno
-supabase>=2.3.0
+#supabase>=2.3.0
 python-dotenv>=1.0.0
 
 # Cliente HTTP (Supabase lo usa internamente)
-requests>=2.31.0
+#requests>=2.31.0
 
 # Firebase (Sincronización distribuida)
 #firebase-admin>=6.2.0

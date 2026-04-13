@@ -40,7 +40,7 @@ class ContractController:
         # Fallbacks básicos
         data.setdefault("CODIGO", "UNKNOWN")
         data.setdefault("NUM", "UNKNOWN")
-
+        
         # ---------------------------------------------------------
         # 3. CÁLCULO DINÁMICO DEL CALENDARIO REAL
         # ---------------------------------------------------------

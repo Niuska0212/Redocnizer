@@ -36,9 +36,9 @@ a = Analysis(
     datas=datas,
     hiddenimports=[
         'dotenv',
-        'supabase',
-        'postgrest',
-        'gotrue',
+        #'supabase',  # DESHABILITADO: Versión sin nube
+        #'postgrest',
+        #'gotrue',
         'PySide6',
         'cv2',
         'easyocr',
@@ -46,9 +46,9 @@ a = Analysis(
         'torchvision',    # REQUERIDO: EasyOCR depende de torchvision
         'pdf2image',
         'PIL.ImageResampling', # A veces Pillow pierde este import en el EXE
-        'google.auth',
-        'google.oauth2',
-        'firebase_admin',
+        #'google.auth',  # DESHABILITADO: Versión sin nube
+        #'google.oauth2',  # DESHABILITADO: Versión sin nube
+        #'firebase_admin',  # DESHABILITADO: Versión sin nube
         'core.document_extractor',
         'core.segmentacion_dinamica',
         'core.preprocessing',
@@ -91,5 +91,5 @@ coll = COLLECT(
     a.datas,
     strip=False,
     upx=True,
-    name='REDOCNIZER_V2.2.1'
+    name='REDOCNIZER_V2.2.2'
 )
