@@ -31,7 +31,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        self.setWindowTitle("REDOCNIZER - Gestión de Contratos CUCEI    V.2.2.2")
+        self.setWindowTitle("REDOCNIZER - Gestión de Contratos CUCEI    V.2.2.3")
         screen = QApplication.primaryScreen().geometry()
         width = screen.width() * 0.65  
         height = screen.height() * 0.52
@@ -677,8 +677,7 @@ class MainWindow(QMainWindow):
 
     def load_calendar_data(self, calendar: str = None, silent: bool = False):
         """
-        Carga el CSV del calendario seleccionado desde la carpeta CALENDARIOS.
-        Ruta: {root_dir}/CALENDARIOS/{calendar}.csv
+        Carga el CSV del calendario seleccionado desde la carpeta CALENDARIOS del proyecto.
         """
         if not self.controller:
             if not silent:
@@ -710,11 +709,9 @@ class MainWindow(QMainWindow):
             return
 
         # --- CORRECCIÓN DE RUTA Y ARCHIVO ---
-        # 1. Apuntar a la carpeta CALENDARIOS dentro de la raíz
-        calendarios_dir = os.path.join(self.root_dir, "CALENDARIOS")
-        
-        # 2. Construir la ruta exacta: CALENDARIOS/2024A.csv
-        csv_path = os.path.join(calendarios_dir, f"{calendar}.csv")
+        # Usar la carpeta CALENDARIOS del proyecto (coherente con FileService)
+        calendar_dir = self.controller.file_service.get_calendar_dir()
+        csv_path = os.path.join(calendar_dir, f"{calendar}.csv")
         
         print(f"📂 Intentando cargar: {csv_path}")
 
@@ -972,7 +969,23 @@ class MainWindow(QMainWindow):
         if successful > 0:
             msg += "<p>Los datos se han guardado en la pestaña 'Ver/Editar Datos'</p>"
             #self.sync_data_to_supabase()
-        
+
+        # Resumen por calendario si hay varios ciclos diferentes
+        calendar_counts = {}
+        for res in results:
+            data = res.get('data', {})
+            cal = data.get('CALENDARIO_CONTRATO') or "Desconocido"
+            calendar_counts[cal] = calendar_counts.get(cal, 0) + 1
+
+        if len(calendar_counts) > 1:
+            msg += "<p><b>Distribución por calendario:</b></p><ul>"
+            for cal, cnt in calendar_counts.items():
+                msg += f"<li>{cal}: {cnt}</li>"
+            msg += "</ul>"
+        elif len(calendar_counts) == 1:
+            cal = next(iter(calendar_counts))
+            msg += f"<p><b>Calendario procesado:</b> {cal}</p>"
+
         QMessageBox.information(self, "Resultado", msg)
         
         # 1. Limpieza visual
@@ -988,11 +1001,14 @@ class MainWindow(QMainWindow):
         self.btn_remove_file.setEnabled(True)
         
         # 3. CARGA AUTOMÁTICA (La parte importante)
-        calendar = self._get_current_calendar()
-        if calendar:
+        if len(calendar_counts) > 1:
+            print("🔄 Refrescando vista general de todos los calendarios procesados")
+            if hasattr(self, 'data_tab'):
+                self.data_tab.load_all_calendar_data()
+        elif len(calendar_counts) == 1:
+            calendar = next(iter(calendar_counts))
             try:
                 print(f"🔄 Refrescando base de datos automáticamente: {calendar}")
-                # Usamos load_calendar_file que es la que ya tiene corregida la ruta local
                 self.load_calendar_file(calendar=calendar, silent=True)
             except Exception as e:
                 print(f"❌ Error al refrescar tabla tras procesamiento: {e}")

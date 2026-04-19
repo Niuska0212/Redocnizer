@@ -43,7 +43,7 @@ IMG_W = 256
 CHANNELS = 1
 BATCH_SIZE = 32
 EPOCHS = 200
-OUTPUT_SEQ_LEN = IMG_W // 8  # coincide con pooling de 3 capas (2*2*2)
+OUTPUT_SEQ_LEN = IMG_W // 8  # coincide con pooling de 3 capas (2.2.3)
 AUTOTUNE = tf.data.AUTOTUNE
 
 # Training

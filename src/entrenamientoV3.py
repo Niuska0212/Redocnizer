@@ -26,7 +26,7 @@ os.makedirs(ruta_errores, exist_ok=True)
 img_height = 32
 img_width = 256
 # La longitud de la secuencia de salida se ajusta a la nueva arquitectura más profunda.
-# Ahora hay 3 capas de MaxPooling, por lo que 256 / (2*2*2) = 32.
+# Ahora hay 3 capas de MaxPooling, por lo que 256 / (2.2.3) = 32.
 output_sequence_length = img_width // 8
 
 # -------------------------------

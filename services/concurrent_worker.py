@@ -60,7 +60,7 @@ class ConcurrentOCRWorker(QThread):
         
         # AJUSTE SEGURO: 2 hilos para mantener estabilidad en 16GB RAM
         # Puedes probar con 3 si ves que la RAM no llega al 85%
-        pool.setMaxThreadCount(3) 
+        pool.setMaxThreadCount(2) 
 
         for fp in self.file_paths:
             task = OCRTask(fp, self.calendar, self.controller)

@@ -99,7 +99,7 @@ class DriveSyncTab(QWidget):
 
         info_user_layout = QVBoxLayout()
         self.user_label = QLabel("Estado: Desconectado")
-        self.user_label.setStyleSheet("font-size: 18px; font-weight: bold; color: #202124; border: none;")
+        self.user_label.setStyleSheet("font-size: 18px; font-weight: bold; color: #2.2.34; border: none;")
         
         self.email_label = QLabel("Inicia sesión para respaldar tus contratos automáticamente.")
         self.email_label.setStyleSheet("color: #5f6368; font-size: 13px; border: none;")

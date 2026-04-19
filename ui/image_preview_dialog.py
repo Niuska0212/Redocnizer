@@ -36,7 +36,7 @@ class ImagePreviewDialog(QDialog):
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setAlignment(Qt.AlignCenter)
-        self.scroll_area.setStyleSheet("background-color: #2b2b2b; border: 1px solid #333;")
+        self.scroll_area.setStyleSheet("background-color: #2.2.3b; border: 1px solid #333;")
 
         # Label contenedor de la imagen
         self.image_label = QLabel()

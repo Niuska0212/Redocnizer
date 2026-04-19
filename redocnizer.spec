@@ -3,52 +3,45 @@ import sys
 import os
 from PyInstaller.utils.hooks import collect_submodules, collect_data_files
 
-# Rutas base
 root = SPECPATH
 
-# 1. Recopilar archivos de datos de PySide6 y EasyOCR
-# EasyOCR a veces necesita sus archivos de configuración internos
+# 1. Recopilar archivos de datos
 pyside6_datas = collect_data_files('PySide6')
 easyocr_datas = collect_data_files('easyocr')
 
-# 2. Definir archivos de datos locales
 datas = [
     (os.path.join(root, 'ui', 'assets'), 'ui/assets'),
-    (os.path.join(root, 'models'), 'models'), # Carpeta con los .pth de EasyOCR
+    (os.path.join(root, 'models'), 'models'),
 ] + pyside6_datas + easyocr_datas
 
-# --- ARCHIVOS DE RAÍZ Y CONFIGURACIÓN ---
+# Archivos de raíz
 for extra_file in ['README.md', 'LICENSE', 'calendarios.db', 'credentials.json', 'credentials_supa.env']:
     file_path = os.path.join(root, extra_file)
     if os.path.exists(file_path):
         datas.append((file_path, '.'))
 
-# Agregar carpeta de documentación
 if os.path.exists(os.path.join(root, 'docs')):
     datas.append((os.path.join(root, 'docs'), 'docs'))
 
 block_cipher = None
 
+# Lista de exclusiones que NO rompen el programa
+excluir = ['tensorflow', 'tensorboard', 'keras', 'matplotlib', 'tkinter', 'h5py']
+
 a = Analysis(
     [os.path.join(root, 'app.py')],
-    pathex=[],
+    pathex=[root],
     binaries=[],
     datas=datas,
     hiddenimports=[
         'dotenv',
-        #'supabase',  # DESHABILITADO: Versión sin nube
-        #'postgrest',
-        #'gotrue',
         'PySide6',
         'cv2',
         'easyocr',
-        'torch',          # REQUERIDO: EasyOCR depende de torch
-        'torchvision',    # REQUERIDO: EasyOCR depende de torchvision
+        'torch',
+        'torchvision',
         'pdf2image',
-        'PIL.ImageResampling', # A veces Pillow pierde este import en el EXE
-        #'google.auth',  # DESHABILITADO: Versión sin nube
-        #'google.oauth2',  # DESHABILITADO: Versión sin nube
-        #'firebase_admin',  # DESHABILITADO: Versión sin nube
+        'PIL.ImageResampling',
         'core.document_extractor',
         'core.segmentacion_dinamica',
         'core.preprocessing',
@@ -60,13 +53,15 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    # EXCLUIMOS TENSORFLOW y otras librerías pesadas que ya no usas
-    excludedimports=['tensorflow', 'tensorboard', 'keras', 'matplotlib', 'scipy', 'tkinter'],
+    excludedimports=excluir,
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
     noarchive=False,
 )
+
+# Limpieza manual de archivos de TensorFlow/Keras que se logren filtrar
+a.binaries = [x for x in a.binaries if not any(bad in x[0].lower() for bad in excluir)]
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
@@ -76,11 +71,11 @@ exe = EXE(
     [],
     exclude_binaries=True,
     name='REDOCNIZER',
-    debug=False,
+    debug=True,
     bootloader_ignore_signals=False,
-    strip=True,     # Activamos strip para reducir tamaño
-    upx=True,       # Comprime el EXE final
-    console=False, 
+    strip=True,
+    upx=False, # Desactivado para evitar bloqueos al iniciar
+    console=True,
     icon=os.path.join(root, 'ui', 'assets', 'logo_redocnizer.ico'),
 )
 
@@ -90,6 +85,6 @@ coll = COLLECT(
     a.zipfiles,
     a.datas,
     strip=False,
-    upx=True,
-    name='REDOCNIZER_V2.2.2'
+    upx=False,
+    name='REDOCNIZER_V2.2.3'
 )

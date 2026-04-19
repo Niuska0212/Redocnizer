@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
     QTableWidgetItem, QHeaderView, QLineEdit, QFileDialog, QMessageBox,
     QAbstractItemView, QComboBox
 )
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import Qt, QTimer, Signal, QFileSystemWatcher
 from PySide6.QtGui import QPixmap, QColor, QBrush, QWheelEvent
 
 from services.pdf_service import pdf_to_images
@@ -46,31 +46,26 @@ class DataTab(QWidget):
         self.current_preview_pixmap = None  # Para almacenar la imagen de vista previa actual
         self.setup_ui()
 
+        # Ruta absoluta a la carpeta CALENDARIOS del proyecto
+        self.project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        self.calendarios_dir = os.path.join(self.project_root, "CALENDARIOS")
+        os.makedirs(self.calendarios_dir, exist_ok=True)
+
+        # Watcher para cambios en la carpeta CALENDARIOS
+        self.folder_watcher = QFileSystemWatcher()
+        self.folder_watcher.addPath(self.calendarios_dir)
+        self.folder_watcher.directoryChanged.connect(self.reload_calendars)
+
         # Configuración del calendario
         self.cal_db = CalendarDB()
-        cals = self.cal_db.get_all_calendars()
-        if cals:
-            for cal in cals:
-                self.calendar_combo.addItem(cal.nombre, cal)
-            self.calendar_combo.setCurrentIndex(0)
-        else:
-            self.calendar_combo.addItems([
-                "2024A", "2024B",
-                "2025A", "2025B",
-                "2026A", "2026B",
-                "2027A", "2027B",
-                "2028A", "2028B",
-                "2029A", "2029B",
-                "2030A", "2030B",
-                "2031A", "2031B"
-            ])
-            self.calendar_combo.setCurrentText("2024A")
+        self._populate_calendar_combo()
         
         self.calendar_combo.currentIndexChanged.connect(self._on_calendar_changed)
         
         # Cargar datos iniciales del calendario
         self.current_calendar_index = self.calendar_combo.currentIndex()
-        self._on_calendar_changed()
+        if self.calendar_combo.count() > 0:
+            self._on_calendar_changed()
 
         # Conectar señal de actualización
         self.data_manager.data_updated.connect(self.load_data)
@@ -213,6 +208,43 @@ class DataTab(QWidget):
         
         layout.addLayout(table_preview_layout)
         self.setLayout(layout)
+        
+    def _populate_calendar_combo(self):
+        """Puebla el combo de calendarios con datos de DB o archivos CSV."""
+        self.calendar_combo.clear()
+        cals = self.cal_db.get_all_calendars()
+        if cals:
+            for cal in cals:
+                self.calendar_combo.addItem(cal.nombre, cal)
+            self.calendar_combo.setCurrentIndex(0)
+        else:
+            # Verificar archivos CSV existentes en la carpeta CALENDARIOS
+            if os.path.exists(self.calendarios_dir):
+                csv_files = [f for f in os.listdir(self.calendarios_dir) if f.endswith('.csv')]
+                if csv_files:
+                    for csv_file in csv_files:
+                        name = os.path.splitext(csv_file)[0]
+                        self.calendar_combo.addItem(name)
+                    self.calendar_combo.setCurrentText("2024A")  # O el primero disponible
+                else:
+                    self.info_label.setText("Aún no se encuentran archivos CSV en la carpeta CALENDARIOS. No hay calendarios disponibles.")
+            else:
+                self.info_label.setText("No se encontró la carpeta CALENDARIOS.")
+        
+    def reload_calendars(self):
+        """Recarga la lista de calendarios desde DB o archivos CSV."""
+        previous_selection = self.calendar_combo.currentText()
+        self._populate_calendar_combo()
+        # Intentar mantener la selección anterior si aún existe
+        if previous_selection and self.calendar_combo.findText(previous_selection) != -1:
+            self.calendar_combo.setCurrentText(previous_selection)
+        # Si ahora hay calendarios y antes no, cargar el primero
+        if self.calendar_combo.count() > 0 and self.current_calendar_index == -1:
+            self.current_calendar_index = 0
+            self._on_calendar_changed()
+        # Limpiar mensaje si ahora hay calendarios
+        if self.calendar_combo.count() > 0:
+            self.info_label.setText("0 registros")
         
     def _open_advanced_preview(self):
         """Abre la ventana con zoom y movimiento."""
@@ -654,28 +686,71 @@ class DataTab(QWidget):
     def load_calendar_data(self):
         """Carga los datos del calendario seleccionado."""
         calendar_name = self.calendar_combo.currentText()
-        file_path = os.path.join("CALENDARIOS", f"{calendar_name}.csv")
+        file_path = os.path.join(self.calendarios_dir, f"{calendar_name}.csv")
         if os.path.exists(file_path):
             self.data_manager.load_from_csv(file_path)
             self.load_data()
         else:
-            QMessageBox.warning(self, "Archivo no encontrado", f"No se encontró el archivo CSV para {calendar_name}")
+            self.info_label.setText(f"No se encuentra el archivo CSV para {calendar_name}. Verifique que el archivo exista en la carpeta CALENDARIOS.")
+
+    def load_all_calendar_data(self):
+        """Carga y muestra todos los CSV de CALENDARIOS en una vista agregada."""
+        csv_files = sorted([f for f in os.listdir(self.calendarios_dir) if f.endswith('.csv')])
+        if not csv_files:
+            self.table.setRowCount(0)
+            self.table.setColumnCount(0)
+            self.info_label.setText("No hay archivos CSV en CALENDARIOS para mostrar.")
+            self.data_manager.source_csv_file = None
+            self.data_manager.data = pd.DataFrame()
+            self.original_df = pd.DataFrame()
+            self.filtered_df = pd.DataFrame()
+            self.history.clear()
+            self.btn_save_all.setEnabled(False)
+            self.btn_undo.setEnabled(False)
+            self.btn_redo.setEnabled(False)
+            return False
+
+        frames = []
+        for csv_file in csv_files:
+            path = os.path.join(self.calendarios_dir, csv_file)
+            try:
+                df = pd.read_csv(path, encoding='utf-8-sig', dtype=str)
+                frames.append(df)
+            except Exception as e:
+                print(f"⚠️ No se pudo leer {path}: {e}")
+
+        if not frames:
+            self.info_label.setText("No se pudieron leer los CSV de CALENDARIOS.")
+            return False
+
+        combined = pd.concat(frames, ignore_index=True)
+        self.data_manager.data = combined
+        self.data_manager.source_csv_file = None
+        self.original_df = combined.copy()
+        self.filtered_df = combined.copy()
+        self.history.clear()
+        self.btn_save_all.setEnabled(False)
+        self.btn_undo.setEnabled(False)
+        self.btn_redo.setEnabled(False)
+        self._populate_table(self.filtered_df)
+        self.info_label.setText(f"{len(self.filtered_df)} registros - {len(self.filtered_df.columns)} columnas (General)")
+        return True
 
     def open_calendar_excel(self):
         """Abre el archivo CSV del calendario seleccionado (se abre en Excel por defecto)."""
         calendar_name = self.calendar_combo.currentText()
-        file_path = os.path.join("CALENDARIOS", f"{calendar_name}.csv")
+        file_path = os.path.join(self.calendarios_dir, f"{calendar_name}.csv")
         if os.path.exists(file_path):
             os.startfile(file_path)
         else:
-            QMessageBox.information(self, "Archivo no encontrado", f"No se encontró el archivo CSV para {calendar_name}")
+            self.info_label.setText(f"No se encontró el archivo CSV para {calendar_name}")
 
     def open_calendar_folder(self):
         """Abre la carpeta CALENDARIOS."""
-        if os.path.exists("CALENDARIOS"):
-            os.startfile("CALENDARIOS")
+        if os.path.exists(self.calendarios_dir):
+            os.startfile(self.calendarios_dir)
         else:
-            QMessageBox.warning(self, "Carpeta no encontrada", "No se encontró la carpeta CALENDARIOS")
+            self.info_label.setText("No se encontró la carpeta CALENDARIOS")
 
     def _on_external_file_changed(self):
         """Maneja cambios externos en el CSV con validación de cambios pendientes."""
