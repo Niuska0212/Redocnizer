@@ -71,11 +71,11 @@ exe = EXE(
     [],
     exclude_binaries=True,
     name='REDOCNIZER',
-    debug=True,
+    debug=False,
     bootloader_ignore_signals=False,
     strip=True,
     upx=False, # Desactivado para evitar bloqueos al iniciar
-    console=True,
+    console=False,
     icon=os.path.join(root, 'ui', 'assets', 'logo_redocnizer.ico'),
 )
 
