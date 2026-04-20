@@ -51,11 +51,13 @@ class ConcurrentOCRWorker(QThread):
         self.successful = 0
         self.failed = 0
         self.processed_count = 0
+        self.pending = 0
 
     def run(self):
         total = len(self.file_paths)
         if total == 0: return
 
+        self.pending = total
         pool = QThreadPool.globalInstance()
         
         # AJUSTE SEGURO: 2 hilos para mantener estabilidad en 16GB RAM
@@ -68,19 +70,25 @@ class ConcurrentOCRWorker(QThread):
             task.signals.error.connect(self._on_task_error)
             pool.start(task)
 
-        pool.waitForDone()
-        self.all_finished.emit(self.successful, self.failed, self.results_list)
+        # No esperamos aquí, las señales manejarán el final
 
     def _on_task_finished(self, text, result):
         self.successful += 1
         self.results_list.append(result)
         self.file_finished.emit(text, result)
         self._report_progress()
+        self.pending -= 1
+        if self.pending == 0:
+            self.all_finished.emit(self.successful, self.failed, self.results_list)
 
     def _on_task_error(self, error_msg):
         self.failed += 1
+        self.results_list.append({"status": "error"})
         self.file_finished.emit(error_msg, {"status": "error"})
         self._report_progress()
+        self.pending -= 1
+        if self.pending == 0:
+            self.all_finished.emit(self.successful, self.failed, self.results_list)
 
     def _report_progress(self):
         self.processed_count += 1

@@ -693,49 +693,6 @@ class DataTab(QWidget):
         else:
             self.info_label.setText(f"No se encuentra el archivo CSV para {calendar_name}. Verifique que el archivo exista en la carpeta CALENDARIOS.")
 
-    def load_all_calendar_data(self):
-        """Carga y muestra todos los CSV de CALENDARIOS en una vista agregada."""
-        csv_files = sorted([f for f in os.listdir(self.calendarios_dir) if f.endswith('.csv')])
-        if not csv_files:
-            self.table.setRowCount(0)
-            self.table.setColumnCount(0)
-            self.info_label.setText("No hay archivos CSV en CALENDARIOS para mostrar.")
-            self.data_manager.source_csv_file = None
-            self.data_manager.data = pd.DataFrame()
-            self.original_df = pd.DataFrame()
-            self.filtered_df = pd.DataFrame()
-            self.history.clear()
-            self.btn_save_all.setEnabled(False)
-            self.btn_undo.setEnabled(False)
-            self.btn_redo.setEnabled(False)
-            return False
-
-        frames = []
-        for csv_file in csv_files:
-            path = os.path.join(self.calendarios_dir, csv_file)
-            try:
-                df = pd.read_csv(path, encoding='utf-8-sig', dtype=str)
-                frames.append(df)
-            except Exception as e:
-                print(f"⚠️ No se pudo leer {path}: {e}")
-
-        if not frames:
-            self.info_label.setText("No se pudieron leer los CSV de CALENDARIOS.")
-            return False
-
-        combined = pd.concat(frames, ignore_index=True)
-        self.data_manager.data = combined
-        self.data_manager.source_csv_file = None
-        self.original_df = combined.copy()
-        self.filtered_df = combined.copy()
-        self.history.clear()
-        self.btn_save_all.setEnabled(False)
-        self.btn_undo.setEnabled(False)
-        self.btn_redo.setEnabled(False)
-        self._populate_table(self.filtered_df)
-        self.info_label.setText(f"{len(self.filtered_df)} registros - {len(self.filtered_df.columns)} columnas (General)")
-        return True
-
     def open_calendar_excel(self):
         """Abre el archivo CSV del calendario seleccionado (se abre en Excel por defecto)."""
         calendar_name = self.calendar_combo.currentText()

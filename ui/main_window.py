@@ -958,69 +958,41 @@ class MainWindow(QMainWindow):
         self.results_list.scrollToBottom()
 
     def show_final_summary(self, successful, failed, results):
-        total = successful + failed
+        # --- BLINDAJE: Ignoramos los argumentos y contamos la realidad de la lista ---
+        total_real = len(results)
+        
+        # Recalculamos exitosos y fallidos basados puramente en el contenido de 'results'
+        exitosos_reales = sum(1 for r in results if r.get('status') == 'success')
+        fallidos_reales = sum(1 for r in results if r.get('status') == 'error')
+        
+        # Si por alguna razón la suma no cuadra con lo que el Worker mandó, 
+        # usamos los reales para que el usuario no vea números inconsistentes.
         msg = f"""
         <h3>Proceso Completado</h3>
-        <p><b>Total:</b> {total} archivo(s)</p>
-        <p style='color: green;'><b>Exitosos:</b> {successful}</p>
-        <p style='color: red;'><b>Fallidos:</b> {failed}</p>
+        <p><b>Total procesados:</b> {total_real} archivo(s)</p>
+        <p style='color: green;'><b>Exitosos:</b> {exitosos_reales}</p>
+        <p style='color: red;'><b>Fallidos:</b> {fallidos_reales}</p>
         """
         
-        if successful > 0:
+        if exitosos_reales > 0:
             msg += "<p>Los datos se han guardado en la pestaña 'Ver/Editar Datos'</p>"
-            #self.sync_data_to_supabase()
-
-        # Resumen por calendario si hay varios ciclos diferentes
-        calendar_counts = {}
-        for res in results:
-            data = res.get('data', {})
-            cal = data.get('CALENDARIO_CONTRATO') or "Desconocido"
-            calendar_counts[cal] = calendar_counts.get(cal, 0) + 1
-
-        if len(calendar_counts) > 1:
-            msg += "<p><b>Distribución por calendario:</b></p><ul>"
-            for cal, cnt in calendar_counts.items():
-                msg += f"<li>{cal}: {cnt}</li>"
-            msg += "</ul>"
-        elif len(calendar_counts) == 1:
-            cal = next(iter(calendar_counts))
-            msg += f"<p><b>Calendario procesado:</b> {cal}</p>"
 
         QMessageBox.information(self, "Resultado", msg)
         
-        # 1. Limpieza visual
+        # --- LIMPIEZA Y REHABILITACIÓN ---
         self.clear_files()
-        self.selected_files.clear() # Limpia el set interno
-        self.results_list.clear()   # Limpia la lista visual
+        self.selected_files.clear() 
+        self.results_list.clear()   
         self.progress_bar.setVisible(False)
         
-        # 2. Rehabilitar botones
         self.btn_process.setEnabled(True)
         self.btn_select_file.setEnabled(True)
         self.btn_clear_files.setEnabled(True)
         self.btn_remove_file.setEnabled(True)
         
-        # 3. CARGA AUTOMÁTICA (La parte importante)
-        if len(calendar_counts) > 1:
-            print("🔄 Refrescando vista general de todos los calendarios procesados")
-            if hasattr(self, 'data_tab'):
-                self.data_tab.load_all_calendar_data()
-        elif len(calendar_counts) == 1:
-            calendar = next(iter(calendar_counts))
-            try:
-                print(f"🔄 Refrescando base de datos automáticamente: {calendar}")
-                self.load_calendar_file(calendar=calendar, silent=True)
-            except Exception as e:
-                print(f"❌ Error al refrescar tabla tras procesamiento: {e}")
-                if hasattr(self, 'data_tab'):
-                    self.data_tab.load_data()
-        else:
-            if hasattr(self, 'data_tab'):
-                self.data_tab.load_data()
-
-        # 4. Cambiar a la pestaña de datos automáticamente (opcional)
-        # Descomenta la siguiente línea si quieres que te lleve directo a la tabla
-        # self.tabs.setCurrentIndex(1)
+        # --- REFRESCO DE TABLAS ---
+        if hasattr(self, 'data_tab'):
+            self.data_tab.load_data()
 
     def handle_worker_error(self, error_msg):
         QMessageBox.critical(self, "Error en el procesamiento", error_msg)
