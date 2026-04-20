@@ -557,6 +557,11 @@ class MainWindow(QMainWindow):
         # Mostrar vista previa del primer archivo
         if self.selected_files:
             self.show_preview(self.selected_files[0])
+
+        # Refrescar la lista de calendarios y la tabla de datos automáticamente
+        if hasattr(self, 'data_tab'):
+            self.data_tab._populate_calendar_combo()
+            self.data_tab.load_data()
         
         self._update_process_state()
 

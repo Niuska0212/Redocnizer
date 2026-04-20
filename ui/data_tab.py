@@ -44,39 +44,36 @@ class DataTab(QWidget):
         self.file_watcher = FileWatcher()  # Monitor de cambios externos
         self.file_watcher.file_changed.connect(self._on_external_file_changed)
         self.current_preview_pixmap = None  # Para almacenar la imagen de vista previa actual
+
+        self.project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        self.calendarios_dir = os.path.join(self.project_root, "CALENDARIOS")
+        os.makedirs(self.calendarios_dir, exist_ok=True)
+
+        self.default_calendarios = [
+            "2024A", "2024B",
+            "2025A", "2025B",
+            "2026A", "2026B",
+            "2027A", "2027B",
+            "2028A", "2028B",
+            "2029A", "2029B",
+            "2030A", "2030B",
+            "2031A", "2031B"
+        ]
+
         self.setup_ui()
 
         # Configuración del calendario
         self.cal_db = CalendarDB()
-        cals = self.cal_db.get_all_calendars()
-        if cals:
-            for cal in cals:
-                self.calendar_combo.addItem(cal.nombre, cal)
-            self.calendar_combo.setCurrentIndex(0)
-        else:
-            self.calendar_combo.addItems([
-                "2024A", "2024B",
-                "2025A", "2025B",
-                "2026A", "2026B",
-                "2027A", "2027B",
-                "2028A", "2028B",
-                "2029A", "2029B",
-                "2030A", "2030B",
-                "2031A", "2031B"
-            ])
-            self.calendar_combo.setCurrentText("2024A")
-        
+        self._populate_calendar_combo()
         self.calendar_combo.currentIndexChanged.connect(self._on_calendar_changed)
-        
+
         # Cargar datos iniciales del calendario
         self.current_calendar_index = self.calendar_combo.currentIndex()
         self._on_calendar_changed()
 
         # Conectar señal de actualización
         self.data_manager.data_updated.connect(self.load_data)
-        
-        self.data_manager.data_updated.connect(self.load_data)
-        
+
         # Cargar datos iniciales
         QTimer.singleShot(100, self.load_data)
 
@@ -213,7 +210,36 @@ class DataTab(QWidget):
         
         layout.addLayout(table_preview_layout)
         self.setLayout(layout)
-        
+
+    def _discover_csv_calendars(self):
+        """Devuelve los nombres de calendario disponibles en la carpeta CALENDARIOS."""
+        if not os.path.exists(self.calendarios_dir):
+            return []
+        return sorted(
+            [os.path.splitext(f)[0] for f in os.listdir(self.calendarios_dir)
+             if f.lower().endswith('.csv')]
+        )
+
+    def _populate_calendar_combo(self):
+        """Puebla el combo con calendarios de archivos CSV o la base de datos."""
+        self.calendar_combo.clear()
+        csv_calendars = self._discover_csv_calendars()
+
+        if csv_calendars:
+            self.calendar_combo.addItems(csv_calendars)
+            self.calendar_combo.setCurrentIndex(0)
+            return
+
+        cals = self.cal_db.get_all_calendars()
+        if cals:
+            for cal in cals:
+                self.calendar_combo.addItem(cal.nombre, cal)
+            self.calendar_combo.setCurrentIndex(0)
+            return
+
+        self.calendar_combo.addItems(self.default_calendarios)
+        self.calendar_combo.setCurrentText(self.default_calendarios[0])
+
     def _open_advanced_preview(self):
         """Abre la ventana con zoom y movimiento."""
         if self.current_preview_pixmap and not self.current_preview_pixmap.isNull():
@@ -230,7 +256,10 @@ class DataTab(QWidget):
         if df.empty:
             self.table.setRowCount(0)
             self.table.setColumnCount(0)
-            self.info_label.setText("0 registros - No hay datos")
+            if self.data_manager.source_csv_file and os.path.exists(self.data_manager.source_csv_file):
+                self.info_label.setText("0 registros - No hay datos en este calendario.")
+            else:
+                self.info_label.setText("No hay datos para visualizar. Selecciona un calendario o genera un CSV.")
             self.original_df = pd.DataFrame()
             self.filtered_df = pd.DataFrame()
             self.history.clear()
@@ -654,17 +683,19 @@ class DataTab(QWidget):
     def load_calendar_data(self):
         """Carga los datos del calendario seleccionado."""
         calendar_name = self.calendar_combo.currentText()
-        file_path = os.path.join("CALENDARIOS", f"{calendar_name}.csv")
+        file_path = os.path.join(self.calendarios_dir, f"{calendar_name}.csv")
         if os.path.exists(file_path):
             self.data_manager.load_from_csv(file_path)
             self.load_data()
         else:
-            QMessageBox.warning(self, "Archivo no encontrado", f"No se encontró el archivo CSV para {calendar_name}")
+            self.data_manager.data = pd.DataFrame()
+            self.data_manager.source_csv_file = None
+            self.load_data()
 
     def open_calendar_excel(self):
         """Abre el archivo CSV del calendario seleccionado (se abre en Excel por defecto)."""
         calendar_name = self.calendar_combo.currentText()
-        file_path = os.path.join("CALENDARIOS", f"{calendar_name}.csv")
+        file_path = os.path.join(self.calendarios_dir, f"{calendar_name}.csv")
         if os.path.exists(file_path):
             os.startfile(file_path)
         else:
@@ -672,8 +703,8 @@ class DataTab(QWidget):
 
     def open_calendar_folder(self):
         """Abre la carpeta CALENDARIOS."""
-        if os.path.exists("CALENDARIOS"):
-            os.startfile("CALENDARIOS")
+        if os.path.exists(self.calendarios_dir):
+            os.startfile(self.calendarios_dir)
         else:
             QMessageBox.warning(self, "Carpeta no encontrada", "No se encontró la carpeta CALENDARIOS")
 
