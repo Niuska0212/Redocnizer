@@ -13,7 +13,7 @@ from PySide6.QtGui import QPixmap, QColor, QBrush, QWheelEvent
 
 from services.pdf_service import pdf_to_images
 from ui.history_manager import HistoryManager 
-from ui.calendar_db import CalendarDB#from ui.edit_record_dialog import EditRecordDialog
+#from ui.calendar_db import CalendarDB#from ui.edit_record_dialog import EditRecordDialog
 from ui.file_watcher import FileWatcher
 try:
     from ui.image_preview_dialog import ImagePreviewDialog
@@ -57,7 +57,7 @@ class DataTab(QWidget):
         self.folder_watcher.directoryChanged.connect(self.reload_calendars)
 
         # Configuración del calendario
-        self.cal_db = CalendarDB()
+        #self.cal_db = CalendarDB()
         self._populate_calendar_combo()
         
         self.calendar_combo.currentIndexChanged.connect(self._on_calendar_changed)
@@ -212,12 +212,12 @@ class DataTab(QWidget):
     def _populate_calendar_combo(self):
         """Puebla el combo de calendarios con datos de DB o archivos CSV."""
         self.calendar_combo.clear()
-        cals = self.cal_db.get_all_calendars()
-        if cals:
-            for cal in cals:
-                self.calendar_combo.addItem(cal.nombre, cal)
-            self.calendar_combo.setCurrentIndex(0)
-        else:
+        #cals = self.cal_db.get_all_calendars()
+        #if cals:
+        #    for cal in cals:
+        #        self.calendar_combo.addItem(cal.nombre, cal)
+        #    self.calendar_combo.setCurrentIndex(0)
+        if os.path.exists(self.calendarios_dir):
             # Verificar archivos CSV existentes en la carpeta CALENDARIOS
             if os.path.exists(self.calendarios_dir):
                 csv_files = [f for f in os.listdir(self.calendarios_dir) if f.endswith('.csv')]
