@@ -657,6 +657,6 @@ redocnizer-1.0.0-setup.exe
 
 ---
 
-**Arquitectura versión**: 2.2.3
+**Arquitectura versión**: 2.3.0
 **Última actualización**: 24 de febrero de 2026
 

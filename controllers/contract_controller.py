@@ -11,6 +11,7 @@ from services.pdf_service import pdf_to_images
 
 class ContractController:
     def __init__(self, root_dir: str, preview_dir: str):
+        self.root_dir = root_dir
         self.ocr_service = OCRService()
         self.file_service = FileService(root_dir)
         self.preview_dir = preview_dir

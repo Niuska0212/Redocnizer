@@ -48,6 +48,7 @@ python-dotenv>=1.0.0
 # Utilidades
 joblib>=1.3.0
 pyyaml>=6.0
+psutil>=5.9.0  # Para monitoreo de memoria y recursos
 python-dotenv>=1.0.0  # Para variables de entorno
 requests>=2.31.0  # Cliente HTTP
 

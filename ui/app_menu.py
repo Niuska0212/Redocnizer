@@ -3,7 +3,7 @@ from PySide6.QtWidgets import QFileDialog, QMessageBox, QDialog
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtCore import QSettings
 import os
-from ui.calendar_config_dialog import CalendarConfigDialog
+#from ui.calendar_config_dialog import CalendarConfigDialog
 
 
 def create_app_menu(window):
@@ -75,9 +75,9 @@ def create_app_menu(window):
     act_gpu.triggered.connect(lambda checked: on_toggle_gpu(window, checked, settings))
     config_menu.addAction(act_gpu)
 
-    act_config = QAction("Configurar Calendarios", window)
-    act_config.triggered.connect(lambda: on_config_calendar(window))
-    config_menu.addAction(act_config)
+    #act_config = QAction("Configurar Calendarios", window)
+    #act_config.triggered.connect(lambda: on_config_calendar(window))
+    #config_menu.addAction(act_config)
 
     # ---- MENÚ: AYUDA ----
     help_menu = menubar.addMenu("Ayuda")
@@ -175,22 +175,22 @@ def on_toggle_gpu(window, checked, settings):
     msg = "GPU activada. Reinicia la app." if checked else "Se usará CPU."
     QMessageBox.information(window, "Aceleración GPU", msg)
 
-def on_config_calendar(window):
-    """Abre el diálogo de configuración de calendarios."""
-    dialog = CalendarConfigDialog(window)
-    if dialog.exec() == QDialog.Accepted:
-        calendar = dialog.get_selected_calendar()
-        if calendar:
-            # Actualizar combo de calendarios en la ventana principal
-            if hasattr(window, 'calendar_combo'):
-                window.calendar_combo.setCurrentText(calendar.nombre)
-            QMessageBox.information(window, "Calendario", f"Calendario '{calendar.nombre}' seleccionado.")
+#def on_config_calendar(window):
+#    """Abre el diálogo de configuración de calendarios."""
+#    dialog = CalendarConfigDialog(window)
+#    if dialog.exec() == QDialog.Accepted:
+#        calendar = dialog.get_selected_calendar()
+#        if calendar:
+#            # Actualizar combo de calendarios en la ventana principal
+#            if hasattr(window, 'calendar_combo'):
+#                window.calendar_combo.setCurrentText(calendar.nombre)
+#            QMessageBox.information(window, "Calendario", f"Calendario '{calendar.nombre}' seleccionado.")
 
 def on_about(window):
     QMessageBox.about(
         window, 
         "Acerca de REDOCNIZER",
-        "<h3>REDOCNIZER v2.2.3</h3>"
+        "<h3>REDOCNIZER v2.3.0</h3>"
         "<p><b>Sistema Inteligente de Gestión de Contratos</b></p>"
         "<p>Herramienta avanzada para la extracción y procesamiento automático de información "
         "de documentos PDF mediante OCR híbrido y redes neuronales CRNN.</p>"

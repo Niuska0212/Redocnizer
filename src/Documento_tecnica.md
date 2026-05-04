@@ -126,7 +126,7 @@ x = MaxPooling2D(pool_size=(2, 2), name='max_pool_1')(x)
 
 # La clave: El Reshape para la RNN
 x = Reshape(target_shape=(output_sequence_length, (img_height // 8) * 512), name='reshape')(x) 
-# output_sequence_length es 32 (256 / (2.2.3) )
+# output_sequence_length es 32 (256 / (2.3.0) )
 ```
 
 ### 3.3 Modelador de Secuencia (BiLSTM Decoder)

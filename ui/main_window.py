@@ -17,7 +17,7 @@ from PySide6.QtGui import QPixmap, QFont, QColor, QBrush, QIcon
 from controllers.contract_controller import ContractController
 from services.pdf_service import pdf_to_images
 from ui.app_menu import create_app_menu
-from ui.calendar_db import CalendarDB
+#from ui.calendar_db import CalendarDB
 from ui.data_manager import DataManager
 from ui.data_tab import DataTab
 #from ui.drive_sync_tab import DriveSyncTab
@@ -31,7 +31,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        self.setWindowTitle("REDOCNIZER - Gestión de Contratos CUCEI    V.2.2.3")
+        self.setWindowTitle("REDOCNIZER - Gestión de Contratos CUCEI    V.2.3.0")
         screen = QApplication.primaryScreen().geometry()
         width = screen.width() * 0.65  
         height = screen.height() * 0.52
