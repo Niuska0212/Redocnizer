@@ -50,43 +50,49 @@ class MemoryMonitor:
     @staticmethod
     def calculate_optimal_threads(reserved_ram_percent: float = 20) -> Tuple[int, str]:
         """
-        Calcula dinámicamente cuántos threads OCR son óptimos
-        
-        Args:
-            reserved_ram_percent: % de RAM a reservar para SO y otras apps
-            
-        Returns:
-            Tuple(num_threads: int, reason: str)
+        Calcula dinámicamente cuántos threads OCR son óptimos basándose en RAM y CPU.
         """
         mem_info = MemoryMonitor.get_system_memory_info()
-        percent = mem_info['percent_used']
-        available_gb = mem_info['available_gb']
-        total_gb = mem_info['total_gb']
+        ram_percent = mem_info['percent_used']
         
-        # --- Lógica de decisión basada en disponibilidad ---
+        # 1. Obtener uso actual de la CPU (promedio de los últimos 500ms)
+        cpu_percent = psutil.cpu_percent(interval=0.5)
         
-        # CRÍTICO: RAM muy baja
-        if percent >= MemoryMonitor.RAM_THRESHOLD_CRITICAL:
-            return 1, f"⚠️ CRÍTICO: {percent:.1f}% RAM usada. Solo 1 thread."
+        # 2. Obtener núcleos FÍSICOS (no los hilos lógicos/Hyper-threading)
+        # Esto es vital para el OCR porque usar hilos lógicos en tareas pesadas 
+        # suele calentar la CPU sin ganar velocidad real.
+        physical_cores = psutil.cpu_count(logical=False) or 1
         
-        # ALERTA: RAM alta
-        if percent >= MemoryMonitor.RAM_THRESHOLD_WARNING:
-            return 2, f"⚠️ ALTO: {percent:.1f}% RAM. Reducido a 2 threads."
-        
-        # ÓPTIMO: Calcular procesos por disponibilidad
-        if percent <= MemoryMonitor.RAM_THRESHOLD_OPTIMAL:
-            reserved_mb = total_gb * 1024 * (reserved_ram_percent / 100)
-            usable_ram_mb = max(0, mem_info['available_mb'] - reserved_mb)
-            max_threads_by_ram = max(1, int(usable_ram_mb / MemoryMonitor.RAM_PER_OCR_PROCESS))
+        # --- Lógica de decisión ---
 
-            # Para CPU-bound, usar núcleos reales (o lógicos si no hay físicos)
-            cpu_cores = psutil.cpu_count(logical=False) or psutil.cpu_count()
-            max_threads = min(max_threads_by_ram, max(1, cpu_cores))
+        # CASO 1: RAM Crítica (Peligro de cierre de la app)
+        if ram_percent >= MemoryMonitor.RAM_THRESHOLD_CRITICAL:
+            return 1, f"⚠️ CRÍTICO: {ram_percent:.1f}% RAM. Forzando 1 hilo."
 
-            return max_threads, f"✅ Óptimo: {percent:.1f}% RAM, {max_threads} procesos recomendados"
-        
-        # INTERMEDIO
-        return 2, f"⚠️ Moderado: {percent:.1f}% RAM. 2 threads."
+        # CASO 2: CPU Saturada (La computadora se está trabando)
+        # Si la CPU está arriba del 85%, bajamos el ritmo aunque haya RAM.
+        if cpu_percent > 85:
+            # Usamos la mitad de los núcleos o al menos 1
+            low_threads = max(1, physical_cores // 2)
+            return low_threads, f"⚠️ CPU Saturada ({cpu_percent}%). Reduciendo a {low_threads} hilos."
+
+        # CASO 3: Cálculo Balanceado (Zona segura)
+        # Calculamos cuántos hilos caben en la RAM disponible
+        reserved_mb = mem_info['total_gb'] * 1024 * (reserved_ram_percent / 100)
+        usable_ram_mb = max(0, mem_info['available_mb'] - reserved_mb)
+        max_threads_by_ram = max(1, int(usable_ram_mb / MemoryMonitor.RAM_PER_OCR_PROCESS))
+
+        # El número ideal será el menor entre la RAM disponible y los núcleos físicos libres.
+        # Dejamos siempre 1 núcleo libre para que el sistema operativo y tu UI respondan.
+        optimal_threads = min(max_threads_by_ram, max(1, physical_cores - 1))
+
+        # Mensaje de estado detallado
+        if ram_percent <= MemoryMonitor.RAM_THRESHOLD_OPTIMAL:
+            status = "✅ Óptimo"
+        else:
+            status = "⚠️ Moderado"
+
+        return optimal_threads, f"{status}: {ram_percent:.1f}% RAM, {cpu_percent}% CPU. Recomendado: {optimal_threads} hilos."
     
     @staticmethod
     def can_process() -> Tuple[bool, str]:
