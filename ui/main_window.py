@@ -957,25 +957,60 @@ class MainWindow(QMainWindow):
         # Hace scroll automático al final
         self.results_list.scrollToBottom()
 
+
     def show_final_summary(self, successful, failed, results):
-        # --- BLINDAJE: Ignoramos los argumentos y contamos la realidad de la lista ---
+        # 1. Recalculamos la realidad basada en los resultados
         total_real = len(results)
-        
-        # Recalculamos exitosos y fallidos basados puramente en el contenido de 'results'
         exitosos_reales = sum(1 for r in results if r.get('status') == 'success')
         fallidos_reales = sum(1 for r in results if r.get('status') == 'error')
         
-        # Si por alguna razón la suma no cuadra con lo que el Worker mandó, 
-        # usamos los reales para que el usuario no vea números inconsistentes.
         msg = f"""
         <h3>Proceso Completado</h3>
         <p><b>Total procesados:</b> {total_real} archivo(s)</p>
         <p style='color: green;'><b>Exitosos:</b> {exitosos_reales}</p>
         <p style='color: red;'><b>Fallidos:</b> {fallidos_reales}</p>
         """
-        
+
+        # --- LÓGICA DE GENERACIÓN DE LOG PARA FALLIDOS ---
+        if fallidos_reales > 0:
+            try:
+                # Creamos un nombre de archivo con fecha y hora para que no se sobreescriban
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                log_filename = f"log_errores_{timestamp}.txt"
+                # Lo guardamos en la ruta raíz del proyecto o del usuario
+                log_path = os.path.join(os.getcwd(), log_filename)
+
+                with open(log_path, "w", encoding="utf-8") as f:
+                    f.write("=== REPORTE DE ARCHIVOS NO PROCESADOS ===\n")
+                    f.write(f"Fecha: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}\n")
+                    f.write(f"Total fallidos: {fallidos_reales}\n")
+                    f.write("-" * 40 + "\n\n")
+
+                    for res in results:
+                        if res.get('status') == 'error':
+                            # Sacamos el nombre del archivo y el error
+                            # Nota: Asegúrate que tu Worker mande 'file_name' y 'error' en el dict
+                            archivo = res.get('file_name', 'Archivo desconocido')
+                            error_msg = res.get('error', 'Error no especificado')
+                            f.write(f"ARCHIVO: {archivo}\n")
+                            f.write(f"CAUSA: {error_msg}\n")
+                            f.write("-" * 20 + "\n")
+
+                msg += f"""
+                <p style='color: #856404; background-color: #fff3cd; padding: 10px; border-radius: 5px;'>
+                ⚠️ <b>Atención:</b> Se ha generado un archivo con los errores para que puedas 
+                organizarlos a mano:<br>
+                <small>{log_filename}</small></p>
+                """
+                
+                # Abrir el archivo de texto automáticamente (Windows)
+                os.startfile(log_path)
+
+            except Exception as e:
+                print(f"Error al crear el archivo de log: {e}")
+
         if exitosos_reales > 0:
-            msg += "<p>Los datos se han guardado en la pestaña 'Ver/Editar Datos'</p>"
+            msg += "<p>Los datos exitosos se han guardado en la pestaña 'Ver/Editar Datos'</p>"
 
         QMessageBox.information(self, "Resultado", msg)
         
@@ -990,7 +1025,6 @@ class MainWindow(QMainWindow):
         self.btn_clear_files.setEnabled(True)
         self.btn_remove_file.setEnabled(True)
         
-        # --- REFRESCO DE TABLAS ---
         if hasattr(self, 'data_tab'):
             self.data_tab.load_data()
 

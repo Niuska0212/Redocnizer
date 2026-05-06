@@ -136,7 +136,7 @@ class ConcurrentOCRWorker(QThread):
         # Emitir resumen final
         self.all_finished.emit(self.successful, self.failed, self.results_list)
         # Iniciamos el event loop del hilo para procesar señales de las tareas
-        self.exec()
+        
 
     def _on_task_finished(self, text, result):
         """Llamado cuando una tarea termina exitosamente"""
@@ -149,6 +149,11 @@ class ConcurrentOCRWorker(QThread):
     def _on_task_error(self, error_msg):
         """Llamado cuando una tarea falla"""
         self.failed += 1
+        self.error_logs.append({
+            "status": "error",
+            "file_name": os.path.basename(self.file_path),
+            "error": error_msg
+        }) # Guardamos el error para el resumen final
         self.results_list.append({"status": "error"})
         self.file_finished.emit(error_msg, {"status": "error"})
         self._report_progress()

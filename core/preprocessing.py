@@ -7,6 +7,24 @@ import numpy as np
 IMG_HEIGHT = 32
 IMG_WIDTH = 256
 
+def get_adaptive_brightness(img: np.ndarray) -> np.ndarray:
+    """
+    Detecta si hay zonas oscuras (etiquetas sombreadas) y aplica 
+    una corrección local para resaltar texto tenue.
+    """
+    if len(img.shape) == 3:
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    
+    # 1. CLAHE (Contrast Limited Adaptive Histogram Equalization)
+    # Es vital para etiquetas oscuras porque mejora el contraste por secciones pequeñas.
+    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+    img_clahe = clahe.apply(img)
+    
+    # 2. Umbralizado suave (Denoising) para no perder trazos finos
+    img_denoised = cv2.fastNlMeansDenoising(img_clahe, None, 10, 7, 21)
+    
+    return img_denoised
+
 def enhance_for_easyocr(img: np.ndarray) -> np.ndarray:
     """
     Optimiza la imagen específicamente para EasyOCR.
@@ -26,39 +44,46 @@ def enhance_for_easyocr(img: np.ndarray) -> np.ndarray:
 
 def increase_brightness_and_contrast(img: np.ndarray) -> np.ndarray:
     """
-    Aclara imágenes y estira el contraste. 
-    Ajustado para no deformar el número '1' en '4'.
+    Versión mejorada: Maneja etiquetas oscuras y datos claros simultáneamente.
     """
     if len(img.shape) == 3:
         img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-    # 1. Normalización controlada (evita quemar los blancos)
-    img_norm = cv2.normalize(img, None, alpha=10, beta=245, norm_type=cv2.NORM_MINMAX)
+    # Paso A: Rescatar detalles en sombras (Etiquetas oscuras)
+    img_rescatada = get_adaptive_brightness(img)
 
-    # 2. Gamma suave (0.8 es menos agresivo que 0.7)
-    gamma = 0.8 
+    # Paso B: Normalización agresiva
+    # Estiramos el histograma para que lo más oscuro sea negro y lo más claro blanco puro
+    img_norm = cv2.normalize(img_rescatada, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX)
+
+    # Paso C: Corrección Gamma dinámica
+    # Si la imagen sigue siendo oscura en promedio, bajamos el gamma para iluminar
+    mean_brightness = np.mean(img_norm)
+    gamma = 0.6 if mean_brightness < 120 else 0.85
+    
     invGamma = 1.0 / gamma
     table = np.array([((i / 255.0) ** invGamma) * 255 for i in np.arange(0, 256)]).astype("uint8")
-    img_bright = cv2.LUT(img_norm, table)
+    img_gamma = cv2.LUT(img_norm, table)
 
-    # 3. Sharpening sutil (Kernel de 5 elementos en lugar de 9 para evitar ruido)
-    kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]])
-    final_img = cv2.filter2D(img_bright, -1, kernel)
+    # Paso D: Sharpening (Afilado) de bordes
+    # Esto ayuda a que el OCR distinga letras pegadas
+    kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
+    final_img = cv2.filter2D(img_gamma, -1, kernel)
 
     return final_img
 
 def prepare_roi_for_ocr(roi_image: np.ndarray) -> np.ndarray:
-    """Prepara el tensor para tu modelo CRNN actual."""
+    """Prepara el tensor para el modelo CRNN con el nuevo preprocesamiento."""
     if roi_image.size == 0:
         return np.zeros((1, IMG_HEIGHT, IMG_WIDTH, 1), dtype=np.float32)
 
-    # Mejoramos brillo y contraste
+    # Usamos la nueva lógica de brillo adaptativo
     roi_improved = increase_brightness_and_contrast(roi_image)
 
-    # Redimensionar con INTER_AREA para reducir aliasing (mejor para números)
-    img_resized = cv2.resize(roi_improved, (IMG_WIDTH, IMG_HEIGHT), interpolation=cv2.INTER_AREA)
+    # Redimensionar usando INTER_CUBIC para no pixelar las letras pequeñas
+    img_resized = cv2.resize(roi_improved, (IMG_WIDTH, IMG_HEIGHT), interpolation=cv2.INTER_CUBIC)
 
-    # Normalización para el modelo (0 a 1)
+    # Normalización final
     X_input = img_resized.astype(np.float32) / 255.0
     X_input = X_input.reshape(1, IMG_HEIGHT, IMG_WIDTH, 1)
 
