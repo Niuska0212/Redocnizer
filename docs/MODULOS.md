@@ -795,6 +795,6 @@ RESULTADO GENERAL: ✅✅✅ TODOS LOS MÓDULOS APROBADOS
 ---
 
 **Documento preparado para presentación ante el comité evaluador**  
-**Versión**: 2.3.0
+**Versión**: 2.3.2
 **Fecha**: 24 de febrero de 2026
 

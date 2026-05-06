@@ -86,5 +86,5 @@ coll = COLLECT(
     a.datas,
     strip=False,
     upx=False,
-    name='REDOCNIZER_V2.3.0'
+    name='REDOCNIZER_V2.3.2'
 )

@@ -201,7 +201,7 @@ Para reportar problemas o sugerencias:
 
 ---
 
-**Versión**: 2.3.0
+**Versión**: 2.3.2
 **Última actualización**: 24 de febrero de 2026  
 **Estado**: En desarrollo activo
 

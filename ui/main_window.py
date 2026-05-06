@@ -31,7 +31,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        self.setWindowTitle("REDOCNIZER - Gestión de Contratos CUCEI    V.2.3.0")
+        self.setWindowTitle("REDOCNIZER - Gestión de Contratos CUCEI    V.2.3.2")
         screen = QApplication.primaryScreen().geometry()
         width = screen.width() * 0.65  
         height = screen.height() * 0.52
