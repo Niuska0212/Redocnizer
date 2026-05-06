@@ -102,7 +102,7 @@ class ConcurrentOCRWorker(QThread):
         self.pool = None
 
     def run(self):
-        """Inicia el procesamiento concurrente optimizado para CPU y RAM"""
+        """Inicia el procesamiento concurrente"""
         total = len(self.file_paths)
         if total == 0:
             self.all_finished.emit(0, 0, [])
@@ -111,19 +111,13 @@ class ConcurrentOCRWorker(QThread):
         self.pending = total
         self.pool = QThreadPool.globalInstance()
         
-        # --- MEJORA AQUÍ ---
-        # Calculamos los threads JUSTO ANTES de empezar. 
-        # Si tu RX 6600 no se usa (CPU pura), esto detectará si tus núcleos físicos
-        # están libres para darle toda la potencia al OCR.
+        # Calcular threads óptimos
         optimal_threads, reason = MemoryMonitor.calculate_optimal_threads()
+        print(f"[OCR Worker] {reason}")
         
-        # IMPORTANTE: Para OCR pesado en CPU, nunca es recomendable exceder 
-        # el número de núcleos físicos para evitar que la UI se congele.
         self.pool.setMaxThreadCount(optimal_threads)
         
-        print(f"[OCR Worker] Configurando Pool con {optimal_threads} hilos. Razón: {reason}")
-        
-        # Encolar tareas
+        # Encolar todas las tareas
         for idx, fp in enumerate(self.file_paths, 1):
             task = OCRTask(
                 fp, 
@@ -134,8 +128,6 @@ class ConcurrentOCRWorker(QThread):
             )
             task.signals.finished.connect(self._on_task_finished)
             task.signals.error.connect(self._on_task_error)
-            
-            # La tarea se queda en cola si optimal_threads es menor al total de archivos
             self.pool.start(task)
         
         # Esperar a que se completen todas las tareas
@@ -143,6 +135,8 @@ class ConcurrentOCRWorker(QThread):
         
         # Emitir resumen final
         self.all_finished.emit(self.successful, self.failed, self.results_list)
+        # Iniciamos el event loop del hilo para procesar señales de las tareas
+        self.exec()
 
     def _on_task_finished(self, text, result):
         """Llamado cuando una tarea termina exitosamente"""
@@ -167,3 +161,8 @@ class ConcurrentOCRWorker(QThread):
         percent = int((self.processed_count / total) * 100) if total > 0 else 0
         message = f"Procesado {self.processed_count} de {total}"
         self.progress.emit(percent, message)
+
+        # Si terminamos todas las tareas, cerramos el hilo y avisamos a la UI
+        if self.processed_count == len(self.file_paths):
+            self.all_finished.emit(self.successful, self.failed, self.results_list)
+            self.quit()

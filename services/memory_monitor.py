@@ -14,6 +14,9 @@ class MemoryMonitor:
     Optimizado para máximo 16GB RAM sin GPU.
     """
     
+    # Inicializar el contador de CPU para lecturas no bloqueantes
+    _ = psutil.cpu_percent(interval=None)
+
     # Umbrales optimizados para 16GB max
     RAM_THRESHOLD_CRITICAL = 88      # % - Detener procesamiento (evitar OOM)
     RAM_THRESHOLD_WARNING = 80       # % - Reducir threads
@@ -57,6 +60,8 @@ class MemoryMonitor:
         
         # 1. Obtener uso actual de la CPU (promedio de los últimos 500ms)
         cpu_percent = psutil.cpu_percent(interval=0.5)
+        # Usamos interval=None para que no bloquee el hilo de la interfaz
+        cpu_percent = psutil.cpu_percent(interval=None)
         
         # 2. Obtener núcleos FÍSICOS (no los hilos lógicos/Hyper-threading)
         # Esto es vital para el OCR porque usar hilos lógicos en tareas pesadas 
