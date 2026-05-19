@@ -2,10 +2,12 @@
 # -*- coding: utf-8 -*-
 # services/concurrent_worker.py
 
+
 import os
 import threading
 import gc
 from PySide6.QtCore import QThread, Signal
+from .error_logger import get_error_logger
 
 class ConcurrentOCRWorker(QThread):
     """
@@ -17,7 +19,7 @@ class ConcurrentOCRWorker(QThread):
     all_finished = Signal(int, int, list)  
     error = Signal(str)                    
 
-    def __init__(self, file_paths, calendar, controller, drive_service=None, supabase_manager=None):
+    def __init__(self, file_paths, calendar, controller, drive_service=None, supabase_manager=None, project_root=None):
         super().__init__()
         self.file_paths = file_paths
         self.calendar = calendar
@@ -25,6 +27,7 @@ class ConcurrentOCRWorker(QThread):
         self.drive_service = drive_service
         self.supabase_manager = supabase_manager
         self._is_running = True
+        self.error_logger = get_error_logger(project_root)
 
     def _cloud_task(self, data, final_path):
         """HILO 2: Gestión de red (Supabase y Drive). No detiene al Hilo 1."""
@@ -95,9 +98,24 @@ class ConcurrentOCRWorker(QThread):
 
                 except Exception as e:
                     failed += 1
-                    error_item = {"status": "error", "file": nombre_archivo, "error": str(e)}
+                    error_type = type(e).__name__
+                    error_message = str(e)
+                    
+                    # Registrar error en archivo log
+                    self.error_logger.log_file_error(
+                        file_name=nombre_archivo,
+                        error_type=error_type,
+                        error_message=error_message,
+                        additional_data={
+                            "file_path": fp,
+                            "calendar": str(self.calendar),
+                            "timestamp": __import__('datetime').datetime.now().isoformat()
+                        }
+                    )
+                    
+                    error_item = {"status": "error", "file": nombre_archivo, "error": error_message}
                     results_list.append(error_item)
-                    self.file_finished.emit(f"❌ {nombre_archivo} -> Error: {str(e)}", error_item)
+                    self.file_finished.emit(f"❌ {nombre_archivo} -> Error: {error_message}", error_item)
 
                 # Limpieza de RAM tras cada archivo
                 gc.collect()
