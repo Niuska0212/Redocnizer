@@ -89,7 +89,7 @@ class FileService:
         sub_path = os.path.join(
             professor_folder_name, 
             "000000 DOC BASICOS", 
-            "NOMBRAMIENTOS"
+            "06 NOMBRAMIENTOS"
         )
 
         # 4. Ruta absoluta final
