@@ -79,12 +79,55 @@ exe = EXE(
     icon=os.path.join(root, 'ui', 'assets', 'logo_redocnizer.ico'),
 )
 
+# ==========================================
+# COMPILACIÓN 2: MGRADOR DE CARPETAS (Script Auxiliar)
+# ==========================================
+a_migrador = Analysis(
+    [os.path.join(root, 'migrate_nombramientos.py')], # <--- Tu nuevo script de UI
+    pathex=[root],
+    binaries=[],
+    datas=pyside6_datas, # Solo necesita las dependencias visuales de PySide6
+    hiddenimports=['PySide6'],
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludedimports=excluir + ['torch', 'torchvision', 'easyocr', 'cv2'], # Excluimos la IA para que sea ligero
+    win_no_prefer_redirects=False,
+    win_private_assemblies=False,
+    cipher=block_cipher,
+    noarchive=False,
+)
+
+a_migrador.binaries = [x for x in a_migrador.binaries if not any(bad in x[0].lower() for bad in excluir)]
+pyz_migrador = PYZ(a_migrador.pure, a_migrador.zipped_data, cipher=block_cipher)
+
+exe_migrador = EXE(
+    pyz_migrador,
+    a_migrador.scripts,
+    [],
+    exclude_binaries=True,
+    name='MigradorCarpetas', # <--- Nombre del segundo ejecutable
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=True,
+    upx=False,
+    console=False,
+    icon=os.path.join(root, 'ui', 'assets', 'logo_redocnizer.ico'), # Puedes usar el mismo icono
+)
+
+# ==========================================
+# RECOLECCIÓN FINAL (Une ambos en la misma carpeta)
+# ==========================================
 coll = COLLECT(
     exe,
     a.binaries,
     a.zipfiles,
     a.datas,
+    exe_migrador,             # <--- Añadimos el ejecutable del migrador
+    a_migrador.binaries,      # <--- Añadimos sus binarios nativos
+    a_migrador.zipfiles,
+    a_migrador.datas,
     strip=False,
     upx=False,
-    name='REDOCNIZER_V2.3.2'
+    name='REDOCNIZER_V2.3.3'
 )

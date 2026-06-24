@@ -609,7 +609,7 @@ DocumentChangedSignal
 
 ### Utilidades
 - **CSV:** pandas 1.3+
-- **PDF:** PyPDF2.3.2+
+- **PDF:** PyPDF2.3.3+
 - **Versionado:** Semántico (X.Y.Z)
 - **Empaquetado:** PyInstaller
 
@@ -657,6 +657,6 @@ redocnizer-1.0.0-setup.exe
 
 ---
 
-**Arquitectura versión**: 2.3.2
+**Arquitectura versión**: 2.3.3
 **Última actualización**: 24 de febrero de 2026
 

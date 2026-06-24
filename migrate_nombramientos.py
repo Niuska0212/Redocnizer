@@ -1,18 +1,25 @@
 #!/usr/bin/env python3
 """
-Migra contenido de carpetas NOMBRAMIENTOS a 06 NOMBRAMIENTOS.
-
-Este script es independiente del programa principal y solo necesita que el usuario
-indique la carpeta raíz donde está la estructura de expedientes.
-
-Ejemplo:
-    "Z:\\Proyecto-modular-1\\Contratos"
+Migra contenido de carpetas NOMBRAMIENTOS a 06 NOMBRAMIENTOS con Interfaz Gráfica.
 """
 
-import argparse
 import os
 import shutil
 import sys
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (
+    QApplication,
+    QMainWindow,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QTextEdit,
+    QFileDialog,
+    QMessageBox,
+)
 
 
 def normalize_path(value: str) -> str:
@@ -35,7 +42,9 @@ def move_contents(old_dir: str, new_dir: str):
 
     for root, _, files in os.walk(old_dir):
         rel_path = os.path.relpath(root, old_dir)
-        destination_root = new_dir if rel_path == "." else os.path.join(new_dir, rel_path)
+        destination_root = (
+            new_dir if rel_path == "." else os.path.join(new_dir, rel_path)
+        )
         os.makedirs(destination_root, exist_ok=True)
 
         for filename in files:
@@ -64,66 +73,154 @@ def cleanup_empty_dirs(start_dir: str):
     return removed
 
 
-def migrate_root(root_dir: str, limit_to_professor: str = None):
-    if not os.path.isdir(root_dir):
-        raise FileNotFoundError(f"No se encontró la carpeta raíz: {root_dir}")
+class MigrationWindow(QMainWindow):
 
-    search_root = root_dir
-    if limit_to_professor:
-        search_root = os.path.join(root_dir, normalize_path(limit_to_professor))
-        if not os.path.isdir(search_root):
-            raise FileNotFoundError(f"No se encontró la carpeta de profesor: {search_root}")
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Migrador de Carpetas de Contratos")
+        self.setMinimumSize(650, 450)
+        self.init_ui()
 
-    summary = []
+    def init_ui(self):
+        # Widget Central y Layout Principal
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        main_layout = QVBoxLayout(central_widget)
+        main_layout.setSpacing(15)
 
-    for old_dir in find_nombramientos_dirs(search_root):
-        parent_path = os.path.dirname(old_dir)
-        new_dir = os.path.join(parent_path, "06 NOMBRAMIENTOS")
+        # Instrucciones
+        instruction_label = QLabel(
+            "Selecciona la carpeta raíz donde están los expedientes de los profesores.\n"
+            "El script buscará las carpetas llamadas 'NOMBRAMIENTOS' para mover su contenido a '06 NOMBRAMIENTOS'."
+        )
+        instruction_label.setWordWrap(True)
+        main_layout.addWidget(instruction_label)
 
-        moved, overwritten = move_contents(old_dir, new_dir)
-        removed_dirs = cleanup_empty_dirs(old_dir)
+        # Selector de Ruta (Layout Horizontal)
+        path_layout = QHBoxLayout()
+        self.path_input = QLineEdit()
+        self.path_input.setPlaceholderText(
+            "Ruta de la carpeta raíz (ej. Z:\\000_Archivo\\000_expedientes_cper)"
+        )
 
-        summary.append({
-            "old_dir": old_dir,
-            "new_dir": new_dir,
-            "moved": moved,
-            "overwritten": overwritten,
-            "removed_empty_dirs": removed_dirs,
-        })
+        browse_button = QPushButton("Buscar...")
+        browse_button.clicked.connect(self.browse_folder)
 
-    return summary
+        path_layout.addWidget(self.path_input)
+        path_layout.addWidget(browse_button)
+        main_layout.addLayout(path_layout)
+
+        # Botón de Acción Principal
+        self.run_button = QPushButton("Iniciar Migración")
+        self.run_button.setStyleSheet(
+            "font-weight: bold; background-color: #2b579a; color: white; padding: 8px;"
+        )
+        self.run_button.clicked.connect(self.start_migration)
+        main_layout.addWidget(self.run_button)
+
+        # Consola de Estado / Logs
+        log_label = QLabel("Progreso del proceso:")
+        main_layout.addWidget(log_label)
+
+        self.log_output = QTextEdit()
+        self.log_output.setReadOnly(True)
+        self.log_output.setStyleSheet(
+            "background-color: #1e1e1e; color: #d4d4d4; font-family: Consolas, Monaco, monospace;"
+        )
+        main_layout.addWidget(self.log_output)
+
+    def browse_folder(self):
+        selected_dir = QFileDialog.getExistingDirectory(
+            self, "Seleccionar Carpeta Raíz de Expedientes"
+        )
+        if selected_dir:
+            self.path_input.setText(os.path.normpath(selected_dir))
+
+    def log(self, text: str):
+        self.log_output.append(text)
+        # Auto-scroll hacia abajo
+        self.log_output.ensureCursorVisible()
+
+    def start_migration(self):
+        root_dir = normalize_path(self.path_input.text())
+
+        if not root_dir or not os.path.isdir(root_dir):
+            QMessageBox.critical(
+                self,
+                "Error de Ruta",
+                "Por favor, selecciona una ruta de carpeta válida antes de continuar.",
+            )
+            return
+
+        self.log_output.clear()
+        self.log(f"[*] Iniciando búsqueda en: {root_dir}")
+        self.run_button.setEnabled(False)
+        QApplication.processEvents()  # Forzar actualización de la UI
+
+        try:
+            summary = []
+            for old_dir in find_nombramientos_dirs(root_dir):
+                parent_path = os.path.dirname(old_dir)
+                new_dir = os.path.join(parent_path, "06 NOMBRAMIENTOS")
+
+                self.log(f"\n[->] Procesando: {old_dir}")
+
+                moved, overwritten = move_contents(old_dir, new_dir)
+                removed_dirs = cleanup_empty_dirs(old_dir)
+
+                self.log(f"    - Movidos: {moved} archivos.")
+                if overwritten > 0:
+                    self.log(f"    - Sobrescritos: {overwritten} archivos.")
+                if removed_dirs > 0:
+                    self.log(
+                        f"    - Removida carpeta antigua (quedó vacía)."
+                    )
+
+                summary.append(
+                    {
+                        "old_dir": old_dir,
+                        "new_dir": new_dir,
+                        "moved": moved,
+                        "overwritten": overwritten,
+                        "removed_empty_dirs": removed_dirs,
+                    }
+                )
+
+            self.log("\n" + "=" * 40)
+            if not summary:
+                self.log("\n[!] No se encontró ninguna carpeta 'NOMBRAMIENTOS'.")
+                QMessageBox.information(
+                    self,
+                    "Proceso Terminado",
+                    "No se encontraron carpetas para migrar.",
+                )
+            else:
+                self.log(
+                    f"\n[+] Migración finalizada con éxito. Se procesaron {len(summary)} carpetas."
+                )
+                QMessageBox.information(
+                    self,
+                    "Éxito",
+                    f"¡Migración completada!\nSe actualizaron {len(summary)} rutas.",
+                )
+
+        except Exception as e:
+            self.log(f"\n[ERROR] Ocurrió un fallo: {str(e)}")
+            QMessageBox.critical(
+                self,
+                "Error en Ejecución",
+                f"Ocurrió un error inesperado durante la migración:\n{str(e)}",
+            )
+
+        finally:
+            self.run_button.setEnabled(True)
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Migra NOMBRAMIENTOS a 06 NOMBRAMIENTOS dentro de la estructura de expedientes."
-    )
-    parser.add_argument("--root", help="Carpeta raíz seleccionada por el usuario")
-    parser.add_argument(
-        "--professor-folder",
-        help="Ruta relativa al profesor dentro de la raíz para limitar la migración.",
-    )
-    args = parser.parse_args()
-
-    root_dir = normalize_path(args.root or input("Ruta raíz del expediente: ").strip())
-    if not root_dir:
-        print("Error: se requiere la ruta raíz.")
-        sys.exit(1)
-
-    try:
-        summary = migrate_root(root_dir, limit_to_professor=args.professor_folder)
-    except Exception as exc:
-        print(f"Error: {exc}")
-        sys.exit(2)
-
-    if not summary:
-        print("No se encontró ninguna carpeta NOMBRAMIENTOS para migrar.")
-        return
-
-    print("Migración completada:")
-    for item in summary:
-        print(f"- {item['old_dir']} -> {item['new_dir']}")
-        print(f"  Archivos movidos: {item['moved']}, sobrescritos: {item['overwritten']}, carpetas vacías removidas: {item['removed_empty_dirs']}")
+    app = QApplication(sys.argv)
+    window = MigrationWindow()
+    window.show()
+    sys.exit(app.exec())
 
 
 if __name__ == "__main__":

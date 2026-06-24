@@ -74,7 +74,7 @@ class FileService:
     def get_full_professor_path(self, data: dict) -> str:
         """
         Construye la ruta completa siguiendo el ejemplo:
-        RAIZ / APELLIDO PATERNO MATERNO NOMBRES CODIGO / 000000 DOC BASICOS / NOMBRAMIENTOS
+        RAIZ / APELLIDO PATERNO MATERNO NOMBRES CODIGO / 000000 DOC BASICOS / 06 NOMBRAMIENTOS
         """
         # 1. Extraer y limpiar partes del nombre (Asumiendo que vienen del OCR/DataTab)
         paterno = self._sanitize_name(data.get("PATERNO", ""))
